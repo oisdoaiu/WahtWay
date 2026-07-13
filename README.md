@@ -1,6 +1,13 @@
 # WahtWay — 何以委
 
-面向大学生的 AI Agent + Skill 平台。输入问题，Agent 自动匹配合适的 Skill，调用 LLM 帮你搞定。
+面向大学生的 AI Agent + Skill 平台。输入问题，Agent 自动匹配合适的 Skill，调用 LLM 帮你搞定。支持用自然语言描述需求，AI 自动生成自定义 Skill。
+
+## 功能
+
+- 🤖 **智能对话**：输入问题，Agent 自动匹配 Skill + 流式逐字回复
+- 🧠 **多 Skill 支持**：内置多个 Skill（学习计划、代码解释等），按关键词自动匹配
+- ✨ **AI 创建 Skill**：用自然语言描述你想要的功能，AI 自动生成完整 Skill 定义
+- ⚡ **即创即用**：生成的 Skill 保存为 JSON 文件，无需改代码，重启即生效
 
 ## 技术栈
 
@@ -86,9 +93,9 @@ WahtWay/
 │   │   ├── cli.ts               # CLI 交互模式
 │   │   ├── routes/
 │   │   │   ├── chat.ts          # POST /api/chat（SSE 流式）
-│   │   │   └── skills.ts        # GET /api/skills
+│   │   │   └── skills.ts        # Skill API（列表/生成/保存）
 │   │   └── skills/
-│   │       ├── loader.ts        # JSON 文件加载器
+│   │       ├── loader.ts        # JSON 文件加载 + 保存
 │   │       └── matcher.ts       # 关键词匹配器
 │   ├── .env                     # API Key 配置
 │   └── package.json
@@ -108,7 +115,11 @@ WahtWay/
 
 ## 如何加新 Skill
 
-只需在 `be/data/skills/` 下新建一个 `.json` 文件，然后重启后端：
+### 方法一：AI 自动生成（推荐）
+
+点击界面右上角「+ 创建 Skill」，用自然语言描述需求（比如"我想要一个帮我写论文大纲的助手"），AI 会自动生成 Skill 定义。你可以编辑调整后保存，即刻生效。
+
+### 方法二：手动创建 JSON 文件
 
 ```json
 {
@@ -142,6 +153,8 @@ WahtWay/
 |------|------|------|
 | POST | `/api/chat` | 发送消息，SSE 流式返回 |
 | GET | `/api/skills` | 获取所有 Skill 列表（不含 systemPrompt） |
+| POST | `/api/skills/generate` | AI 自动生成 Skill JSON |
+| POST | `/api/skills/save` | 保存新 Skill 到文件 |
 | GET | `/api/health` | 健康检查 |
 
 ---

@@ -74,3 +74,27 @@ export let registeredSkills: Skill[] = [];
 export function initSkills(): void {
   registeredSkills = loadSkills();
 }
+
+/**
+ * 保存新 Skill 到 JSON 文件并重载注册表
+ */
+export function saveSkill(skill: Skill): void {
+  // 1. 校验必填字段
+  const missing = REQUIRED_FIELDS.filter((f) => !(f in skill));
+  if (missing.length > 0) {
+    throw new Error(`Skill 缺少必填字段: ${missing.join(", ")}`);
+  }
+
+  // 2. 确保目录存在
+  if (!fs.existsSync(SKILLS_DIR)) {
+    fs.mkdirSync(SKILLS_DIR, { recursive: true });
+  }
+
+  // 3. 写入文件
+  const filePath = path.join(SKILLS_DIR, `${skill.id}.json`);
+  fs.writeFileSync(filePath, JSON.stringify(skill, null, 2), "utf-8");
+  console.log(`💾 已保存 Skill: ${skill.name} → ${filePath}`);
+
+  // 4. 重载注册表
+  registeredSkills = loadSkills();
+}
