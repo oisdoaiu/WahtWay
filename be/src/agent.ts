@@ -3,7 +3,8 @@
 
 import OpenAI from "openai";
 import { Skill, AgentResult, TokenUsage } from "./types";
-import { registeredSkills } from "./skills/study-plan";
+import { registeredSkills } from "./skills/loader";
+import { matchSkillByKeywords } from "./skills/matcher";
 
 // 初始化 DeepSeek 客户端（OpenAI 兼容格式）
 const client = new OpenAI({
@@ -18,12 +19,7 @@ const MODEL = process.env.DEEPSEEK_MODEL || "deepseek-chat";
  * 后期改为：把所有 Skill 描述发给 LLM，让它选
  */
 function matchSkill(userMessage: string): Skill | null {
-  // V0.1: 只有 1 个 Skill，直接返回即可
-  if (registeredSkills.length === 1) {
-    return registeredSkills[0];
-  }
-  // V0.3+: LLM 意图匹配
-  return registeredSkills[0];
+  return matchSkillByKeywords(userMessage, registeredSkills);
 }
 
 /**

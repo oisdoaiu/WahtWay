@@ -1,7 +1,7 @@
 // GET /api/skills — 返回已注册的 Skill 列表（脱敏，不含 systemPrompt）
 
 import { Router, Request, Response } from "express";
-import { registeredSkills } from "../skills/study-plan";
+import { registeredSkills } from "../skills/loader";
 
 const router = Router();
 

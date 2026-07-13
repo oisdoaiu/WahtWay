@@ -21,6 +21,7 @@ export interface Skill {
   input: JSONSchema;
   output: JSONSchema;
   requiredTools: string[];
+  keywords?: string[];  // V0.3 关键词匹配
 }
 
 export interface AgentResult {

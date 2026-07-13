@@ -6,7 +6,10 @@ import express from "express";
 import cors from "cors";
 import chatRouter from "./routes/chat";
 import skillsRouter from "./routes/skills";
-import { runAgent } from "./agent";
+import { initSkills } from "./skills/loader";
+
+// 启动时加载所有 Skill
+initSkills();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
