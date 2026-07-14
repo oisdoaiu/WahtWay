@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>WahtWay Skill Hub</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <div>
+          <h1>WahtWay Skill Hub</h1>
+          <p id="hubStatus">连接中</p>
+        </div>
+        <button id="openUploadBtn" class="primary-btn" type="button">发布 Skill</button>
+      </header>
+
+      <main class="workspace">
+        <section class="panel list-panel" aria-label="Skill 列表">
+          <div class="toolbar">
+            <label class="search-box">
+              <span>搜索</span>
+              <input id="searchInput" type="search" placeholder="名称、关键词、作者" />
+            </label>
+            <label>
+              <span>排序</span>
+              <select id="sortSelect">
+                <option value="latest">最新</option>
+                <option value="downloads">下载</option>
+                <option value="rating">评分</option>
+                <option value="name">名称</option>
+              </select>
+            </label>
+          </div>
+
+          <div class="list-meta">
+            <span id="skillCount">0 个 Skill</span>
+            <button id="refreshBtn" class="ghost-btn" type="button">刷新</button>
+          </div>
+
+          <div id="skillsList" class="skills-list"></div>
+        </section>
+
+        <section class="panel detail-panel" aria-label="Skill 详情">
+          <div id="emptyDetail" class="empty-state">
+            <h2>选择一个 Skill</h2>
+            <p>查看版本、输入字段和下载信息。</p>
+          </div>
+
+          <article id="skillDetail" class="skill-detail hidden">
+            <div class="detail-heading">
+              <div>
+                <p id="detailCategory" class="eyebrow"></p>
+                <h2 id="detailName"></h2>
+                <p id="detailDesc"></p>
+              </div>
+              <button id="downloadBtn" class="primary-btn" type="button">下载 JSON</button>
+            </div>
+
+            <div class="metrics">
+              <div>
+                <span>版本</span>
+                <strong id="detailVersion">-</strong>
+              </div>
+              <div>
+                <span>下载</span>
+                <strong id="detailDownloads">0</strong>
+              </div>
+              <div>
+                <span>评分</span>
+                <strong id="detailRating">-</strong>
+              </div>
+            </div>
+
+            <div id="detailTags" class="tag-row"></div>
+
+            <div class="detail-grid">
+              <section>
+                <h3>输入字段</h3>
+                <ul id="inputList" class="field-list"></ul>
+              </section>
+              <section>
+                <h3>版本记录</h3>
+                <ul id="versionList" class="field-list"></ul>
+              </section>
+            </div>
+
+            <label class="download-link">
+              <span>下载地址</span>
+              <input id="downloadUrl" type="text" readonly />
+            </label>
+          </article>
+        </section>
+      </main>
+    </div>
+
+    <div id="uploadModal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="uploadTitle">
+      <form id="uploadForm" class="modal">
+        <div class="modal-header">
+          <h2 id="uploadTitle">发布 Skill</h2>
+          <button id="closeUploadBtn" class="icon-btn" type="button" aria-label="关闭">×</button>
+        </div>
+
+        <div class="form-row">
+          <label>
+            <span>版本</span>
+            <input id="versionInput" type="text" value="1.0.0" />
+          </label>
+          <label>
+            <span>可见性</span>
+            <select id="visibilityInput">
+              <option value="public">公开</option>
+              <option value="unlisted">不列出</option>
+            </select>
+          </label>
+        </div>
+
+        <div class="form-row">
+          <label>
+            <span>作者</span>
+            <input id="authorInput" type="text" maxlength="80" />
+          </label>
+          <label>
+            <span>分类</span>
+            <input id="categoryInput" type="text" maxlength="40" />
+          </label>
+        </div>
+
+        <label>
+          <span>标签</span>
+          <input id="tagsInput" type="text" placeholder="学习, 写作" />
+        </label>
+
+        <label>
+          <span>变更记录</span>
+          <input id="changelogInput" type="text" maxlength="1000" />
+        </label>
+
+        <label>
+          <span>Skill JSON</span>
+          <textarea id="manifestInput" spellcheck="false"></textarea>
+        </label>
+
+        <p id="uploadMsg" class="form-message"></p>
+
+        <div class="modal-actions">
+          <button id="loadExampleBtn" class="ghost-btn" type="button">填入示例</button>
+          <div>
+            <button id="cancelUploadBtn" class="ghost-btn" type="button">取消</button>
+            <button class="primary-btn" type="submit">提交</button>
+          </div>
+        </div>
+      </form>
+    </div>
+
+    <script src="./app.js"></script>
+  </body>
+</html>

@@ -2,6 +2,8 @@
 
 Skill Hub 负责在线发布、发现、版本化下载 Skill。客户端仍然把下载后的 Skill 保存到本地 `client/be/data/skills`，所以用户可以离线继续使用。
 
+启动服务后访问 `http://localhost:4000/` 可以打开简约管理界面。
+
 ## 环境变量
 
 - `PORT`: 服务端口，默认 `4000`
