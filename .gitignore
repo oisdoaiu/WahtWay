@@ -3,3 +3,4 @@ dist/
 release/
 *.exe
 .env
+server/data/hub/

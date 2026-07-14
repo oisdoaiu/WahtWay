@@ -136,7 +136,16 @@ router.post("/download", async (req: Request, res: Response) => {
     const url = `${serverUrl.replace(/\/$/, "")}/api/skills/${skillId}/download`;
     const response = await fetch(url);
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    const skill = await response.json();
+    const payload = await response.json();
+    const skill = payload.skill || payload;
+    if (payload.skill) {
+      skill.hub = {
+        skillId: payload.source?.skillId || skillId,
+        version: payload.version,
+        checksum: payload.checksum,
+        downloadedAt: new Date().toISOString(),
+      };
+    }
 
     saveSkill(skill as Skill);
     res.json({ success: true, skill });
