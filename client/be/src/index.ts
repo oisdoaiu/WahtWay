@@ -9,9 +9,12 @@ import fs from "fs";
 import chatRouter from "./routes/chat";
 import skillsRouter from "./routes/skills";
 import { initSkills } from "./skills/loader";
+import { registerTool } from "./tools/registry";
+import { registerFileTools } from "./tools/file-tools";
 
-// 启动时加载所有 Skill
+// 启动时加载 Skill + 注册 Tool
 initSkills();
+registerFileTools(registerTool);
 
 const app = express();
 const PORT = process.env.PORT || 3000;

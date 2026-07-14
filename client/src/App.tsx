@@ -76,6 +76,14 @@ function ChatPanel({ showModal }: { showModal: boolean }) {
               setMessages((prev) =>
                 prev.map((m) => (m.id === assistantId ? { ...m, skillName: event.data.skillName } : m))
               );
+            } else if (event.type === "tool_call") {
+              setMessages((prev) =>
+                prev.map((m) => (m.id === assistantId ? { ...m, content: m.content + `\n\n🔧 调用工具 \`${event.data.toolName}\`...` } : m))
+              );
+            } else if (event.type === "tool_result") {
+              setMessages((prev) =>
+                prev.map((m) => (m.id === assistantId ? { ...m, content: m.content + ` ✅` } : m))
+              );
             } else if (event.type === "delta") {
               setMessages((prev) =>
                 prev.map((m) => (m.id === assistantId ? { ...m, content: m.content + event.data } : m))

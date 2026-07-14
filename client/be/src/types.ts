@@ -40,3 +40,11 @@ export interface TokenUsage {
   completionTokens: number;
   totalTokens: number;
 }
+
+// V0.9 Tool 定义
+export interface ToolDef {
+  name: string;
+  description: string;
+  parameters: JSONSchema;
+  execute: (args: Record<string, unknown>) => Promise<string>;
+}

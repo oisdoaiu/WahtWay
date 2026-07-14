@@ -1,12 +1,12 @@
-// Agent 核心 — V0.1 最简版本
-// 职责：接收用户消息 → 匹配 Skill → 组装 Prompt → 调用 LLM → 返回结果
+// Agent 核心 — V0.9 Agentic Loop + Tool Calling
+// 职责：匹配 Skill → LLM+Tool 循环 → 流式返回
 
 import OpenAI from "openai";
-import { Skill, AgentResult, TokenUsage } from "./types";
+import { Skill, AgentResult, TokenUsage, ToolDef } from "./types";
 import { registeredSkills } from "./skills/loader";
 import { matchSkillByKeywords } from "./skills/matcher";
+import { getTool, formatToolsForLLM } from "./tools/registry";
 
-// 延迟初始化 DeepSeek 客户端，避免模块加载时因缺 Key 崩溃
 let _client: OpenAI | null = null;
 function getClient(): OpenAI {
   if (!_client) {
@@ -18,137 +18,144 @@ function getClient(): OpenAI {
   return _client;
 }
 const MODEL = process.env.DEEPSEEK_MODEL || "deepseek-chat";
+const MAX_TOOL_ROUNDS = 10;
 
-/**
- * V0.1 最简匹配：只有一个 Skill，直接返回
- * 后期改为：把所有 Skill 描述发给 LLM，让它选
- */
 async function matchSkill(userMessage: string): Promise<Skill | null> {
   return matchSkillByKeywords(userMessage, registeredSkills);
 }
 
-/**
- * 执行 Skill：组装 Prompt → 调 LLM → 返回结果
- */
-async function executeSkill(
-  skill: Skill,
-  userMessage: string
-): Promise<AgentResult> {
-  const systemPrompt = skill.systemPrompt;
+// ---- 非流式 Agentic Loop ----
+async function agenticLoop(
+  systemPrompt: string,
+  userMessage: string,
+  onToolCall?: (name: string, args: Record<string, unknown>) => void,
+  onToolResult?: (name: string, result: string) => void
+): Promise<string> {
+  const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
+    { role: "system", content: systemPrompt },
+    { role: "user", content: userMessage },
+  ];
 
-  console.log(`🧠 已匹配 Skill: ${skill.name}`);
-  console.log("🚀 正在调用 LLM……\n");
+  const tools = formatToolsForLLM();
 
-  const response = await getClient().chat.completions.create({
-    model: MODEL,
-    messages: [
-      { role: "system", content: systemPrompt },
-      { role: "user", content: userMessage },
-    ],
-    temperature: 0.7,
-    max_tokens: 2048,
-    stream: false,
-  });
+  for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
+    const response = await getClient().chat.completions.create({
+      model: MODEL,
+      messages,
+      tools: tools.length > 0 ? tools as any : undefined,
+      temperature: 0.7,
+      max_tokens: 2048,
+      stream: false,
+    });
 
-  const choice = response.choices[0];
-  const output = choice?.message?.content || "（未获取到回复）";
-  const usage = response.usage;
+    const msg = response.choices[0]?.message;
+    if (!msg) return "（无回复）";
 
-  return {
-    skillName: skill.name,
-    skillId: skill.id,
-    output,
-    tokenUsage: {
-      promptTokens: usage?.prompt_tokens || 0,
-      completionTokens: usage?.completion_tokens || 0,
-      totalTokens: usage?.total_tokens || 0,
-    },
-  };
+    // 如果有 tool_calls，执行它们
+    if (msg.tool_calls && msg.tool_calls.length > 0) {
+      // 添加 assistant 消息（含 tool_calls）
+      messages.push({
+        role: "assistant",
+        content: msg.content || "",
+        tool_calls: msg.tool_calls as any,
+      } as any);
+
+      for (const tc of msg.tool_calls) {
+        const toolName = tc.function.name;
+        const args = JSON.parse(tc.function.arguments || "{}");
+
+        onToolCall?.(toolName, args);
+
+        const tool = getTool(toolName);
+        const result = tool
+          ? await tool.execute(args)
+          : `错误: 未知 Tool "${toolName}"`;
+
+        onToolResult?.(toolName, result);
+
+        // 添加 tool 结果消息
+        messages.push({
+          role: "tool",
+          tool_call_id: tc.id,
+          content: result,
+        } as any);
+      }
+      continue; // 继续下一轮，让 LLM 处理 Tool 结果
+    }
+
+    // 纯文本回复，结束循环
+    return msg.content || "（空回复）";
+  }
+
+  return "已达到最大工具调用轮数，请尝试更具体的问题。";
 }
 
-/**
- * 流式执行 Skill：组装 Prompt → 调 LLM（stream: true）→ 逐 token 返回
- * 返回 AsyncGenerator，yield 每个 delta token 和最终 done 事件
- */
+// ---- 流式执行 Skill（含 Tool Calling）----
+
+export interface StreamEvent {
+  type: "skill_matched" | "tool_call" | "tool_result" | "delta" | "done";
+  data: unknown;
+}
+
 export async function* executeSkillStream(
   skill: Skill,
   userMessage: string
 ): AsyncGenerator<StreamEvent> {
-  const systemPrompt = skill.systemPrompt;
-
-  const stream = await getClient().chat.completions.create({
-    model: MODEL,
-    messages: [
-      { role: "system", content: systemPrompt },
-      { role: "user", content: userMessage },
-    ],
-    temperature: 0.7,
-    max_tokens: 2048,
-    stream: true,
-  });
-
-  let fullContent = "";
-  let usage: TokenUsage | null = null;
-
-  // 在流开始前，先推 Skill 匹配信息
+  // 推送 Skill 匹配信息
   yield {
     type: "skill_matched",
     data: { skillName: skill.name, skillId: skill.id },
   };
 
-  for await (const chunk of stream) {
-    const delta = chunk.choices[0]?.delta?.content;
-    if (delta) {
-      fullContent += delta;
-      yield { type: "delta", data: delta };
-    }
+  // Agentic Loop（非流式），收集 tool 调用事件
+  const toolEvents: StreamEvent[] = [];
 
-    // 最后一个 chunk 可能带 usage（DeepSeek 特性）
-    if (chunk.usage) {
-      usage = {
-        promptTokens: chunk.usage.prompt_tokens || 0,
-        completionTokens: chunk.usage.completion_tokens || 0,
-        totalTokens: chunk.usage.total_tokens || 0,
-      };
+  const finalText = await agenticLoop(
+    skill.systemPrompt,
+    userMessage,
+    (name, args) => {
+      toolEvents.push({ type: "tool_call", data: { toolName: name, args } });
+    },
+    (name, result) => {
+      toolEvents.push({
+        type: "tool_result",
+        data: { toolName: name, result: result.slice(0, 500) },
+      });
     }
+  );
+
+  // 先推 Tool 事件
+  for (const ev of toolEvents) {
+    yield ev;
   }
 
-  // 流结束
-  yield {
-    type: "done",
-    data: {
-      fullContent,
-      tokenUsage: usage,
-    },
-  };
+  // 把最终回复按字符拆成 delta 推送（模拟流式效果）
+  for (const char of finalText) {
+    yield { type: "delta", data: char };
+    await sleep(15); // 模拟打字机节奏
+  }
+
+  yield { type: "done", data: { fullContent: finalText } };
 }
 
-export interface StreamEvent {
-  type: "skill_matched" | "delta" | "done";
-  data: unknown;
+function sleep(ms: number): Promise<void> {
+  return new Promise((r) => setTimeout(r, ms));
 }
 
-/**
- * Agent 主入口（非流式，V0.1 保留兼容）
- */
+// ---- 入口 ----
+
 export async function runAgent(userMessage: string): Promise<AgentResult> {
   const skill = await matchSkill(userMessage);
-  if (!skill) {
-    throw new Error("未找到合适的 Skill，请尝试更明确的描述。");
-  }
-  return executeSkill(skill, userMessage);
+  if (!skill) throw new Error("未找到合适的 Skill");
+  const output = await agenticLoop(skill.systemPrompt, userMessage);
+  return { skillName: skill.name, skillId: skill.id, output, tokenUsage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 } };
 }
 
-/**
- * Agent 流式入口 — V0.2 新增
- */
 export async function runAgentStream(
   userMessage: string
 ): Promise<AsyncGenerator<StreamEvent>> {
   const skill = await matchSkill(userMessage);
-  if (!skill) {
-    throw new Error("未找到合适的 Skill，请尝试更明确的描述。");
-  }
+  if (!skill) throw new Error("未找到合适的 Skill，请尝试更明确的描述。");
   return executeSkillStream(skill, userMessage);
 }
 
