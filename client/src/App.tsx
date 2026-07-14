@@ -39,6 +39,9 @@ function ChatPanel({ showModal }: { showModal: boolean }) {
     const text = input.trim();
     if (!text || streaming) return;
 
+    // 捕获当前消息列表作为历史（多轮对话上下文）
+    const currentMessages = [...messages];
+
     const userMsg: Message = { id: Date.now().toString(), role: "user", content: text };
     setMessages((prev) => [...prev, userMsg]);
     setInput("");
@@ -47,11 +50,14 @@ function ChatPanel({ showModal }: { showModal: boolean }) {
     const assistantId = (Date.now() + 1).toString();
     setMessages((prev) => [...prev, { id: assistantId, role: "assistant", content: "" }]);
 
+    // 构建历史消息（不含当前正在发的这对）
+    const history = currentMessages.map((m) => ({ role: m.role, content: m.content }));
+
     try {
       const response = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: text }),
+        body: JSON.stringify({ message: text, history }),
       });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
 

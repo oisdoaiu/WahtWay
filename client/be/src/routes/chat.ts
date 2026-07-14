@@ -6,7 +6,7 @@ import { runAgentStream } from "../agent";
 const router = Router();
 
 router.post("/", async (req: Request, res: Response) => {
-  const { message } = req.body;
+  const { message, history } = req.body;
 
   if (!message || typeof message !== "string") {
     res.status(400).json({ error: "请提供 message 字段" });
@@ -21,7 +21,7 @@ router.post("/", async (req: Request, res: Response) => {
   res.flushHeaders();
 
   try {
-    const stream = await runAgentStream(message);
+    const stream = await runAgentStream(message, history);
 
     for await (const event of stream) {
       // 每段数据以 "data: <json>\n\n" 格式推送

@@ -1,9 +1,10 @@
 {
   "name": "wahtway-client-be",
   "version": "0.7.0",
+  "type": "commonjs",
   "description": "WahtWay 客户端内嵌后端",
   "scripts": {
-    "dev": "ts-node src/index.ts"
+    "dev": "ts-node --transpile-only src/index.ts"
   },
   "dependencies": {
     "cors": "^2.8.5",

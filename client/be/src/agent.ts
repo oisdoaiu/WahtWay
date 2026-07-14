@@ -28,13 +28,25 @@ async function matchSkill(userMessage: string): Promise<Skill | null> {
 async function agenticLoop(
   systemPrompt: string,
   userMessage: string,
+  history?: { role: string; content: string }[],
   onToolCall?: (name: string, args: Record<string, unknown>) => void,
   onToolResult?: (name: string, result: string) => void
 ): Promise<string> {
   const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
     { role: "system", content: systemPrompt },
-    { role: "user", content: userMessage },
   ];
+
+  // 注入历史对话（V0.10 多轮记忆）
+  if (history) {
+    for (const h of history) {
+      if (h.role === "user" || h.role === "assistant") {
+        messages.push(h as any);
+      }
+    }
+  }
+
+  // 当前用户消息
+  messages.push({ role: "user", content: userMessage });
 
   const tools = formatToolsForLLM();
 
@@ -99,7 +111,8 @@ export interface StreamEvent {
 
 export async function* executeSkillStream(
   skill: Skill,
-  userMessage: string
+  userMessage: string,
+  history?: { role: string; content: string }[]
 ): AsyncGenerator<StreamEvent> {
   // 推送 Skill 匹配信息
   yield {
@@ -113,6 +126,7 @@ export async function* executeSkillStream(
   const finalText = await agenticLoop(
     skill.systemPrompt,
     userMessage,
+    history,
     (name, args) => {
       toolEvents.push({ type: "tool_call", data: { toolName: name, args } });
     },
@@ -152,11 +166,12 @@ export async function runAgent(userMessage: string): Promise<AgentResult> {
 }
 
 export async function runAgentStream(
-  userMessage: string
+  userMessage: string,
+  history?: { role: string; content: string }[]
 ): Promise<AsyncGenerator<StreamEvent>> {
   const skill = await matchSkill(userMessage);
   if (!skill) throw new Error("未找到合适的 Skill，请尝试更明确的描述。");
-  return executeSkillStream(skill, userMessage);
+  return executeSkillStream(skill, userMessage, history);
 }
 
 export { matchSkill };
