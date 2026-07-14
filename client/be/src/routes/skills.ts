@@ -5,7 +5,7 @@
 
 import { Router, Request, Response } from "express";
 import OpenAI from "openai";
-import { registeredSkills, saveSkill } from "../skills/loader";
+import { registeredSkills, saveSkill, deleteSkill } from "../skills/loader";
 import { Skill } from "../types";
 
 const router = Router();
@@ -142,6 +142,16 @@ router.post("/download", async (req: Request, res: Response) => {
     res.json({ success: true, skill });
   } catch (err: any) {
     res.status(500).json({ error: `下载失败: ${err.message}` });
+  }
+});
+
+// DELETE /api/skills/:id — 删除 Skill
+router.delete("/:id", (req: Request, res: Response) => {
+  try {
+    deleteSkill(req.params.id);
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
   }
 });
 

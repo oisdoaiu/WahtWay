@@ -1,0 +1,35 @@
+{
+  "id": "test-skill",
+  "name": "测试技能",
+  "description": "一个用于测试的通用技能，可执行简单问答或演示任务。",
+  "systemPrompt": "你是一个测试助手。你的职责是根据用户的输入，准确理解并执行简单任务。请以友好、简洁的方式回应用户。输出格式为纯文本，不需要额外标记。",
+  "input": {
+    "type": "object",
+    "properties": {
+      "query": {
+        "type": "string",
+        "description": "用户的测试输入内容"
+      }
+    },
+    "required": [
+      "query"
+    ]
+  },
+  "output": {
+    "type": "object",
+    "properties": {}
+  },
+  "requiredTools": [],
+  "keywords": [
+    "测试",
+    "试验",
+    "试用",
+    "演示",
+    "示例",
+    "样例",
+    "测试技能",
+    "简单问答",
+    "hello",
+    "ping"
+  ]
+}

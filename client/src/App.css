@@ -584,3 +584,16 @@ body {
   resize: vertical;
   min-height: 80px;
 }
+
+.skill-delete-btn {
+  margin-left: auto;
+  border: none;
+  background: none;
+  font-size: 16px;
+  cursor: pointer;
+  opacity: 0.4;
+  transition: opacity 0.2s;
+}
+.skill-delete-btn:hover { opacity: 1; }
+
+.modal-msg { background: #fff3cd; color: #856404; padding: 8px 12px; border-radius: 8px; font-size: 13px; margin-bottom: 10px; }

@@ -21,7 +21,7 @@ router.post("/", async (req: Request, res: Response) => {
   res.flushHeaders();
 
   try {
-    const stream = runAgentStream(message);
+    const stream = await runAgentStream(message);
 
     for await (const event of stream) {
       // 每段数据以 "data: <json>\n\n" 格式推送

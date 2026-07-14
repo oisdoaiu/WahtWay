@@ -23,7 +23,7 @@ const MODEL = process.env.DEEPSEEK_MODEL || "deepseek-chat";
  * V0.1 最简匹配：只有一个 Skill，直接返回
  * 后期改为：把所有 Skill 描述发给 LLM，让它选
  */
-function matchSkill(userMessage: string): Skill | null {
+async function matchSkill(userMessage: string): Promise<Skill | null> {
   return matchSkillByKeywords(userMessage, registeredSkills);
 }
 
@@ -132,7 +132,7 @@ export interface StreamEvent {
  * Agent 主入口（非流式，V0.1 保留兼容）
  */
 export async function runAgent(userMessage: string): Promise<AgentResult> {
-  const skill = matchSkill(userMessage);
+  const skill = await matchSkill(userMessage);
   if (!skill) {
     throw new Error("未找到合适的 Skill，请尝试更明确的描述。");
   }
@@ -142,10 +142,10 @@ export async function runAgent(userMessage: string): Promise<AgentResult> {
 /**
  * Agent 流式入口 — V0.2 新增
  */
-export function runAgentStream(
+export async function runAgentStream(
   userMessage: string
-): AsyncGenerator<StreamEvent> {
-  const skill = matchSkill(userMessage);
+): Promise<AsyncGenerator<StreamEvent>> {
+  const skill = await matchSkill(userMessage);
   if (!skill) {
     throw new Error("未找到合适的 Skill，请尝试更明确的描述。");
   }

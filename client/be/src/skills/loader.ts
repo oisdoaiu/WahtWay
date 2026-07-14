@@ -80,6 +80,19 @@ export function loadSkills(): Skill[] {
 export let registeredSkills: Skill[] = [];
 
 /**
+ * 删除 Skill JSON 文件并重载注册表
+ */
+export function deleteSkill(skillId: string): void {
+  const filePath = path.join(getSkillsDir(), `${skillId}.json`);
+  if (!fs.existsSync(filePath)) {
+    throw new Error(`Skill 文件不存在: ${skillId}`);
+  }
+  fs.unlinkSync(filePath);
+  console.log(`🗑️ 已删除 Skill: ${skillId}`);
+  registeredSkills = loadSkills();
+}
+
+/**
  * 初始化：加载所有 Skill 并填充注册表
  */
 export function initSkills(): void {

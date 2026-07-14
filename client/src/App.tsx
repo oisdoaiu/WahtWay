@@ -24,7 +24,7 @@ interface SkillMeta {
 
 // ---- 对话面板 ----
 
-function ChatPanel() {
+function ChatPanel({ showModal }: { showModal: boolean }) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [streaming, setStreaming] = useState(false);
@@ -143,6 +143,7 @@ function ChatPanel() {
 
       <footer className="input-area">
         <textarea
+          id="chat-input"
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={handleKeyDown}
@@ -158,17 +159,24 @@ function ChatPanel() {
 
 // ---- Skill 库面板 ----
 
-function SkillsPanel({ onCreateSkill }: { onCreateSkill: () => void }) {
+function SkillsPanel({ onCreateSkill, active, skillsVersion }: { onCreateSkill: () => void; active: boolean; skillsVersion: number }) {
   const [skills, setSkills] = useState<SkillMeta[]>([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
+  const fetchSkills = () => {
+    setLoading(true);
     fetch("/api/skills")
       .then((res) => res.json())
-      .then((data) => setSkills(data.skills || []))
-      .catch(() => setSkills([]))
-      .finally(() => setLoading(false));
-  }, []);
+      .then((data) => { setSkills(data.skills || []); setLoading(false); })
+      .catch(() => { setSkills([]); setLoading(false); });
+  };
+
+  useEffect(() => { if (active) fetchSkills(); }, [active, skillsVersion]);
+
+  const deleteSkill = async (id: string) => {
+    await fetch(`/api/skills/${id}`, { method: "DELETE" });
+    fetchSkills();
+  };
 
   if (loading) return <div className="skills-loading">加载中...</div>;
 
@@ -186,6 +194,7 @@ function SkillsPanel({ onCreateSkill }: { onCreateSkill: () => void }) {
             <div className="skill-card-header">
               <h3>🧠 {skill.name}</h3>
               <code>{skill.id}</code>
+              <button className="skill-delete-btn" onClick={() => deleteSkill(skill.id)}>🗑️</button>
             </div>
             <p className="skill-card-desc">{skill.description}</p>
 
@@ -228,14 +237,17 @@ function SkillsPanel({ onCreateSkill }: { onCreateSkill: () => void }) {
 function CreateSkillModal({
   show,
   onClose,
+  onSaved,
 }: {
   show: boolean;
   onClose: () => void;
+  onSaved: () => void;
 }) {
   const [step, setStep] = useState<"describe" | "edit">("describe");
   const [skillDesc, setSkillDesc] = useState("");
   const [generating, setGenerating] = useState(false);
   const [editSkill, setEditSkill] = useState<Record<string, any> | null>(null);
+  const [msg, setMsg] = useState("");
 
   if (!show) return null;
 
@@ -253,10 +265,10 @@ function CreateSkillModal({
         setEditSkill(data.skill);
         setStep("edit");
       } else {
-        alert("生成失败: " + (data.error || "未知错误"));
+        setMsg("生成失败: " + (data.error || "未知错误"));
       }
     } catch (err: any) {
-      alert("请求失败: " + err.message);
+      setMsg("请求失败: " + err.message);
     } finally {
       setGenerating(false);
     }
@@ -280,13 +292,13 @@ function CreateSkillModal({
       });
       const data = await res.json();
       if (data.success) {
-        alert(`Skill「${skill.name}」创建成功！`);
+        onSaved();
         handleClose();
       } else {
-        alert("保存失败: " + (data.error || "未知错误"));
+        setMsg("保存失败: " + (data.error || "未知错误"));
       }
     } catch (err: any) {
-      alert("保存失败: " + err.message);
+      setMsg("保存失败: " + err.message);
     }
   };
 
@@ -307,6 +319,7 @@ function CreateSkillModal({
 
         {step === "describe" ? (
           <div className="modal-body">
+            {msg && <p className="modal-msg">{msg}</p>}
             <p className="modal-hint">用自然语言描述你想要的技能，AI 会自动生成完整的 Skill 定义。</p>
             <textarea
               className="modal-textarea"
@@ -325,6 +338,7 @@ function CreateSkillModal({
           </div>
         ) : (
           <div className="modal-body">
+            {msg && <p className="modal-msg">{msg}</p>}
             <p className="modal-hint">以下是 AI 生成的 Skill 定义，你可以修改后保存。</p>
             {editSkill && (
               <div className="edit-form">
@@ -363,16 +377,15 @@ function CreateSkillModal({
 export default function App() {
   const [view, setView] = useState<"chat" | "skills">("chat");
   const [showModal, setShowModal] = useState(false);
+  const [skillsVersion, setSkillsVersion] = useState(0);
 
   return (
     <div className="app">
-      {/* 侧边栏 */}
       <nav className="sidebar">
         <div className="sidebar-brand">
           <h2>WahtWay</h2>
           <span>何以委</span>
         </div>
-
         <div className="sidebar-nav">
           <button className={`nav-item ${view === "chat" ? "active" : ""}`} onClick={() => setView("chat")}>
             <span className="nav-icon">💬</span>
@@ -383,7 +396,6 @@ export default function App() {
             <span>Skill 库</span>
           </button>
         </div>
-
         <div className="sidebar-footer">
           <button className="nav-item" onClick={() => setShowModal(true)}>
             <span className="nav-icon">✨</span>
@@ -391,18 +403,10 @@ export default function App() {
           </button>
         </div>
       </nav>
-
-      {/* 主内容区 */}
       <div className="main-content">
-        {view === "chat" ? (
-          <ChatPanel />
-        ) : (
-          <SkillsPanel onCreateSkill={() => setShowModal(true)} />
-        )}
+        {view === "chat" ? <ChatPanel showModal={showModal} /> : <SkillsPanel onCreateSkill={() => setShowModal(true)} active={view === "skills"} skillsVersion={skillsVersion} />}
       </div>
-
-      {/* 创建 Skill 弹窗 */}
-      <CreateSkillModal show={showModal} onClose={() => setShowModal(false)} />
+      <CreateSkillModal show={showModal} onClose={() => setShowModal(false)} onSaved={() => setSkillsVersion(v => v + 1)} />
     </div>
   );
 }

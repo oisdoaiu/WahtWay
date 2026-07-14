@@ -53,7 +53,11 @@ app.whenReady().then(async () => {
   mainWindow = new BrowserWindow({
     width: 1000, height: 700, minWidth: 600, minHeight: 400,
     title: "WahtWay - 何以委",
-    webPreferences: { nodeIntegration: false, contextIsolation: true },
+    webPreferences: {
+      nodeIntegration: false,
+      contextIsolation: true,
+      preload: path.join(__dirname, "preload.cjs"),
+    },
   });
 
   // 等 Express 就绪
@@ -61,6 +65,18 @@ app.whenReady().then(async () => {
     mainWindow.loadURL("http://localhost:3000");
   }, 1500);
   mainWindow.setMenuBarVisibility(false);
+
+  // 修复焦点丢失：页面加载完成后强制聚焦
+  mainWindow.webContents.on("did-finish-load", () => {
+    mainWindow.show();
+    mainWindow.focus();
+    mainWindow.webContents.focus();
+  });
+
+  // 窗口获得焦点时，聚焦 web 内容
+  mainWindow.on("focus", () => {
+    mainWindow.webContents.focus();
+  });
 });
 
 app.on("window-all-closed", () => app.quit());
