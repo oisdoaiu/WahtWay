@@ -62,6 +62,7 @@ router.get("/", (_req: Request, res: Response) => {
     id: s.id,
     name: s.name,
     description: s.description,
+    systemPrompt: s.systemPrompt,
     input: s.input,
     output: s.output,
     requiredTools: s.requiredTools,

@@ -1,9 +1,21 @@
-// WahtWay preload — 修复 Electron 焦点丢失
+// WahtWay preload — 修复 Electron 焦点丢失 + 暴露文件路径 API
 // 在 renderer 进程中运行，可访问部分 Node.js API
 
-const { contextBridge } = require("electron");
+const { contextBridge, webUtils, ipcRenderer } = require("electron");
 
-contextBridge.exposeInMainWorld("electronAPI", {});
+contextBridge.exposeInMainWorld("electronAPI", {
+  // 获取拖拽文件的完整绝对路径
+  getFilePath: (file) => {
+    try {
+      if (webUtils && webUtils.getPathForFile) {
+        return webUtils.getPathForFile(file);
+      }
+    } catch {}
+    return file.path || file.name;
+  },
+  // 打开原生文件选择对话框
+  openFileDialog: () => ipcRenderer.invoke("open-file-dialog"),
+});
 
 // 关键修复：劫持任意点击，确保焦点落到对应元素
 window.addEventListener("mousedown", (e) => {

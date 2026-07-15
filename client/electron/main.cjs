@@ -1,5 +1,5 @@
 // WahtWay Electron 主进程
-const { app, BrowserWindow } = require("electron");
+const { app, BrowserWindow, dialog, ipcMain } = require("electron");
 const path = require("path");
 const fs = require("fs");
 let mainWindow = null;
@@ -21,6 +21,15 @@ function loadEnv() {
   }
   console.warn("⚠️ 未找到 .env，请配置 API Key");
 }
+
+// IPC: 打开文件选择对话框
+ipcMain.handle("open-file-dialog", async () => {
+  const result = await dialog.showOpenDialog(mainWindow, {
+    properties: ["openFile", "multiSelections"],
+    title: "选择文件",
+  });
+  return result.canceled ? [] : result.filePaths;
+});
 
 app.whenReady().then(async () => {
   loadEnv();

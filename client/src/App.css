@@ -712,3 +712,43 @@ body {
   border-top: 1px solid #eee; font-size: 11px; color: #aaa;
   font-family: "SF Mono", "Fira Code", "Courier New", monospace;
 }
+
+/* === 拖拽上传 === */
+.input-area.drag-over { background: #f0f7ff; border: 2px dashed #1a73e8; border-radius: 12px; }
+.drop-hint { position: absolute; top: -36px; left: 50%; transform: translateX(-50%); background: #1a73e8; color: #fff; padding: 6px 16px; border-radius: 8px; font-size: 13px; pointer-events: none; z-index: 10; }
+
+.skill-edit-btn:hover { opacity: 1; color: #1a73e8; border-color: #1a73e8; }
+
+/* === 文件上传按钮 === */
+.file-add-wrapper { position: relative; }
+.file-add-btn {
+  width: 32px; height: 32px; border: 1px dashed #ccc; border-radius: 8px;
+  background: #fafafa; color: #999; font-size: 18px; cursor: pointer;
+  display: flex; align-items: center; justify-content: center; transition: all 0.2s;
+}
+.file-add-btn:hover { border-color: #1a73e8; color: #1a73e8; background: #f0f7ff; }
+.file-add-menu {
+  position: absolute; bottom: 100%; left: 0; margin-bottom: 4px;
+  background: #fff; border: 1px solid #e0e0e0; border-radius: 10px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.1); z-index: 50; min-width: 180px;
+}
+.file-add-menu-item {
+  padding: 10px 16px; cursor: pointer; font-size: 13px; border-radius: 10px;
+  transition: background 0.15s;
+}
+.file-add-menu-item:hover { background: #f0f7ff; }
+
+/* === 附件文件 chips === */
+.attached-files {
+  display: flex; flex-wrap: wrap; gap: 8px; padding: 8px 0;
+}
+.file-chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: #e8f0fe; color: #1a73e8; padding: 4px 10px;
+  border-radius: 8px; font-size: 12px; max-width: 200px;
+}
+.file-chip-remove {
+  background: none; border: none; color: #999; cursor: pointer;
+  font-size: 14px; padding: 0 2px; line-height: 1;
+}
+.file-chip-remove:hover { color: #c62828; }
