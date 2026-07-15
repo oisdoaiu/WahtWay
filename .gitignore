@@ -3,3 +3,5 @@ dist/
 release/
 *.exe
 .env
+# Skill Hub 运行时数据（服务端启动时自动生成）
+server/data/hub/
