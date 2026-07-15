@@ -612,3 +612,15 @@ body {
 
 .sidebar-reset { padding: 8px 12px; font-size: 11px; color: #ccc; cursor: pointer; text-align: center; }
 .sidebar-reset:hover { color: #e74c3c; }
+
+.debug-panel { max-height: 200px; overflow-y: auto; font-size: 11px; padding: 4px 0; border-top: 1px solid #333; }
+.debug-panel-header { display: flex; justify-content: space-between; padding: 2px 8px; color: #888; }
+.debug-panel-header button { background: none; border: none; color: #888; cursor: pointer; font-size: 10px; }
+.debug-event { display: flex; gap: 6px; padding: 2px 8px; }
+.debug-badge { font-size: 10px; padding: 0 4px; border-radius: 3px; background: #555; color: #fff; min-width: 50px; text-align: center; }
+.debug-badge.tool_call { background: #1a73e8; }
+.debug-badge.tool_result { background: #34a853; }
+.debug-badge.error { background: #ea4335; }
+.debug-badge.skill { background: #f9ab00; }
+.debug-badge.done { background: #888; }
+.debug-data { color: #ccc; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

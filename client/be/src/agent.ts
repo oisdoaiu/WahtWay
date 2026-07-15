@@ -6,6 +6,7 @@ import { Skill, AgentResult, TokenUsage, ToolDef } from "./types";
 import { registeredSkills } from "./skills/loader";
 import { matchSkillByKeywords } from "./skills/matcher";
 import { getTool, formatToolsForLLM } from "./tools/registry";
+import { logger } from "./logger";
 
 let _client: OpenAI | null = null;
 function getClient(): OpenAI {
@@ -29,10 +30,17 @@ async function agenticLoop(
   systemPrompt: string,
   userMessage: string,
   history?: { role: string; content: string }[],
+  traceId?: string,
   onToolCall?: (name: string, args: Record<string, unknown>) => void,
   onToolResult?: (name: string, result: string) => void
 ): Promise<string> {
+  const log = logger(traceId || "no-trace", "agent");
   const toolPolicy = `
+## 系统信息
+- 用户主目录: ${require("os").homedir()}
+- 桌面路径: ${require("os").homedir() + "\\Desktop"}
+- 文档路径: ${require("os").homedir() + "\\Documents"}
+
 ## 工具使用规范（必须遵守）
 - 你有一组系统工具可用，每个工具的 description 已经说明了适用场景
 - 只在用户明确要求执行对应操作时才调用工具，不要在闲聊、问候、建议类对话中自动调用
@@ -59,6 +67,8 @@ async function agenticLoop(
   const tools = formatToolsForLLM();
 
   for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
+    log.info("llm_call", { round, toolsAvailable: tools.length });
+    const t0 = Date.now();
     const response = await getClient().chat.completions.create({
       model: MODEL,
       messages,
@@ -67,9 +77,17 @@ async function agenticLoop(
       max_tokens: 2048,
       stream: false,
     });
+    const elapsed = Date.now() - t0;
 
     const msg = response.choices[0]?.message;
     if (!msg) return "（无回复）";
+    log.info("llm_response", {
+      round,
+      elapsed: `${elapsed}ms`,
+      hasToolCalls: !!(msg.tool_calls?.length),
+      contentLen: msg.content?.length || 0,
+      tokens: response.usage?.total_tokens,
+    });
 
     // 如果有 tool_calls，执行它们
     if (msg.tool_calls && msg.tool_calls.length > 0) {
@@ -83,13 +101,21 @@ async function agenticLoop(
       for (const tc of msg.tool_calls) {
         const toolName = tc.function.name;
         const args = JSON.parse(tc.function.arguments || "{}");
+        log.info("tool_call", { tool: toolName, args });
 
         onToolCall?.(toolName, args);
 
+        const tt0 = Date.now();
         const tool = getTool(toolName);
         const result = tool
           ? await tool.execute(args)
           : `错误: 未知 Tool "${toolName}"`;
+        log.info("tool_result", {
+          tool: toolName,
+          elapsed: `${Date.now() - tt0}ms`,
+          resultLen: result.length,
+          resultPreview: result.slice(0, 100),
+        });
 
         onToolResult?.(toolName, result);
 
@@ -120,8 +146,12 @@ export interface StreamEvent {
 export async function* executeSkillStream(
   skill: Skill,
   userMessage: string,
-  history?: { role: string; content: string }[]
+  history?: { role: string; content: string }[],
+  traceId?: string
 ): AsyncGenerator<StreamEvent> {
+  const log = logger(traceId || "no-trace", "skill");
+  log.info("matched", { skillId: skill.id, skillName: skill.name });
+
   // 推送 Skill 匹配信息
   yield {
     type: "skill_matched",
@@ -135,6 +165,7 @@ export async function* executeSkillStream(
     skill.systemPrompt,
     userMessage,
     history,
+    traceId,
     (name, args) => {
       toolEvents.push({ type: "tool_call", data: { toolName: name, args } });
     },
@@ -175,11 +206,18 @@ export async function runAgent(userMessage: string): Promise<AgentResult> {
 
 export async function runAgentStream(
   userMessage: string,
-  history?: { role: string; content: string }[]
+  history?: { role: string; content: string }[],
+  traceId?: string
 ): Promise<AsyncGenerator<StreamEvent>> {
+  const log = logger(traceId || "no-trace", "agent");
+  log.info("start", { msgLen: userMessage.length });
+
   const skill = await matchSkill(userMessage);
-  if (!skill) throw new Error("未找到合适的 Skill，请尝试更明确的描述。");
-  return executeSkillStream(skill, userMessage, history);
+  if (!skill) {
+    log.warn("no_match", { message: userMessage.slice(0, 50) });
+    throw new Error("未找到合适的 Skill，请尝试更明确的描述。");
+  }
+  return executeSkillStream(skill, userMessage, history, traceId);
 }
 
 export { matchSkill };

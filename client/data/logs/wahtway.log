@@ -1,0 +1,10 @@
+{"ts":"2026-07-15 12:30:54.034","lv":"INFO","mod":"chat","tid":"e8d839d0","evt":"request","msgLen":4,"historyLen":8}
+{"ts":"2026-07-15 12:30:54.037","lv":"INFO","mod":"agent","tid":"e8d839d0","evt":"start","msgLen":4}
+{"ts":"2026-07-15 12:30:54.904","lv":"INFO","mod":"skill","tid":"e8d839d0","evt":"matched","skillId":"code-explain","skillName":"代码解释助手"}
+{"ts":"2026-07-15 12:30:54.906","lv":"INFO","mod":"agent","tid":"e8d839d0","evt":"llm_call","round":0,"toolsAvailable":4}
+{"ts":"2026-07-15 12:30:55.861","lv":"INFO","mod":"agent","tid":"e8d839d0","evt":"llm_response","round":0,"elapsed":"954ms","hasToolCalls":true,"contentLen":18,"tokens":1165}
+{"ts":"2026-07-15 12:30:55.861","lv":"INFO","mod":"agent","tid":"e8d839d0","evt":"tool_call","tool":"list-files","args":{"directory":"C:\\Users\\asus\\Desktop"}}
+{"ts":"2026-07-15 12:30:55.890","lv":"INFO","mod":"agent","tid":"e8d839d0","evt":"tool_result","tool":"list-files","elapsed":"24ms","resultLen":2626,"resultPreview":"目录 \"C:\\Users\\asus\\Desktop\" 包含 57 个项目:\n📄 1.cpp  3.4 KB  2026/6/3 19:49:23\n📄 1.exe  2.1 MB  2026/6/3"}
+{"ts":"2026-07-15 12:30:55.891","lv":"INFO","mod":"agent","tid":"e8d839d0","evt":"llm_call","round":1,"toolsAvailable":4}
+{"ts":"2026-07-15 12:31:00.463","lv":"INFO","mod":"agent","tid":"e8d839d0","evt":"llm_response","round":1,"elapsed":"4572ms","hasToolCalls":false,"contentLen":946,"tokens":3198}
+{"ts":"2026-07-15 12:31:18.072","lv":"INFO","mod":"chat","tid":"e8d839d0","evt":"done"}

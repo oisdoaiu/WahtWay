@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { DEBUG } from "./debug";
+import { DEBUG, addDebugEvent, getDebugEvents, onDebugEvents, clearDebugEvents } from "./debug";
 import {
   getMessages, isStreaming, setMessages, appendMessage,
   appendToLast, setStreaming, subscribe,
@@ -100,11 +100,12 @@ function ChatPanel({ conversationId, onTitleChange }: { showModal: boolean; conv
           if (!line.startsWith("data: ")) continue;
           try {
             const event = JSON.parse(line.slice(6));
-            if (event.type === "skill_matched") setSkillName(event.data.skillName);
-            else if (event.type === "tool_call") appendToLast(conversationId, `\n\n🔧 调用工具 \`${event.data.toolName}\`...`);
-            else if (event.type === "tool_result") appendToLast(conversationId, " ✅");
+            if (event.type === "skill_matched") { setSkillName(event.data.skillName); addDebugEvent("skill", event.data.skillName); }
+            else if (event.type === "tool_call") { appendToLast(conversationId, `\n\n🔧 调用工具 \`${event.data.toolName}\`...`); addDebugEvent("tool_call", event.data.toolName); }
+            else if (event.type === "tool_result") { appendToLast(conversationId, " ✅"); addDebugEvent("tool_result", "完成"); }
             else if (event.type === "delta") appendToLast(conversationId, event.data);
-            else if (event.type === "error") appendToLast(conversationId, `\n\n❌ ${event.data}`);
+            else if (event.type === "error") { appendToLast(conversationId, `\n\n❌ ${event.data}`); addDebugEvent("error", event.data); }
+            else if (event.type === "done") addDebugEvent("done", "流结束");
           } catch { /* skip */ }
         }
       }
@@ -359,6 +360,27 @@ export default function App() {
         )}
       </div>
       <CreateSkillModal show={showModal} onClose={() => setShowModal(false)} onSaved={() => setSkillsVersion(v => v + 1)} />
+    </div>
+  );
+}
+
+function DebugPanel() {
+  const [, setTick] = useState(0);
+  useEffect(() => onDebugEvents(() => setTick((t) => t + 1)), []);
+  const events = getDebugEvents();
+  if (events.length === 0) return null;
+  return (
+    <div className="debug-panel">
+      <div className="debug-panel-header">
+        <span>📋 事件日志</span>
+        <button onClick={clearDebugEvents}>清空</button>
+      </div>
+      {events.slice(0, 20).map((e, i) => (
+        <div key={i} className="debug-event">
+          <span className={"debug-badge " + e.type}>{e.type}</span>
+          <span className="debug-data">{e.data}</span>
+        </div>
+      ))}
     </div>
   );
 }
