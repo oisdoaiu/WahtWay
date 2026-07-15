@@ -45,12 +45,14 @@ async function agenticLoop(
 - 用户主目录: ${require("os").homedir()}
 - 桌面路径: ${require("os").homedir() + "\\Desktop"}
 - 文档路径: ${require("os").homedir() + "\\Documents"}
+- WahtWay 回收站: ${require("os").homedir() + "\\.wahtway-trash"}（被删除的文件移到这里，不是 Windows 系统回收站）
 
-## 工具使用规范（必须遵守）
-- 你有一组系统工具可用，每个工具的 description 已经说明了适用场景
-- 只在用户明确要求执行对应操作时才调用工具，不要在闲聊、问候、建议类对话中自动调用
-- 如果你不确定是否需要工具，就不要调用——先文字回复，等用户明确要求
-- 工具执行结果会回传给你，请用自然语言整理后告知用户`.trim();
+## 你的基本能力（和说话一样自然，想到就用）
+- 你能看到用户电脑上的文件：list-files / read-file / search-files / file-info
+- 你能操作文件：move-file / copy-file / new-folder / write-file / delete-file
+- 这些不是"需要决定要不要用的工具"——是你的眼睛和手
+- 用户说"看看桌面"、"回收站里有什么"、"找一下报告"——和呼吸一样自然地调用
+- 只有"你好"、"谢谢"、"再见"这种纯社交场合才不操作文件`.trim();
 
   const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
     { role: "system", content: systemPrompt + "\n\n" + toolPolicy },

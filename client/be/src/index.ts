@@ -12,7 +12,7 @@ import conversationsRouter from "./routes/conversations";
 import { initSkills, getSkillsDir } from "./skills/loader";
 import { setModel, getCurrentModel } from "./agent";
 import { registerTool } from "./tools/registry";
-import { registerFileTools } from "./tools/file-tools";
+import { registerFileTools, approvePath } from "./tools/file-tools";
 
 // 启动时加载 Skill + 注册 Tool
 initSkills();
@@ -35,6 +35,15 @@ if (fs.existsSync(publicDir)) {
 app.use("/api/chat", chatRouter);
 app.use("/api/skills", skillsRouter);
 app.use("/api/conversations", conversationsRouter);
+
+// 临时授权：批准某个路径的操作
+app.post("/api/tools/approve", (req, res) => {
+  const { path: p } = req.body;
+  if (!p) return res.status(400).json({ error: "请提供 path" });
+  approvePath(p);
+  console.log(`🔓 已授权路径: ${p}`);
+  res.json({ success: true });
+});
 
 // 健康检查
 // 重置：清空对话 + 清空用户创建的 Skill，保留内置 Skill

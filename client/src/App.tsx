@@ -29,11 +29,13 @@ function ChatPanel({ conversationId, onTitleChange, onCreateSkill }: { showModal
   const [input, setInput] = useState("");
   const [skillName, setSkillName] = useState<string | null>(null);
   const [thinkingStatus, setThinkingStatus] = useState("");
+  const [toolCalls, setToolCalls] = useState<string[]>([]);
   const [model, setModel] = useState(() => localStorage.getItem("wahtway-model") || "deepseek-chat");
   const [skillId, setSkillId] = useState<string>("");
   const [showSkillPicker, setShowSkillPicker] = useState(false);
   const [skillSearch, setSkillSearch] = useState("");
   const [allSkills, setAllSkills] = useState<SkillMeta[]>([]);
+  const [permDialog, setPermDialog] = useState<{ reason: string; path: string } | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // 加载 Skill 列表（下拉用）
@@ -93,6 +95,7 @@ function ChatPanel({ conversationId, onTitleChange, onCreateSkill }: { showModal
     setInput("");
     setStreaming(conversationId, true);
     appendMessage(conversationId, { id: (Date.now() + 1).toString(), role: "assistant", content: "" });
+    setToolCalls([]);
 
     const history = currentMessages.map((m: any) => ({ role: m.role, content: m.content }));
 
@@ -120,8 +123,17 @@ function ChatPanel({ conversationId, onTitleChange, onCreateSkill }: { showModal
           try {
             const event = JSON.parse(line.slice(6));
             if (event.type === "skill_matched") { setSkillName(event.data.skillName); setThinkingStatus(`已匹配「${event.data.skillName}」，正在分析…`); addDebugEvent("skill", event.data.skillName); }
-            else if (event.type === "tool_call") { setThinkingStatus(`正在${toolLabel(event.data.toolName)}…`); appendToLast(conversationId, `\n\n🔧 调用工具 \`${event.data.toolName}\`...`); addDebugEvent("tool_call", event.data.toolName); }
-            else if (event.type === "tool_result") { setThinkingStatus("正在整理结果…"); appendToLast(conversationId, " ✅"); addDebugEvent("tool_result", "完成"); }
+            else if (event.type === "tool_call") { setThinkingStatus(`正在${toolLabel(event.data.toolName)}…`); setToolCalls(prev => [...prev, event.data.toolName]); addDebugEvent("tool_call", event.data.toolName); }
+            else if (event.type === "tool_result") {
+              setThinkingStatus("正在整理结果…");
+              addDebugEvent("tool_result", "完成");
+              // 检测权限拦截
+              const res = (event.data as any)?.result;
+              if (typeof res === "string" && res.startsWith("PERMISSION_REQUIRED::")) {
+                const parts = res.split("::");
+                setPermDialog({ reason: parts[1] || "未知", path: parts[2] || "" });
+              }
+            }
             else if (event.type === "delta") { setThinkingStatus(""); appendToLast(conversationId, event.data); }
             else if (event.type === "error") { setThinkingStatus(""); appendToLast(conversationId, `\n\n❌ ${event.data}`); addDebugEvent("error", event.data); }
             else if (event.type === "done") { setThinkingStatus(""); addDebugEvent("done", "流结束"); }
@@ -170,8 +182,14 @@ function ChatPanel({ conversationId, onTitleChange, onCreateSkill }: { showModal
           <div className="message assistant">
             <div className="avatar">🤖</div>
             <div className="bubble thinking">
-              {thinkingStatus || "正在思考…"}
-              <span className="thinking-dots"><span>.</span><span>.</span><span>.</span></span>
+              <div>{thinkingStatus || "正在思考…"}<span className="thinking-dots"><span>.</span><span>.</span><span>.</span></span></div>
+              {toolCalls.length > 0 && (
+                <div className="tool-calls-summary">
+                  {toolCalls.map((t, i) => (
+                    <span key={i} className="tool-call-badge">🔧 {toolLabel(t)}</span>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -211,6 +229,28 @@ function ChatPanel({ conversationId, onTitleChange, onCreateSkill }: { showModal
           <button onClick={sendMessage} disabled={streaming || !input.trim()}>发送</button>
         </div>
       </footer>
+
+      {permDialog && (
+        <div className="modal-overlay" onClick={() => setPermDialog(null)}>
+          <div className="modal" style={{ maxWidth: 420 }} onClick={e => e.stopPropagation()}>
+            <div className="modal-header"><h2>🔐 需要授权</h2></div>
+            <div className="modal-body">
+              <p>Agent 尝试操作受限路径：</p>
+              <p className="perm-path">{permDialog.path || "未知路径"}</p>
+              <p className="perm-reason">原因：{permDialog.reason}</p>
+              <div className="modal-actions">
+                <button onClick={() => setPermDialog(null)}>取消</button>
+                <button className="primary" onClick={async () => {
+                  await fetch("/api/tools/approve", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path: permDialog.path }) });
+                  setPermDialog(null);
+                  // 自动重试：重新发送同一条消息
+                  setTimeout(() => sendMessage(), 300);
+                }}>授权并重试</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -434,6 +474,11 @@ function toolLabel(name: string): string {
     "read-file": "读取文件",
     "search-files": "搜索文件",
     "file-info": "获取文件信息",
+    "move-file": "移动文件",
+    "copy-file": "复制文件",
+    "new-folder": "创建文件夹",
+    "write-file": "写入文件",
+    "delete-file": "移入回收站",
   };
   return labels[name] || name;
 }
