@@ -8,6 +8,25 @@ import {
 } from "./conversations";
 import "./App.css";
 
+// ---- 全局 Toast（替代 alert，解决 Electron 焦点丢失） ----
+let _showToast: (msg: string, type?: "info" | "error") => void = () => {};
+export function toast(msg: string, type: "info" | "error" = "info") { _showToast(msg, type); }
+
+function ToastContainer() {
+  const [toast, setToast] = useState<{ msg: string; type: string; visible: boolean } | null>(null);
+  _showToast = (msg, type = "info") => {
+    setToast({ msg, type, visible: true });
+    setTimeout(() => setToast(t => t ? { ...t, visible: false } : null), 2500);
+    setTimeout(() => setToast(null), 3000);
+  };
+  if (!toast) return null;
+  return (
+    <div className={`toast ${toast.type} ${toast.visible ? "show" : ""}`}>
+      {toast.msg}
+    </div>
+  );
+}
+
 // ---- 类型 ----
 
 interface SkillMeta {
@@ -43,7 +62,7 @@ function ChatPanel({ conversationId, onTitleChange, onCreateSkill }: { showModal
   useEffect(() => { loadSkills(); }, []);
 
   // 订阅 store → 触发重渲染
-  useEffect(() => subscribe(() => setTick((t) => t + 1)), []);
+  useEffect(() => { const unsub = subscribe(() => setTick((t) => t + 1)); return () => { unsub(); }; }, []);
 
   // 切对话时加载（store 里没有则从 API 拉）
   useEffect(() => {
@@ -73,7 +92,7 @@ function ChatPanel({ conversationId, onTitleChange, onCreateSkill }: { showModal
   }, [streaming]);
 
   // 定时兜底（编辑中）
-  const saveTimeout = useRef<NodeJS.Timeout>();
+  const saveTimeout = useRef<NodeJS.Timeout>(undefined);
   useEffect(() => {
     clearTimeout(saveTimeout.current);
     if (messages.length === 0 || streaming) return;
@@ -260,7 +279,9 @@ function ChatPanel({ conversationId, onTitleChange, onCreateSkill }: { showModal
 function SkillsPanel({ onCreateSkill, skillsVersion }: { onCreateSkill: () => void; skillsVersion: number }) {
   const [skills, setSkills] = useState<SkillMeta[]>([]);
   const [loading, setLoading] = useState(true);
+  const [tab, setTab] = useState<"local" | "hub">("local");
 
+  // 本地 Skill
   const fetchSkills = () => {
     setLoading(true);
     fetch("/api/skills").then(r => r.json()).then(d => { setSkills(d.skills || []); setLoading(false); }).catch(() => { setSkills([]); setLoading(false); });
@@ -272,29 +293,131 @@ function SkillsPanel({ onCreateSkill, skillsVersion }: { onCreateSkill: () => vo
     fetchSkills();
   };
 
-  if (loading) return <div className="skills-loading">加载中...</div>;
+  // 在线 Hub
+  const [hubSkills, setHubSkills] = useState<any[]>([]);
+  const [hubLoading, setHubLoading] = useState(false);
+  const [hubError, setHubError] = useState("");
+  const [hubSearch, setHubSearch] = useState("");
+  const [hubSort, setHubSort] = useState("latest");
+  const [downloading, setDownloading] = useState<Set<string>>(new Set());
+
+  const fetchHub = (q?: string, sort?: string) => {
+    setHubLoading(true);
+    setHubError("");
+    const params = new URLSearchParams();
+    if (q) params.set("q", q);
+    params.set("sort", sort || hubSort);
+    fetch(`/api/skills/hub/list?${params.toString()}`)
+      .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
+      .then(d => { setHubSkills(d.skills || []); setHubLoading(false); })
+      .catch(err => { setHubError(err.message); setHubLoading(false); });
+  };
+  useEffect(() => { if (tab === "hub") fetchHub(); }, [tab, hubSort]);
+
+  const downloadSkill = async (skillId: string) => {
+    setDownloading(prev => new Set(prev).add(skillId));
+    try {
+      const res = await fetch("/api/skills/download", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ skillId }),
+      });
+      const data = await res.json();
+      if (!data.success) throw new Error(data.error || "下载失败");
+      fetchSkills(); // 刷新本地列表
+      toast(`✅「${data.skill.name}」已安装！`);
+    } catch (err: any) {
+      toast(`下载失败: ${err.message}`, "error");
+    } finally {
+      setDownloading(prev => { const s = new Set(prev); s.delete(skillId); return s; });
+    }
+  };
+
+  const localIds = new Set(skills.map(s => s.id));
 
   return (
     <div className="skills-panel">
-      <header className="header"><h1>Skill 库</h1><span className="subtitle">{skills.length} 个可用技能</span><button className="create-btn" onClick={onCreateSkill}>+ 创建 Skill</button></header>
-      <main className="skills-list">
-        {skills.map(skill => (
-          <div key={skill.id} className="skill-card">
-            <div className="skill-card-header"><h3>🧠 {skill.name}</h3><code>{skill.id}</code><button className="skill-delete-btn" onClick={() => deleteSkill(skill.id)}>🗑️</button></div>
-            <p className="skill-card-desc">{skill.description}</p>
-            {skill.keywords && skill.keywords.length > 0 && (
-              <div className="skill-card-keywords">{skill.keywords.map(kw => <span key={kw} className="kw-tag">{kw}</span>)}</div>
-            )}
-            <details className="skill-card-details">
-              <summary>建议提供的信息</summary>
-              {skill.input.properties ? (
-                <ul>{Object.entries(skill.input.properties).map(([, val]) => <li key={val.description}>{val.description}</li>)}</ul>
-              ) : <p className="no-params">无特定输入</p>}
-            </details>
+      <header className="header">
+        <h1>Skill 库</h1>
+        <span className="subtitle">{tab === "local" ? `${skills.length} 个本地技能` : "在线 Skill Hub"}</span>
+        {tab === "local" && <button className="create-btn" onClick={onCreateSkill}>+ 创建 Skill</button>}
+      </header>
+
+      <div className="skills-tabs">
+        <button className={`skills-tab ${tab === "local" ? "active" : ""}`} onClick={() => setTab("local")}>📁 本地</button>
+        <button className={`skills-tab ${tab === "hub" ? "active" : ""}`} onClick={() => setTab("hub")}>🌐 在线 Hub</button>
+      </div>
+
+      {tab === "local" && (
+        <main className="skills-list">
+          {loading && <div className="skills-loading">加载中...</div>}
+          {!loading && skills.map(skill => (
+            <div key={skill.id} className="skill-card">
+              <div className="skill-card-header"><h3>🧠 {skill.name}</h3><code>{skill.id}</code><button className="skill-delete-btn" onClick={() => deleteSkill(skill.id)}>🗑️</button></div>
+              <p className="skill-card-desc">{skill.description}</p>
+              <details className="skill-card-details">
+                <summary>建议提供的信息</summary>
+                {skill.input.properties ? (
+                  <ul>{Object.entries(skill.input.properties).map(([name, val]) => {
+                    const hint = val.enum ? `（${val.enum.join(" / ")}）` : "";
+                    return <li key={name}>{val.description}{hint}</li>;
+                  })}</ul>
+                ) : <p className="no-params">无特定输入</p>}
+              </details>
+            </div>
+          ))}
+          {!loading && skills.length === 0 && <div className="welcome"><h2>📦</h2><p>还没有任何 Skill，点击右上角创建一个吧。</p></div>}
+        </main>
+      )}
+
+      {tab === "hub" && (
+        <main className="skills-list">
+          <div className="hub-toolbar">
+            <input className="hub-search" type="search" placeholder="搜索在线 Skill…" value={hubSearch}
+              onChange={e => setHubSearch(e.target.value)}
+              onKeyDown={e => { if (e.key === "Enter") fetchHub(hubSearch, hubSort); }} />
+            <select className="hub-sort" value={hubSort} onChange={e => { setHubSort(e.target.value); fetchHub(hubSearch, e.target.value); }}>
+              <option value="latest">最新</option>
+              <option value="downloads">下载量</option>
+              <option value="rating">评分</option>
+              <option value="name">名称</option>
+            </select>
           </div>
-        ))}
-        {skills.length === 0 && <div className="welcome"><h2>📦</h2><p>还没有任何 Skill，点击右上角创建一个吧。</p></div>}
-      </main>
+
+          {hubError && <div className="hub-error">⚠️ {hubError}<button onClick={() => fetchHub(hubSearch, hubSort)}>重试</button></div>}
+          {hubLoading && <div className="skills-loading">从 Hub 加载中...</div>}
+
+          {!hubLoading && !hubError && hubSkills.map(skill => (
+            <div key={skill.skillId} className={`skill-card hub-card ${localIds.has(skill.skillId) ? "installed" : ""}`}>
+              <div className="skill-card-header">
+                <h3>🧠 {skill.name}</h3>
+                <code>{skill.skillId}</code>
+                <span className="hub-meta">
+                  {skill.authorName && <span className="hub-author">by {skill.authorName}</span>}
+                  <span className="hub-downloads">⬇ {skill.downloadCount || 0}</span>
+                  <span className="hub-rating">{skill.ratingCount ? `⭐ ${skill.ratingAverage}` : ""}</span>
+                  <span className="hub-version">v{skill.version}</span>
+                </span>
+              </div>
+              <p className="skill-card-desc">{skill.description}</p>
+              {skill.tags && skill.tags.length > 0 && (
+                <div className="skill-card-keywords">{skill.tags.map((t: string) => <span key={t} className="kw-tag">{t}</span>)}</div>
+              )}
+              <div className="hub-card-actions">
+                {localIds.has(skill.skillId) ? (
+                  <span className="hub-installed-badge">✅ 已安装</span>
+                ) : (
+                  <button className="hub-download-btn" disabled={downloading.has(skill.skillId)}
+                    onClick={() => downloadSkill(skill.skillId)}>
+                    {downloading.has(skill.skillId) ? "下载中…" : "⬇ 下载安装"}
+                  </button>
+                )}
+              </div>
+            </div>
+          ))}
+          {!hubLoading && !hubError && hubSkills.length === 0 && <div className="welcome"><h2>🌐</h2><p>Hub 上暂时没有匹配的 Skill</p></div>}
+        </main>
+      )}
     </div>
   );
 }
@@ -379,6 +502,7 @@ function CreateSkillModal({ show, onClose, onSaved, prefill }: { show: boolean; 
 export default function App() {
   const [view, setView] = useState<"chat" | "skills">("chat");
   const [showModal, setShowModal] = useState(false);
+  const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [skillsVersion, setSkillsVersion] = useState(0);
   const [prefillSkillDesc, setPrefillSkillDesc] = useState("");
   const [conversationId, setConversationId] = useState<string>("");
@@ -433,6 +557,7 @@ export default function App() {
 
   return (
     <div className="app">
+      <ToastContainer />
       <nav className="sidebar">
         <div className="sidebar-brand"><h2>WahtWay</h2><span>何以委</span></div>
         <div className="sidebar-nav">
@@ -452,7 +577,7 @@ export default function App() {
         )}
         <div className="sidebar-footer">
           <button id="sidebar-create-skill" className="nav-item" onClick={() => setShowModal(true)}><span className="nav-icon">✨</span><span>创建 Skill</span></button>
-          <div className="sidebar-reset" onClick={async () => { if (!confirm("重置清空所有对话和自定义 Skill？")) return; await fetch("/api/reset", { method: "POST" }); window.location.reload(); }}>🔄 重置</div>
+          <div className="sidebar-reset" onClick={() => setShowResetConfirm(true)}>🔄 重置</div>
           <div className="sidebar-reset" onClick={() => { DEBUG.on = !DEBUG.on; setConvVersion(v => v + 1); }}>{DEBUG.on ? "🟢 调试中" : "⚫ 调试关"}</div>
         </div>
       </nav>
@@ -464,6 +589,24 @@ export default function App() {
         )}
       </div>
       <CreateSkillModal show={showModal} onClose={() => { setShowModal(false); setPrefillSkillDesc(""); }} onSaved={() => setSkillsVersion(v => v + 1)} prefill={prefillSkillDesc} />
+
+      {showResetConfirm && (
+        <div className="modal-overlay" onClick={() => setShowResetConfirm(false)}>
+          <div className="modal" style={{ maxWidth: 380 }} onClick={e => e.stopPropagation()}>
+            <div className="modal-header"><h2>🔄 重置确认</h2></div>
+            <div className="modal-body">
+              <p>重置将清空所有对话记录和自定义 Skill（内置 Skill 保留），确认？</p>
+              <div className="modal-actions">
+                <button onClick={() => setShowResetConfirm(false)}>取消</button>
+                <button className="primary" onClick={async () => {
+                  await fetch("/api/reset", { method: "POST" });
+                  window.location.reload();
+                }}>确认重置</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -6,18 +6,33 @@
   "input": {
     "type": "object",
     "properties": {
-      "subject": { "type": "string", "description": "学科名称，如 高等数学" },
-      "availableHours": { "type": "string", "description": "可用学习时长，如 3小时" },
-      "focusAreas": { "type": "string", "description": "重点学习的内容，如 定积分计算" }
+      "subject": {
+        "type": "string",
+        "description": "学科名称"
+      },
+      "availableHours": {
+        "type": "string",
+        "description": "可用学习时长"
+      },
+      "focusAreas": {
+        "type": "string",
+        "description": "重点学习的内容"
+      }
     },
     "required": ["subject"]
   },
   "output": {
     "type": "object",
     "properties": {
-      "plan": { "type": "string", "description": "Markdown 格式的学习计划" }
+      "plan": {
+        "type": "string",
+        "description": "Markdown 格式的学习计划"
+      }
     }
   },
   "requiredTools": [],
-  "keywords": ["学习", "复习", "计划", "备考", "考试", "课程", "刷题", "预习", "笔记", "背书"]
+  "keywords": [
+    "学习", "复习", "计划", "备考", "考试", "课程",
+    "刷题", "预习", "笔记", "背书"
+  ]
 }

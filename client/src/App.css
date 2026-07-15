@@ -657,3 +657,40 @@ body {
 
 .perm-path { font-family: monospace; background: #fff3cd; padding: 8px; border-radius: 6px; font-size: 12px; word-break: break-all; margin: 8px 0; }
 .perm-reason { color: #856404; font-size: 12px; }
+
+/* === Skill Hub === */
+.skills-tabs { display: flex; gap: 0; border-bottom: 2px solid #eee; padding: 0 20px; }
+.skills-tab { padding: 10px 20px; border: none; background: none; font-size: 14px; cursor: pointer; color: #666; border-bottom: 2px solid transparent; margin-bottom: -2px; transition: all 0.2s; }
+.skills-tab:hover { color: #1a73e8; }
+.skills-tab.active { color: #1a73e8; border-bottom-color: #1a73e8; font-weight: 600; }
+
+.hub-toolbar { display: flex; gap: 12px; padding: 16px 24px; background: #fafafa; border-bottom: 1px solid #eee; }
+.hub-search { flex: 1; padding: 8px 14px; border: 1px solid #ddd; border-radius: 8px; font-size: 13px; outline: none; }
+.hub-search:focus { border-color: #1a73e8; }
+.hub-sort { padding: 8px 12px; border: 1px solid #ddd; border-radius: 8px; font-size: 13px; background: #fff; outline: none; }
+
+.hub-card { border-left: 3px solid #e0e0e0; position: relative; }
+.hub-card.installed { border-left-color: #4caf50; }
+.hub-meta { display: flex; gap: 10px; font-size: 11px; color: #999; align-items: center; }
+.hub-author { color: #666; }
+.hub-downloads, .hub-rating, .hub-version { color: #999; }
+
+.hub-card-actions { margin-top: 10px; display: flex; justify-content: flex-end; }
+.hub-download-btn { padding: 6px 16px; background: #1a73e8; color: #fff; border: none; border-radius: 6px; font-size: 13px; cursor: pointer; transition: background 0.2s; }
+.hub-download-btn:hover { background: #1557b0; }
+.hub-download-btn:disabled { background: #ccc; cursor: not-allowed; }
+.hub-installed-badge { padding: 6px 16px; background: #e8f5e9; color: #2e7d32; border-radius: 6px; font-size: 13px; }
+
+.hub-error { padding: 16px 24px; color: #d32f2f; background: #ffebee; display: flex; align-items: center; gap: 12px; }
+.hub-error button { padding: 4px 12px; border: 1px solid #d32f2f; background: #fff; color: #d32f2f; border-radius: 4px; cursor: pointer; font-size: 12px; }
+
+/* === Toast（替代 alert，解决 Electron 焦点丢失） === */
+.toast {
+  position: fixed; top: 24px; left: 50%; transform: translateX(-50%); z-index: 9999;
+  padding: 12px 28px; border-radius: 10px; font-size: 14px; font-weight: 500;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.15); transition: opacity 0.3s, transform 0.3s;
+  opacity: 0; pointer-events: none;
+}
+.toast.show { opacity: 1; }
+.toast.info { background: #e8f5e9; color: #2e7d32; border: 1px solid #c8e6c9; }
+.toast.error { background: #ffebee; color: #c62828; border: 1px solid #ffcdd2; }

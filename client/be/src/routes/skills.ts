@@ -2,6 +2,7 @@
 // GET  /api/skills         — 已注册 Skill 列表
 // POST /api/skills/generate — LLM 自动生成 Skill JSON
 // POST /api/skills/save     — 保存新 Skill 到文件
+// POST /api/skills/download — 从 Hub 下载 Skill 到本地
 
 import { Router, Request, Response } from "express";
 import OpenAI from "openai";
@@ -9,6 +10,38 @@ import { registeredSkills, saveSkill, deleteSkill } from "../skills/loader";
 import { Skill } from "../types";
 
 const router = Router();
+
+// ===== Skill Hub 代理 =====
+const SKILL_HUB_URL = process.env.SKILL_HUB_URL || "https://wahtway-production.up.railway.app";
+
+// GET /api/hub/skills — 代理 Hub 列表（支持搜索/排序）
+router.get("/hub/list", async (req: Request, res: Response) => {
+  try {
+    const params = new URLSearchParams();
+    if (req.query.q) params.set("q", String(req.query.q));
+    if (req.query.sort) params.set("sort", String(req.query.sort));
+    if (req.query.category) params.set("category", String(req.query.category));
+
+    const response = await fetch(`${SKILL_HUB_URL}/api/skills?${params.toString()}`);
+    if (!response.ok) throw new Error(`Hub 返回 HTTP ${response.status}`);
+    const data = await response.json();
+    res.json(data);
+  } catch (err: any) {
+    res.status(502).json({ error: `Hub 连接失败: ${err.message}` });
+  }
+});
+
+// GET /api/hub/skills/:id — 代理 Hub 单个 Skill 详情
+router.get("/hub/skills/:id", async (req: Request, res: Response) => {
+  try {
+    const response = await fetch(`${SKILL_HUB_URL}/api/skills/${req.params.id}`);
+    if (!response.ok) throw new Error(`Hub 返回 HTTP ${response.status}`);
+    const data = await response.json();
+    res.json(data);
+  } catch (err: any) {
+    res.status(502).json({ error: `Hub 连接失败: ${err.message}` });
+  }
+});
 
 // DeepSeek 客户端（延迟初始化）
 let _client: OpenAI | null = null;
@@ -124,20 +157,23 @@ router.post("/save", (req: Request, res: Response) => {
   }
 });
 
-// POST /api/skills/download — 从服务端下载 Skill
+// POST /api/skills/download — 从服务端下载 Skill 到本地
 router.post("/download", async (req: Request, res: Response) => {
   const { serverUrl, skillId } = req.body;
-  if (!serverUrl || !skillId) {
-    res.status(400).json({ error: "请提供 serverUrl 和 skillId" });
+  if (!skillId) {
+    res.status(400).json({ error: "请提供 skillId" });
     return;
   }
 
   try {
-    const url = `${serverUrl.replace(/\/$/, "")}/api/skills/${skillId}/download`;
+    const base = (serverUrl || SKILL_HUB_URL).replace(/\/$/, "");
+    const url = `${base}/api/skills/${encodeURIComponent(skillId)}/download`;
     const response = await fetch(url);
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    const skill = await response.json();
+    const data = await response.json();
 
+    // Hub 下载返回 { skill, version, checksum, source } 或 raw Skill JSON
+    const skill = data.skill || data;
     saveSkill(skill as Skill);
     res.json({ success: true, skill });
   } catch (err: any) {
