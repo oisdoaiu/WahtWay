@@ -2,31 +2,35 @@
 import "dotenv/config";
 import express from "express";
 import cors from "cors";
-import { initSkills, registeredSkills } from "./skills/loader";
-
-initSkills();
+import * as fs from "fs";
+import * as path from "path";
+import skillsRouter from "./routes/skills";
 
 const app = express();
 const PORT = process.env.PORT || 4000;
+const publicDir = path.resolve(__dirname, "../public");
 
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: "512kb" }));
 
-// Skill 列表
-app.get("/api/skills", (_req, res) => {
-  const skills = registeredSkills.map(s => ({
-    id: s.id, name: s.name, description: s.description,
-    input: s.input, output: s.output, keywords: s.keywords,
-  }));
-  res.json({ skills });
+// 托管 Skill Hub 网页前端
+if (fs.existsSync(publicDir)) {
+  app.use(express.static(publicDir));
+}
+
+// API
+app.get("/api/health", (_req, res) => {
+  res.json({ status: "ok", service: "skill-hub", version: "0.8.0" });
 });
 
-// 下载单个 Skill JSON
-app.get("/api/skills/:id/download", (req, res) => {
-  const skill = registeredSkills.find(s => s.id === req.params.id);
-  if (!skill) return res.status(404).json({ error: "Skill not found" });
-  res.json(skill);
-});
+app.use("/api/skills", skillsRouter);
+
+// SPA fallback
+if (fs.existsSync(publicDir)) {
+  app.get("/", (_req, res) => {
+    res.sendFile(path.join(publicDir, "index.html"));
+  });
+}
 
 app.listen(PORT, () => {
   console.log(`🌐 Skill Hub running on http://localhost:${PORT}`);
