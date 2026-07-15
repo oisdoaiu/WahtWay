@@ -72,7 +72,39 @@ app.post("/api/reset", (_req, res) => {
 });
 
 app.get("/api/health", (_req, res) => {
-  res.json({ status: "ok", version: "0.15.0" });
+  const hasKey = !!process.env.DEEPSEEK_API_KEY && process.env.DEEPSEEK_API_KEY.startsWith("sk-") && process.env.DEEPSEEK_API_KEY.length > 20;
+  res.json({ status: "ok", version: "0.17.0", needsSetup: !hasKey });
+});
+
+// 保存 API Key 到 .env
+app.post("/api/setup", (req, res) => {
+  const { apiKey, baseUrl, model } = req.body;
+  if (!apiKey || typeof apiKey !== "string" || apiKey.length < 20) {
+    res.status(400).json({ error: "请提供有效的 API Key" });
+    return;
+  }
+  try {
+    const envContent = [
+      `DEEPSEEK_API_KEY=${apiKey.trim()}`,
+      `DEEPSEEK_BASE_URL=${baseUrl?.trim() || "https://api.deepseek.com"}`,
+      `DEEPSEEK_MODEL=${model?.trim() || "deepseek-chat"}`,
+    ].join("\n");
+    // 写入 .env（与 main.cjs loadEnv 的读取路径一致）
+    const envPaths = [
+      path.join(path.dirname(process.execPath), ".env"),  // Electron: EXE 同目录
+      path.resolve(__dirname, "../../", ".env"),           // Dev: be/ 的上级 = client/
+    ];
+    const target = envPaths.find(p => { try { return fs.existsSync(path.dirname(p)); } catch { return false; } }) || envPaths[0];
+    fs.writeFileSync(target, envContent, "utf-8");
+    // 立即生效
+    process.env.DEEPSEEK_API_KEY = apiKey.trim();
+    if (baseUrl) process.env.DEEPSEEK_BASE_URL = baseUrl.trim();
+    if (model) process.env.DEEPSEEK_MODEL = model.trim();
+    console.log("🔑 API Key 已保存:", target);
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: `保存失败: ${err.message}` });
+  }
 });
 
 // SPA fallback：非 API 请求返回 index.html（前端路由）

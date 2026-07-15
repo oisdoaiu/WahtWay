@@ -752,3 +752,31 @@ body {
   font-size: 14px; padding: 0 2px; line-height: 1;
 }
 .file-chip-remove:hover { color: #c62828; }
+
+/* === API Key 设置页面 === */
+.setup-overlay {
+  position: fixed; inset: 0; z-index: 10000;
+  display: flex; align-items: center; justify-content: center;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+}
+.setup-card {
+  background: #fff; border-radius: 20px; padding: 40px;
+  max-width: 440px; width: 90%; text-align: center; box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+}
+.setup-card h1 { font-size: 24px; margin-bottom: 12px; color: #1a1a1a; }
+.setup-card p { font-size: 14px; color: #666; margin-bottom: 8px; }
+.setup-hint { font-size: 13px; color: #999; margin-bottom: 20px; }
+.setup-hint a { color: #1a73e8; }
+.setup-input {
+  width: 100%; padding: 12px 16px; border: 2px solid #e0e0e0; border-radius: 12px;
+  font-size: 14px; outline: none; margin-bottom: 12px; transition: border-color 0.2s;
+}
+.setup-input:focus { border-color: #667eea; }
+.setup-error { color: #c62828; font-size: 13px; margin-bottom: 8px; }
+.setup-btn {
+  width: 100%; padding: 12px; border: none; border-radius: 12px;
+  background: linear-gradient(135deg, #667eea, #764ba2); color: #fff;
+  font-size: 16px; font-weight: 600; cursor: pointer; transition: opacity 0.2s;
+}
+.setup-btn:hover:not(:disabled) { opacity: 0.9; }
+.setup-btn:disabled { opacity: 0.5; cursor: not-allowed; }

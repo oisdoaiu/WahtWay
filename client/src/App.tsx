@@ -616,6 +616,15 @@ export default function App() {
   const [conversationId, setConversationId] = useState<string>("");
   const [conversations, setConversations] = useState<any[]>([]);
   const [convVersion, setConvVersion] = useState(0);
+  const [needsSetup, setNeedsSetup] = useState<boolean | null>(null);
+
+  // 启动时检查 API Key 是否配置
+  useEffect(() => {
+    fetch("/api/health")
+      .then(r => r.json())
+      .then(d => setNeedsSetup(d.needsSetup || false))
+      .catch(() => setNeedsSetup(false));
+  }, []);
 
   const refreshConvs = async () => {
     const r = await fetch("/api/conversations");
@@ -698,6 +707,8 @@ export default function App() {
       </div>
       <CreateSkillModal show={showModal} onClose={() => { setShowModal(false); setPrefillSkillDesc(""); setSkillToEdit(null); }} onSaved={() => { setSkillsVersion(v => v + 1); setSkillToEdit(null); }} prefill={prefillSkillDesc} skillToEdit={skillToEdit} />
 
+      <SetupScreen show={needsSetup === true} onDone={() => setNeedsSetup(false)} />
+
       {showResetConfirm && (
         <div className="modal-overlay" onClick={() => setShowResetConfirm(false)}>
           <div className="modal" style={{ maxWidth: 380 }} onClick={e => e.stopPropagation()}>
@@ -732,6 +743,44 @@ function toolLabel(name: string): string {
     "delete-file": "移入回收站",
   };
   return labels[name] || name;
+}
+
+function SetupScreen({ show, onDone }: { show: boolean; onDone: () => void }) {
+  const [key, setKey] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+
+  if (!show) return null;
+
+  const submit = async () => {
+    if (!key.trim() || busy) return;
+    setBusy(true); setErr("");
+    try {
+      const r = await fetch("/api/setup", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ apiKey: key.trim() }) });
+      const d = await r.json();
+      if (d.success) onDone();
+      else setErr(d.error || "保存失败");
+    } catch { setErr("网络错误，请检查后端是否启动"); }
+    finally { setBusy(false); }
+  };
+
+  return (
+    <div className="setup-overlay">
+      <div className="setup-card">
+        <h1>🚀 欢迎使用 WahtWay</h1>
+        <p>需要配置 DeepSeek API Key 才能使用。</p>
+        <p className="setup-hint">
+          前往 <a href="https://platform.deepseek.com/api_keys" target="_blank">platform.deepseek.com</a> 注册获取 API Key。
+        </p>
+        <input className="setup-input" type="password" placeholder="sk-xxxxxxxxxxxxxxxxxxxxxxxx" value={key}
+          onChange={e => setKey(e.target.value)} onKeyDown={e => { if (e.key === "Enter") submit(); }} autoFocus />
+        {err && <p className="setup-error">{err}</p>}
+        <button className="setup-btn" onClick={submit} disabled={busy || !key.trim()}>
+          {busy ? "验证中…" : "开始使用"}
+        </button>
+      </div>
+    </div>
+  );
 }
 
 function DebugPanel() {
