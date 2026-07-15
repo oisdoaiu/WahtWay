@@ -145,6 +145,19 @@ router.post("/download", async (req: Request, res: Response) => {
   }
 });
 
+// GET /api/skills/search?q= — 模糊搜索 Skill
+router.get("/search", (req: Request, res: Response) => {
+  const q = (typeof req.query.q === "string" ? req.query.q : "").toLowerCase();
+  if (!q) { res.json({ skills: [] }); return; }
+  const results = registeredSkills
+    .filter((s) => {
+      const haystack = [s.name, s.description, ...(s.keywords || [])].join(" ").toLowerCase();
+      return haystack.includes(q);
+    })
+    .map((s) => ({ id: s.id, name: s.name, description: s.description, keywords: s.keywords }));
+  res.json({ skills: results });
+});
+
 // DELETE /api/skills/:id — 删除 Skill
 router.delete("/:id", (req: Request, res: Response) => {
   try {

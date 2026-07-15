@@ -10,6 +10,7 @@ import chatRouter from "./routes/chat";
 import skillsRouter from "./routes/skills";
 import conversationsRouter from "./routes/conversations";
 import { initSkills, getSkillsDir } from "./skills/loader";
+import { setModel, getCurrentModel } from "./agent";
 import { registerTool } from "./tools/registry";
 import { registerFileTools } from "./tools/file-tools";
 

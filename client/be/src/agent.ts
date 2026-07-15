@@ -4,7 +4,7 @@
 import OpenAI from "openai";
 import { Skill, AgentResult, TokenUsage, ToolDef } from "./types";
 import { registeredSkills } from "./skills/loader";
-import { matchSkillByKeywords } from "./skills/matcher";
+import { matchSkillByKeywords, GENERAL_PROMPT } from "./skills/matcher";
 import { getTool, formatToolsForLLM } from "./tools/registry";
 import { logger } from "./logger";
 
@@ -18,7 +18,12 @@ function getClient(): OpenAI {
   }
   return _client;
 }
-const MODEL = process.env.DEEPSEEK_MODEL || "deepseek-chat";
+let _model: string | null = null;
+function getModel(override?: string): string {
+  return override || _model || process.env.DEEPSEEK_getModel() || "deepseek-chat";
+}
+export function setModel(m: string) { _model = m; }
+export function getCurrentModel(): string { return getModel(); }
 const MAX_TOOL_ROUNDS = 10;
 
 async function matchSkill(userMessage: string): Promise<Skill | null> {
@@ -70,7 +75,7 @@ async function agenticLoop(
     log.info("llm_call", { round, toolsAvailable: tools.length });
     const t0 = Date.now();
     const response = await getClient().chat.completions.create({
-      model: MODEL,
+      model: getModel(),
       messages,
       tools: tools.length > 0 ? tools as any : undefined,
       temperature: 0.7,
@@ -207,16 +212,39 @@ export async function runAgent(userMessage: string): Promise<AgentResult> {
 export async function runAgentStream(
   userMessage: string,
   history?: { role: string; content: string }[],
-  traceId?: string
+  traceId?: string,
+  model?: string,
+  skillId?: string
 ): Promise<AsyncGenerator<StreamEvent>> {
+  if (model) setModel(model);
   const log = logger(traceId || "no-trace", "agent");
-  log.info("start", { msgLen: userMessage.length });
+  log.info("start", { msgLen: userMessage.length, mode: skillId || "auto" });
 
-  const skill = await matchSkill(userMessage);
-  if (!skill) {
-    log.warn("no_match", { message: userMessage.slice(0, 50) });
-    throw new Error("未找到合适的 Skill，请尝试更明确的描述。");
+  let skill: Skill | null = null;
+
+  // 手动指定 Skill
+  if (skillId) {
+    skill = registeredSkills.find((s) => s.id === skillId) || null;
+    if (!skill) log.warn("skill_not_found", { skillId });
   }
+
+  // 自动匹配
+  if (!skill) {
+    skill = await matchSkill(userMessage);
+  }
+
+  // 无匹配 → 通用闲聊
+  if (!skill) {
+    const general: Skill = {
+      id: "general", name: "闲聊", description: "通用对话",
+      systemPrompt: GENERAL_PROMPT,
+      input: { type: "object", properties: {} },
+      output: { type: "object", properties: {} },
+      requiredTools: [],
+    };
+    return executeSkillStream(general, userMessage, history, traceId);
+  }
+
   return executeSkillStream(skill, userMessage, history, traceId);
 }
 

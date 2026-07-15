@@ -1,5 +1,5 @@
-// Skill 匹配器 — V0.8 LLM 语义匹配
-// 把所有 Skill 描述发给 DeepSeek，让它选最合适的
+// Skill 匹配器 — V0.8 LLM 语义匹配 + 闲聊识别
+// 把所有 Skill 描述发给 DeepSeek，让它选最合适的，或识别为闲聊
 
 import OpenAI from "openai";
 import { Skill } from "../types";
@@ -15,15 +15,17 @@ function getClient(): OpenAI {
   return _client;
 }
 
-/**
- * LLM 语义匹配：把用户消息 + 所有 Skill 描述发给 LLM，让它选一个
- */
-async function llmMatch(userMessage: string, skills: Skill[]): Promise<Skill> {
+/** 通用闲聊 System Prompt — 不用任何 Skill */
+export const GENERAL_PROMPT = `你是 WahtWay（何以委），一个面向大学生的 AI 助手。
+你可以闲聊、回答问题、提供建议，也可以帮助用户管理本地文件。
+回答要简洁、友好、有温度。用 Markdown 格式化输出。`;
+
+async function llmMatch(userMessage: string, skills: Skill[]): Promise<Skill | null> {
   const skillList = skills
     .map((s, i) => `${i}. ${s.name}：${s.description}`)
     .join("\n");
 
-  const prompt = `你是一个意图分类器。用户说了一句话，你需要从以下 Skill 中选择最匹配的一个。
+  const prompt = `你是一个意图分类器。用户说了一句话，你需要判断应该使用哪个 Skill，或者这只是一般闲聊。
 
 ## 可用 Skill
 ${skillList}
@@ -32,13 +34,14 @@ ${skillList}
 "${userMessage}"
 
 ## 规则
-- 选择最能满足用户意图的 Skill
+- 如果用户消息是闲聊、问候、单纯提问、没有明确任务意图 → 回复 -1
 - 如果用户想做菜/食谱/烹饪相关，选食谱类 Skill
 - 如果用户想学习/复习/制定计划，选学习类 Skill
 - 如果用户想分析代码/debug，选代码类 Skill
-- 如果没有明显匹配的，选最通用的那个
+- 如果用户想操作/查看/搜索/整理本地文件，选文件管理类 Skill
+- 选择一个最匹配的，实在不确定就回复 -1
 
-只回复一个数字（Skill 编号），不要任何其他文字。`;
+只回复一个数字（-1 或 Skill 编号），不要任何其他文字。`;
 
   const response = await getClient().chat.completions.create({
     model: process.env.DEEPSEEK_MODEL || "deepseek-chat",
@@ -48,25 +51,23 @@ ${skillList}
     stream: false,
   });
 
-  const raw = response.choices[0]?.message?.content?.trim() || "0";
+  const raw = response.choices[0]?.message?.content?.trim() || "-1";
   const index = parseInt(raw, 10);
-  const matched = skills[isNaN(index) ? 0 : Math.min(index, skills.length - 1)];
 
-  console.log(`🤖 LLM 匹配: "${userMessage}" → ${matched.name} (index ${index})`);
+  if (index === -1 || isNaN(index) || index < 0 || index >= skills.length) {
+    console.log(`💬 LLM 匹配: "${userMessage}" → 闲聊模式`);
+    return null;
+  }
+
+  const matched = skills[index];
+  console.log(`🤖 LLM 匹配: "${userMessage}" → ${matched.name}`);
   return matched;
 }
 
-/**
- * 根据用户消息匹配最合适的 Skill
- * 1 个 Skill → 直接返回
- * 多个 Skill → LLM 语义匹配
- */
 export async function matchSkillByKeywords(
   userMessage: string,
   skills: Skill[]
 ): Promise<Skill | null> {
   if (skills.length === 0) return null;
-  if (skills.length === 1) return skills[0];
-
   return llmMatch(userMessage, skills);
 }

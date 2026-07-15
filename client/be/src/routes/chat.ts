@@ -1,13 +1,13 @@
 // POST /api/chat — SSE 流式对话
 
 import { Router, Request, Response } from "express";
-import { runAgentStream } from "../agent";
+import { runAgentStream, setModel, getCurrentModel } from "../agent";
 import { createTraceId, logger } from "../logger";
 
 const router = Router();
 
 router.post("/", async (req: Request, res: Response) => {
-  const { message, history } = req.body;
+  const { message, history, model, skillId } = req.body;
 
   if (!message || typeof message !== "string") {
     res.status(400).json({ error: "请提供 message 字段" });
@@ -16,7 +16,7 @@ router.post("/", async (req: Request, res: Response) => {
 
   const traceId = createTraceId();
   const log = logger(traceId, "chat");
-  log.info("request", { msgLen: message.length, historyLen: history?.length || 0 });
+  log.info("request", { msgLen: message.length, historyLen: history?.length || 0, model: model || getCurrentModel() });
 
   // 设置 SSE 响应头
   res.setHeader("Content-Type", "text/event-stream");
@@ -27,7 +27,7 @@ router.post("/", async (req: Request, res: Response) => {
   res.flushHeaders();
 
   try {
-    const stream = await runAgentStream(message, history, traceId);
+    const stream = await runAgentStream(message, history, traceId, model, skillId);
 
     for await (const event of stream) {
       res.write(`data: ${JSON.stringify(event)}\n\n`);

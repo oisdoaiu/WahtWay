@@ -22,13 +22,23 @@ interface SkillMeta {
 
 // ---- 对话面板 ----
 
-function ChatPanel({ conversationId, onTitleChange }: { showModal: boolean; conversationId: string; onTitleChange: (title: string) => void }) {
+function ChatPanel({ conversationId, onTitleChange, onCreateSkill }: { showModal: boolean; conversationId: string; onTitleChange: (title: string) => void; onCreateSkill: (prefill?: string) => void }) {
   const [, setTick] = useState(0);
   const messages = getMessages(conversationId);
   const streaming = isStreaming(conversationId);
   const [input, setInput] = useState("");
   const [skillName, setSkillName] = useState<string | null>(null);
+  const [thinkingStatus, setThinkingStatus] = useState("");
+  const [model, setModel] = useState(() => localStorage.getItem("wahtway-model") || "deepseek-chat");
+  const [skillId, setSkillId] = useState<string>("");
+  const [showSkillPicker, setShowSkillPicker] = useState(false);
+  const [skillSearch, setSkillSearch] = useState("");
+  const [allSkills, setAllSkills] = useState<SkillMeta[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // 加载 Skill 列表（下拉用）
+  const loadSkills = () => fetch("/api/skills").then(r => r.json()).then(d => setAllSkills(d.skills || []));
+  useEffect(() => { loadSkills(); }, []);
 
   // 订阅 store → 触发重渲染
   useEffect(() => subscribe(() => setTick((t) => t + 1)), []);
@@ -44,20 +54,29 @@ function ChatPanel({ conversationId, onTitleChange }: { showModal: boolean; conv
     setSkillName(null);
   }, [conversationId]);
 
-  // 自动保存
+  // 保存函数
+  const saveNow = () => {
+    const msgs = getMessages(conversationId);
+    if (msgs.length === 0) return;
+    fetch(`/api/conversations/${conversationId}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ messages: msgs }),
+    }).catch(() => {});
+  };
+
+  // 流结束后立即保存
+  useEffect(() => {
+    if (!streaming && messages.length > 0) saveNow();
+  }, [streaming]);
+
+  // 定时兜底（编辑中）
   const saveTimeout = useRef<NodeJS.Timeout>();
-  const messagesLen = messages.length;
   useEffect(() => {
     clearTimeout(saveTimeout.current);
-    if (messagesLen === 0) return;
-    saveTimeout.current = setTimeout(() => {
-      fetch(`/api/conversations/${conversationId}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: getMessages(conversationId) }),
-      }).catch(() => {});
-    }, 1000);
-  }, [messagesLen, conversationId]);
+    if (messages.length === 0 || streaming) return;
+    saveTimeout.current = setTimeout(saveNow, 2000);
+  }, [messages]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -81,7 +100,7 @@ function ChatPanel({ conversationId, onTitleChange }: { showModal: boolean; conv
       const response = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: text, history }),
+        body: JSON.stringify({ message: text, history, model, skillId: skillId || undefined }),
       });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
 
@@ -100,12 +119,12 @@ function ChatPanel({ conversationId, onTitleChange }: { showModal: boolean; conv
           if (!line.startsWith("data: ")) continue;
           try {
             const event = JSON.parse(line.slice(6));
-            if (event.type === "skill_matched") { setSkillName(event.data.skillName); addDebugEvent("skill", event.data.skillName); }
-            else if (event.type === "tool_call") { appendToLast(conversationId, `\n\n🔧 调用工具 \`${event.data.toolName}\`...`); addDebugEvent("tool_call", event.data.toolName); }
-            else if (event.type === "tool_result") { appendToLast(conversationId, " ✅"); addDebugEvent("tool_result", "完成"); }
-            else if (event.type === "delta") appendToLast(conversationId, event.data);
-            else if (event.type === "error") { appendToLast(conversationId, `\n\n❌ ${event.data}`); addDebugEvent("error", event.data); }
-            else if (event.type === "done") addDebugEvent("done", "流结束");
+            if (event.type === "skill_matched") { setSkillName(event.data.skillName); setThinkingStatus(`已匹配「${event.data.skillName}」，正在分析…`); addDebugEvent("skill", event.data.skillName); }
+            else if (event.type === "tool_call") { setThinkingStatus(`正在${toolLabel(event.data.toolName)}…`); appendToLast(conversationId, `\n\n🔧 调用工具 \`${event.data.toolName}\`...`); addDebugEvent("tool_call", event.data.toolName); }
+            else if (event.type === "tool_result") { setThinkingStatus("正在整理结果…"); appendToLast(conversationId, " ✅"); addDebugEvent("tool_result", "完成"); }
+            else if (event.type === "delta") { setThinkingStatus(""); appendToLast(conversationId, event.data); }
+            else if (event.type === "error") { setThinkingStatus(""); appendToLast(conversationId, `\n\n❌ ${event.data}`); addDebugEvent("error", event.data); }
+            else if (event.type === "done") { setThinkingStatus(""); addDebugEvent("done", "流结束"); }
           } catch { /* skip */ }
         }
       }
@@ -126,6 +145,11 @@ function ChatPanel({ conversationId, onTitleChange }: { showModal: boolean; conv
         <h1>WahtWay</h1>
         <span className="subtitle">何以委</span>
         {skillName && <span className="skill-badge">已激活: {skillName}</span>}
+        <select className="model-select" value={model} onChange={(e) => { const m = e.target.value; setModel(m); localStorage.setItem("wahtway-model", m); }}>
+          <option value="deepseek-chat">DeepSeek V3 (快)</option>
+          <option value="deepseek-v4-pro">DeepSeek V4 Pro (深)</option>
+          <option value="deepseek-reasoner">DeepSeek R1 (推理)</option>
+        </select>
       </header>
       <main className="chat-area">
         {messages.length === 0 && (
@@ -143,15 +167,49 @@ function ChatPanel({ conversationId, onTitleChange }: { showModal: boolean; conv
           </div>
         ))}
         {streaming && messages[messages.length - 1]?.content === "" && (
-          <div className="message assistant"><div className="avatar">🤖</div><div className="bubble thinking">正在思考...</div></div>
+          <div className="message assistant">
+            <div className="avatar">🤖</div>
+            <div className="bubble thinking">
+              {thinkingStatus || "正在思考…"}
+              <span className="thinking-dots"><span>.</span><span>.</span><span>.</span></span>
+            </div>
+          </div>
         )}
         <div ref={messagesEndRef} />
       </main>
       <footer className="input-area">
-        <textarea id="chat-input" value={input} onChange={(e) => setInput(e.target.value)}
-          onKeyDown={handleKeyDown} placeholder="输入你的问题…（Enter 发送，Shift+Enter 换行）"
-          rows={2} disabled={streaming} />
-        <button onClick={sendMessage} disabled={streaming || !input.trim()}>发送</button>
+        <div className="input-toolbar">
+          <div className="mode-selector" onClick={() => { setShowSkillPicker(!showSkillPicker); loadSkills(); }}>
+            <span className="mode-badge">{skillId ? `🧠 ${allSkills.find(s => s.id === skillId)?.name || "Skill"}` : "💬 普通对话"}</span>
+            <span className="mode-arrow">{showSkillPicker ? "▴" : "▾"}</span>
+          </div>
+          {showSkillPicker && (
+            <div className="skill-picker-dropdown">
+              <input className="skill-search-input" placeholder="搜索 Skill…" value={skillSearch}
+                onChange={(e) => setSkillSearch(e.target.value)} autoFocus />
+              <div className="skill-picker-item" onClick={() => { setSkillId(""); setSkillName(null); setShowSkillPicker(false); setSkillSearch(""); }}>
+                💬 普通对话（自动匹配）
+              </div>
+              {allSkills.filter(s => !skillSearch || [s.name, s.description, ...(s.keywords||[])].join(" ").toLowerCase().includes(skillSearch.toLowerCase()))
+                .map(s => (
+                  <div key={s.id} className={`skill-picker-item ${skillId === s.id ? "active" : ""}`}
+                    onClick={() => { setSkillId(s.id); setSkillName(s.name); setShowSkillPicker(false); setSkillSearch(""); }}>
+                    🧠 {s.name}
+                    <span className="skill-picker-desc">{s.description}</span>
+                  </div>
+                ))}
+              {skillSearch && allSkills.filter(s => [s.name, s.description, ...(s.keywords||[])].join(" ").toLowerCase().includes(skillSearch.toLowerCase())).length === 0 && (
+                <div className="skill-picker-empty">没有匹配的技能，<span className="skill-picker-create" onClick={() => { setShowSkillPicker(false); onCreateSkill(skillSearch); }}>创建一个？</span></div>
+              )}
+            </div>
+          )}
+        </div>
+        <div className="input-row">
+          <textarea id="chat-input" value={input} onChange={(e) => setInput(e.target.value)}
+            onKeyDown={handleKeyDown} placeholder="输入你的问题…（Enter 发送，Shift+Enter 换行）"
+            rows={2} disabled={streaming} />
+          <button onClick={sendMessage} disabled={streaming || !input.trim()}>发送</button>
+        </div>
       </footer>
     </div>
   );
@@ -203,9 +261,14 @@ function SkillsPanel({ onCreateSkill, skillsVersion }: { onCreateSkill: () => vo
 
 // ---- 创建 Skill 弹窗 ----
 
-function CreateSkillModal({ show, onClose, onSaved }: { show: boolean; onClose: () => void; onSaved: () => void }) {
+function CreateSkillModal({ show, onClose, onSaved, prefill }: { show: boolean; onClose: () => void; onSaved: () => void; prefill?: string }) {
   const [step, setStep] = useState<"describe" | "edit">("describe");
   const [skillDesc, setSkillDesc] = useState("");
+
+  useEffect(() => {
+    if (show && prefill) setSkillDesc(prefill);
+    if (!show) setSkillDesc("");
+  }, [show, prefill]);
   const [generating, setGenerating] = useState(false);
   const [editSkill, setEditSkill] = useState<Record<string, any> | null>(null);
   const [msg, setMsg] = useState("");
@@ -277,6 +340,7 @@ export default function App() {
   const [view, setView] = useState<"chat" | "skills">("chat");
   const [showModal, setShowModal] = useState(false);
   const [skillsVersion, setSkillsVersion] = useState(0);
+  const [prefillSkillDesc, setPrefillSkillDesc] = useState("");
   const [conversationId, setConversationId] = useState<string>("");
   const [conversations, setConversations] = useState<any[]>([]);
   const [convVersion, setConvVersion] = useState(0);
@@ -347,21 +411,31 @@ export default function App() {
           </div>
         )}
         <div className="sidebar-footer">
-          <button className="nav-item" onClick={() => setShowModal(true)}><span className="nav-icon">✨</span><span>创建 Skill</span></button>
+          <button id="sidebar-create-skill" className="nav-item" onClick={() => setShowModal(true)}><span className="nav-icon">✨</span><span>创建 Skill</span></button>
           <div className="sidebar-reset" onClick={async () => { if (!confirm("重置清空所有对话和自定义 Skill？")) return; await fetch("/api/reset", { method: "POST" }); window.location.reload(); }}>🔄 重置</div>
           <div className="sidebar-reset" onClick={() => { DEBUG.on = !DEBUG.on; setConvVersion(v => v + 1); }}>{DEBUG.on ? "🟢 调试中" : "⚫ 调试关"}</div>
         </div>
       </nav>
       <div className="main-content">
         {view === "chat" ? (
-          conversationId ? <ChatPanel showModal={showModal} conversationId={conversationId} onTitleChange={handleTitleChange} /> : <div className="welcome"><h2>🤔 Waht?</h2></div>
+          conversationId ? <ChatPanel showModal={showModal} conversationId={conversationId} onTitleChange={handleTitleChange} onCreateSkill={(prefill) => { setPrefillSkillDesc(prefill || ""); setShowModal(true); }} /> : <div className="welcome"><h2>🤔 Waht?</h2></div>
         ) : (
           <SkillsPanel onCreateSkill={() => setShowModal(true)} skillsVersion={skillsVersion} />
         )}
       </div>
-      <CreateSkillModal show={showModal} onClose={() => setShowModal(false)} onSaved={() => setSkillsVersion(v => v + 1)} />
+      <CreateSkillModal show={showModal} onClose={() => { setShowModal(false); setPrefillSkillDesc(""); }} onSaved={() => setSkillsVersion(v => v + 1)} prefill={prefillSkillDesc} />
     </div>
   );
+}
+
+function toolLabel(name: string): string {
+  const labels: Record<string, string> = {
+    "list-files": "查看文件列表",
+    "read-file": "读取文件",
+    "search-files": "搜索文件",
+    "file-info": "获取文件信息",
+  };
+  return labels[name] || name;
 }
 
 function DebugPanel() {

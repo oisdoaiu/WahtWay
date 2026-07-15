@@ -624,3 +624,30 @@ body {
 .debug-badge.skill { background: #f9ab00; }
 .debug-badge.done { background: #888; }
 .debug-data { color: #ccc; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.thinking-dots span { animation: dotPulse 1.4s infinite; font-size: 20px; }
+.thinking-dots span:nth-child(2) { animation-delay: 0.2s; }
+.thinking-dots span:nth-child(3) { animation-delay: 0.4s; }
+@keyframes dotPulse { 0%, 80%, 100% { opacity: 0; } 40% { opacity: 1; } }
+
+.model-select { margin-left: 8px; padding: 2px 8px; border: 1px solid #ddd; border-radius: 8px; font-size: 12px; background: #fff; cursor: pointer; outline: none; }
+.model-select:focus { border-color: #1a73e8; }
+
+.input-toolbar { position: relative; padding: 0 0 6px; }
+.mode-selector { display: inline-flex; align-items: center; gap: 4px; padding: 4px 10px; background: #f0f0f0; border-radius: 10px; cursor: pointer; font-size: 12px; user-select: none; }
+.mode-selector:hover { background: #e0e0e0; }
+.mode-badge { font-weight: 500; }
+.mode-arrow { color: #999; font-size: 10px; }
+.skill-picker-dropdown { position: absolute; bottom: 100%; left: 0; width: 280px; max-height: 240px; overflow-y: auto; background: #fff; border: 1px solid #e0e0e0; border-radius: 12px; box-shadow: 0 4px 16px rgba(0,0,0,0.1); z-index: 50; margin-bottom: 4px; }
+.skill-search-input { width: 100%; padding: 10px 14px; border: none; border-bottom: 1px solid #eee; font-size: 13px; outline: none; border-radius: 12px 12px 0 0; }
+.skill-picker-item { padding: 10px 14px; cursor: pointer; font-size: 13px; border-bottom: 1px solid #f5f5f5; display: flex; flex-direction: column; }
+.skill-picker-item:hover { background: #f5f8ff; }
+.skill-picker-item.active { background: #e8f4fd; color: #1a73e8; }
+.skill-picker-desc { font-size: 11px; color: #999; margin-top: 2px; }
+.skill-picker-empty { padding: 14px; font-size: 12px; color: #999; text-align: center; }
+.skill-picker-empty a { color: #1a73e8; cursor: pointer; }
+.input-row { display: flex; gap: 10px; }
+
+.input-area { flex-direction: column; }
+
+.skill-picker-create { color: #1a73e8; cursor: pointer; } .skill-picker-create:hover { text-decoration: underline; }
