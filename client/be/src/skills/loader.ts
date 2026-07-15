@@ -6,7 +6,7 @@ import * as path from "path";
 import { Skill } from "../types";
 
 // 动态计算 skills 路径（兼容 ts-node 开发 / esbuild 编译 / Electron 三种模式）
-function getSkillsDir(): string {
+export function getSkillsDir(): string {
   const candidates = [
     path.join(process.cwd(), "data", "skills"),           // Electron / npm start
     path.resolve(__dirname, "../data/skills"),             // esbuild 编译 (dist/ → ../data/skills)

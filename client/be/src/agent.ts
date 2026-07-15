@@ -32,8 +32,15 @@ async function agenticLoop(
   onToolCall?: (name: string, args: Record<string, unknown>) => void,
   onToolResult?: (name: string, result: string) => void
 ): Promise<string> {
+  const toolPolicy = `
+## 工具使用规范（必须遵守）
+- 你有一组系统工具可用，每个工具的 description 已经说明了适用场景
+- 只在用户明确要求执行对应操作时才调用工具，不要在闲聊、问候、建议类对话中自动调用
+- 如果你不确定是否需要工具，就不要调用——先文字回复，等用户明确要求
+- 工具执行结果会回传给你，请用自然语言整理后告知用户`.trim();
+
   const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
-    { role: "system", content: systemPrompt },
+    { role: "system", content: systemPrompt + "\n\n" + toolPolicy },
   ];
 
   // 注入历史对话（V0.10 多轮记忆）
@@ -48,6 +55,7 @@ async function agenticLoop(
   // 当前用户消息
   messages.push({ role: "user", content: userMessage });
 
+  // 所有已注册 Tool 始终可用，LLM 自行判断是否需要调用
   const tools = formatToolsForLLM();
 
   for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {

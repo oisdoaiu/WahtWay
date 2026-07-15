@@ -8,7 +8,8 @@ import path from "path";
 import fs from "fs";
 import chatRouter from "./routes/chat";
 import skillsRouter from "./routes/skills";
-import { initSkills } from "./skills/loader";
+import conversationsRouter from "./routes/conversations";
+import { initSkills, getSkillsDir } from "./skills/loader";
 import { registerTool } from "./tools/registry";
 import { registerFileTools } from "./tools/file-tools";
 
@@ -32,8 +33,34 @@ if (fs.existsSync(publicDir)) {
 // API 路由
 app.use("/api/chat", chatRouter);
 app.use("/api/skills", skillsRouter);
+app.use("/api/conversations", conversationsRouter);
 
 // 健康检查
+// 重置：清空对话 + 清空用户创建的 Skill，保留内置 Skill
+app.post("/api/reset", (_req, res) => {
+  const convCandidates = [
+    path.join(process.cwd(), "data", "conversations"),
+    path.resolve(__dirname, "../data/conversations"),
+  ];
+  const convDir = convCandidates.find((d) => fs.existsSync(d)) || convCandidates[0];
+  const skillsDir = getSkillsDir();
+  const builtin = ["daily-study-plan", "code-explain"];
+  try {
+    if (fs.existsSync(convDir)) {
+      fs.readdirSync(convDir).forEach((f) => fs.unlinkSync(path.join(convDir, f)));
+    }
+    if (fs.existsSync(skillsDir)) {
+      fs.readdirSync(skillsDir)
+        .filter((f) => !builtin.some((b) => f.startsWith(b)))
+        .forEach((f) => fs.unlinkSync(path.join(skillsDir, f)));
+    }
+    initSkills();
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.get("/api/health", (_req, res) => {
   res.json({ status: "ok", version: "0.6.0" });
 });

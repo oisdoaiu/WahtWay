@@ -8,7 +8,7 @@ import { ToolDef } from "../types";
 /** 列出目录下的文件和子目录 */
 export const listFilesTool: ToolDef = {
   name: "list-files",
-  description: "列出指定目录下的所有文件和子目录（不含子目录内容）",
+  description: "列出指定目录下的所有文件和子目录。只在用户明确要求查看、浏览、列出某个文件夹的内容时才调用。不要在闲聊、问候、建议类对话中调用。",
   parameters: {
     type: "object",
     properties: {
@@ -43,7 +43,7 @@ export const listFilesTool: ToolDef = {
 /** 读取文本文件内容 */
 export const readFileTool: ToolDef = {
   name: "read-file",
-  description: "读取文本文件的内容（.txt .md .js .ts .py .json .html .css 等）",
+  description: "读取文本文件的内容（.txt .md .js .ts .py .json .html .css 等）。只在用户明确要求查看、打开、读取某个文件时才调用。不要自动读取用户没提到的文件。",
   parameters: {
     type: "object",
     properties: {
@@ -71,7 +71,7 @@ export const readFileTool: ToolDef = {
 /** 按文件名搜索 */
 export const searchFilesTool: ToolDef = {
   name: "search-files",
-  description: "在指定目录及其子目录中搜索匹配文件名的文件",
+  description: "在指定目录及其子目录中搜索匹配文件名的文件。只在用户明确要求搜索、查找、找文件时才调用。不要在闲聊时使用。",
   parameters: {
     type: "object",
     properties: {
@@ -105,7 +105,7 @@ export const searchFilesTool: ToolDef = {
 /** 获取文件详细信息 */
 export const fileInfoTool: ToolDef = {
   name: "file-info",
-  description: "获取文件或目录的详细信息（大小、修改日期、类型）",
+  description: "获取文件或目录的详细信息（大小、修改日期、类型）。只在用户明确询问某个文件/文件夹的详细信息时才调用。",
   parameters: {
     type: "object",
     properties: {
