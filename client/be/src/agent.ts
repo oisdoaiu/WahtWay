@@ -65,7 +65,8 @@ async function* agenticLoopStream(
   systemPrompt: string,
   userMessage: string,
   history?: { role: string; content: string }[],
-  traceId?: string
+  traceId?: string,
+  allowedTools?: string[]
 ): AsyncGenerator<StreamEvent> {
   const log = logger(traceId || "no-trace", "agent");
   const startTime = Date.now();
@@ -86,7 +87,7 @@ async function* agenticLoopStream(
 
   messages.push({ role: "user", content: userMessage });
 
-  const tools = formatToolsForLLM();
+  const tools = formatToolsForLLM(allowedTools);
 
   function buildStats(round: number): AgentStats {
     return {
@@ -225,7 +226,7 @@ export async function* executeSkillStream(
     data: { skillName: skill.name, skillId: skill.id },
   };
 
-  for await (const event of agenticLoopStream(skill.systemPrompt, userMessage, history, traceId)) {
+  for await (const event of agenticLoopStream(skill.systemPrompt, userMessage, history, traceId, skill.allowedTools)) {
     yield event;
   }
 }

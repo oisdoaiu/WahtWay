@@ -10,6 +10,10 @@ import { ToolDef } from "../types";
 export const listFilesTool: ToolDef = {
   name: "list-files",
   description: "列出指定目录下的所有文件和子目录。只在用户明确要求查看、浏览、列出某个文件夹的内容时才调用。不要在闲聊、问候、建议类对话中调用。",
+      input_examples: [
+        { description: "列出桌面文件", args: { directory: "C:\Users\asus\Desktop" } },
+        { description: "列出文档目录", args: { directory: "C:\Users\asus\Documents" } },
+      ],
   parameters: {
     type: "object",
     properties: {
@@ -51,6 +55,10 @@ export const listFilesTool: ToolDef = {
 export const readFileTool: ToolDef = {
   name: "read-file",
   description: "读取文本文件的内容（.txt .md .js .ts .py .json .html .css 等）。只在用户明确要求查看、打开、读取某个文件时才调用。不要自动读取用户没提到的文件。",
+      input_examples: [
+        { description: "读取桌面的笔记", args: { path: "C:\Users\asus\Desktop\notes.txt" } },
+        { description: "读取项目配置文件", args: { path: "C:\Users\asus\project\config.json" } },
+      ],
   parameters: {
     type: "object",
     properties: {
@@ -79,6 +87,10 @@ export const readFileTool: ToolDef = {
 export const searchFilesTool: ToolDef = {
   name: "search-files",
   description: "在指定目录及其子目录中搜索匹配文件名的文件。搜索范围限制在指定目录内，不会搜索整个用户目录。只在用户明确要求搜索、查找、找文件时才调用。不要在闲聊时使用。",
+      input_examples: [
+        { description: "在桌面搜索报告", args: { directory: "C:\Users\asus\Desktop", pattern: "报告" } },
+        { description: "搜索文档中的课件", args: { directory: "C:\Users\asus\Documents", pattern: "课件" } },
+      ],
   parameters: {
     type: "object",
     properties: {
@@ -123,6 +135,10 @@ export const searchFilesTool: ToolDef = {
 export const fileInfoTool: ToolDef = {
   name: "file-info",
   description: "获取文件或目录的详细信息（大小、修改日期、类型）。只在用户明确询问某个文件/文件夹的详细信息时才调用。",
+      input_examples: [
+        { description: "查看文件详情", args: { path: "C:\Users\asus\Desktop\report.pdf" } },
+        { description: "查看文件夹信息", args: { path: "C:\Users\asus\Documents" } },
+      ],
   parameters: {
     type: "object",
     properties: {
@@ -210,6 +226,10 @@ function moveToTrash(filePath: string): string {
 export const moveFileTool: ToolDef = {
   name: "move-file",
   description: "移动文件到指定目录，或重命名文件。只在用户明确要求移动或重命名文件时才调用。",
+      input_examples: [
+        { description: "移动桌面文件到文档", args: { source: "C:\Users\asus\Desktop\报告.docx", destination: "C:\Users\asus\Documents\报告.docx" } },
+        { description: "重命名文件", args: { source: "C:\Users\asus\old.txt", destination: "C:\Users\asus\new.txt" } },
+      ],
   parameters: {
     type: "object",
     properties: {
@@ -241,6 +261,9 @@ export const moveFileTool: ToolDef = {
 export const copyFileTool: ToolDef = {
   name: "copy-file",
   description: "复制文件到指定目录。只在用户明确要求复制文件时才调用。",
+      input_examples: [
+        { description: "复制文件到备份目录", args: { source: "C:\Users\asus\Documents\论文.docx", destination: "C:\Users\asus\Desktop\备份\论文.docx" } },
+      ],
   parameters: {
     type: "object",
     properties: {
@@ -270,6 +293,9 @@ export const copyFileTool: ToolDef = {
 export const newFolderTool: ToolDef = {
   name: "new-folder",
   description: "创建新文件夹。只在用户明确要求创建文件夹时调用。",
+      input_examples: [
+        { description: "在桌面创建作业文件夹", args: { path: "C:\Users\asus\Desktop\作业" } },
+      ],
   parameters: {
     type: "object",
     properties: {
@@ -294,6 +320,9 @@ export const newFolderTool: ToolDef = {
 export const writeFileTool: ToolDef = {
   name: "write-file",
   description: "创建或覆写文本文件。只在用户明确要求创建文件或写入内容时才调用。",
+      input_examples: [
+        { description: "创建笔记文件", args: { path: "C:\Users\asus\Documents\笔记.txt", content: "今日笔记内容" } },
+      ],
   parameters: {
     type: "object",
     properties: {
@@ -322,6 +351,9 @@ export const writeFileTool: ToolDef = {
 export const deleteFileTool: ToolDef = {
   name: "delete-file",
   description: "将文件移入回收站（不永久删除，可恢复）。只在用户明确要求删除文件时才调用。",
+      input_examples: [
+        { description: "删除临时文件", args: { path: "C:\Users\asus\Downloads\temp.txt" } },
+      ],
   parameters: {
     type: "object",
     properties: {

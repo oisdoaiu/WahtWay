@@ -6,32 +6,16 @@
   "input": {
     "type": "object",
     "properties": {
-      "wake_up_time": {
-        "type": "string",
-        "description": "希望起床的时间，例如 07:00"
-      },
-      "sleep_duration": {
-        "type": "number",
-        "description": "目标睡眠时长"
-      },
-      "nap_preference": {
-        "type": "string",
-        "description": "午睡偏好",
-        "enum": ["需要午睡", "不需要", "可有可无"]
-      },
-      "special_notes": {
-        "type": "string",
-        "description": "其他特殊需求或备注"
-      }
+      "wake_up_time": { "type": "string", "description": "希望起床的时间，例如 07:00" },
+      "sleep_duration": { "type": "number", "description": "目标睡眠时长" },
+      "nap_preference": { "type": "string", "description": "午睡偏好", "enum": ["需要午睡", "不需要", "可有可无"] },
+      "special_notes": { "type": "string", "description": "其他特殊需求或备注" }
     },
     "required": ["wake_up_time"]
   },
-  "output": {
-    "type": "object"
-  },
+  "output": { "type": "object" },
   "requiredTools": [],
-  "keywords": [
-    "睡觉", "睡眠", "作息", "入睡", "起床", "计划",
-    "生物钟", "休息", "熬夜", "早睡", "睡眠质量", "睡前"
-  ]
+  "allowedTools": ["write-file"],
+  "whenToUse": "用户想规划作息、计算入睡时间、改善睡眠、调整生物钟时触发。不要在纯文件操作或闲聊时触发。",
+  "keywords": ["睡觉", "睡眠", "作息", "入睡", "起床", "计划", "生物钟", "休息", "熬夜", "早睡", "睡眠质量", "睡前"]
 }

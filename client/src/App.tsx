@@ -34,6 +34,8 @@ interface SkillMeta {
   name: string;
   description: string;
   systemPrompt?: string;
+  whenToUse?: string;
+  allowedTools?: string[];
   input: { type: string; properties?: Record<string, { type: string; description: string; enum?: string[] }>; required?: string[] };
   output: { type: string; properties?: Record<string, unknown> };
   requiredTools: string[];
@@ -303,7 +305,7 @@ function ChatPanel({ conversationId, onTitleChange, onCreateSkill }: { showModal
         {dragOver && <div className="drop-hint">📂 松开以填入文件路径</div>}
         <div className="input-toolbar">
           <div className="mode-selector" onClick={() => { setShowSkillPicker(!showSkillPicker); loadSkills(); }}>
-            <span className="mode-badge">{skillId ? `🧠 ${allSkills.find(s => s.id === skillId)?.name || "Skill"}` : "💬 普通对话"}</span>
+            <span className="mode-badge">{skillId ? `🧠 ${allSkills.find(s => s.id === skillId)?.name || "Skill"}` : "🤖 智能模式"}</span>
             <span className="mode-arrow">{showSkillPicker ? "▴" : "▾"}</span>
           </div>
           {/* 文件上传按钮 */}
@@ -533,7 +535,7 @@ function CreateSkillModal({ show, onClose, onSaved, prefill, skillToEdit }: { sh
   useEffect(() => {
     if (show && skillToEdit) {
       setStep("edit");
-      setEditSkill({...skillToEdit});
+      setEditSkill({...skillToEdit, whenToUse: skillToEdit.whenToUse || "", allowedTools: (skillToEdit.allowedTools || []).join(", ")});
     }
     if (show && prefill && !skillToEdit) setSkillDesc(prefill);
     if (!show) { setSkillDesc(""); setStep(skillToEdit ? "edit" : "describe"); }
@@ -590,7 +592,8 @@ function CreateSkillModal({ show, onClose, onSaved, prefill, skillToEdit }: { sh
                 <label>ID</label><input value={editSkill.id || ""} onChange={e => setEditSkill({ ...editSkill, id: e.target.value })} />
                 <label>名称</label><input value={editSkill.name || ""} onChange={e => setEditSkill({ ...editSkill, name: e.target.value })} />
                 <label>描述</label><input value={editSkill.description || ""} onChange={e => setEditSkill({ ...editSkill, description: e.target.value })} />
-                <label>System Prompt</label><textarea rows={8} value={editSkill.systemPrompt || ""} onChange={e => setEditSkill({ ...editSkill, systemPrompt: e.target.value })} />
+                <label>System Prompt</label><textarea rows={6} value={editSkill.systemPrompt || ""} onChange={e => setEditSkill({ ...editSkill, systemPrompt: e.target.value })} />
+                <label>触发场景 (whenToUse)</label><textarea rows={2} placeholder="描述何时触发此 Skill，如：用户想制定学习计划时触发，不要在文件操作时触发" value={editSkill.whenToUse || ""} onChange={e => setEditSkill({ ...editSkill, whenToUse: e.target.value })} />
               </div>
             )}
             <div className="modal-actions"><button onClick={handleClose}>取消</button><button className="primary" onClick={handleSave}>保存</button></div>

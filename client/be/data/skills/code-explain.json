@@ -6,34 +6,18 @@
   "input": {
     "type": "object",
     "properties": {
-      "code": {
-        "type": "string",
-        "description": "需要分析或修复的代码"
-      },
-      "language": {
-        "type": "string",
-        "description": "使用的编程语言"
-      },
-      "errorMessage": {
-        "type": "string",
-        "description": "报错信息"
-      }
+      "code": { "type": "string", "description": "需要分析或修复的代码" },
+      "language": { "type": "string", "description": "使用的编程语言" },
+      "errorMessage": { "type": "string", "description": "报错信息" }
     },
     "required": ["code"]
   },
   "output": {
     "type": "object",
-    "properties": {
-      "analysis": {
-        "type": "string",
-        "description": "Markdown 格式的代码分析"
-      }
-    }
+    "properties": { "analysis": { "type": "string", "description": "Markdown 格式的代码分析" } }
   },
   "requiredTools": [],
-  "keywords": [
-    "代码", "bug", "报错", "程序", "编程", "函数", "debug",
-    "算法", "为什么", "怎么改", "优化", "看不懂", "帮我看看",
-    "Python", "JavaScript", "Java", "C++", "JS", "TS"
-  ]
+  "allowedTools": ["read-file", "list-files", "search-files", "write-file"],
+  "whenToUse": "用户贴出代码、报错信息、问 bug 原因、要求优化代码 / 解释程序逻辑时触发。不要在纯文件操作（移动/复制/删除）或闲聊时触发。",
+  "keywords": ["代码", "bug", "报错", "程序", "编程", "函数", "debug", "算法", "为什么", "怎么改", "优化", "看不懂", "帮我看看", "Python", "JavaScript", "Java", "C++", "JS", "TS"]
 }

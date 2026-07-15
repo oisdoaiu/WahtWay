@@ -6,33 +6,18 @@
   "input": {
     "type": "object",
     "properties": {
-      "subject": {
-        "type": "string",
-        "description": "学科名称"
-      },
-      "availableHours": {
-        "type": "string",
-        "description": "可用学习时长"
-      },
-      "focusAreas": {
-        "type": "string",
-        "description": "重点学习的内容"
-      }
+      "subject": { "type": "string", "description": "学科名称" },
+      "availableHours": { "type": "string", "description": "可用学习时长" },
+      "focusAreas": { "type": "string", "description": "重点学习的内容" }
     },
     "required": ["subject"]
   },
   "output": {
     "type": "object",
-    "properties": {
-      "plan": {
-        "type": "string",
-        "description": "Markdown 格式的学习计划"
-      }
-    }
+    "properties": { "plan": { "type": "string", "description": "Markdown 格式的学习计划" } }
   },
   "requiredTools": [],
-  "keywords": [
-    "学习", "复习", "计划", "备考", "考试", "课程",
-    "刷题", "预习", "笔记", "背书"
-  ]
+  "allowedTools": ["write-file", "read-file"],
+  "whenToUse": "用户想制定学习/复习/备考计划、安排学习时间、需要每日学习规划时触发。不要在纯文件操作或闲聊时触发。",
+  "keywords": ["学习", "复习", "计划", "备考", "考试", "课程", "刷题", "预习", "笔记", "背书"]
 }

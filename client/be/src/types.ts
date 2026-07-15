@@ -43,6 +43,7 @@ export interface TokenUsage {
 
 // V0.9 Tool 定义
 export interface ToolDef {
+  input_examples?: { args: Record<string, unknown>; description: string }[];  // V0.17
   name: string;
   description: string;
   parameters: JSONSchema;
