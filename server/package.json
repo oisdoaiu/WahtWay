@@ -1,6 +1,6 @@
 {
   "name": "wahtway-server",
-  "version": "0.7.0",
+  "version": "0.15.0",
   "description": "WahtWay Skill Hub — 在线 Skill 库",
   "scripts": {
     "dev": "ts-node src/index.ts",

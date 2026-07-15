@@ -1,6 +1,6 @@
 {
   "name": "wahtway-client-be",
-  "version": "0.7.0",
+  "version": "0.15.0",
   "type": "commonjs",
   "description": "WahtWay 客户端内嵌后端",
   "scripts": {

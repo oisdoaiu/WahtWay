@@ -20,7 +20,7 @@ if (fs.existsSync(publicDir)) {
 
 // API
 app.get("/api/health", (_req, res) => {
-  res.json({ status: "ok", service: "skill-hub", version: "0.8.0" });
+  res.json({ status: "ok", service: "skill-hub", version: "0.15.0" });
 });
 
 app.use("/api/skills", skillsRouter);

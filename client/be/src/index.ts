@@ -72,7 +72,7 @@ app.post("/api/reset", (_req, res) => {
 });
 
 app.get("/api/health", (_req, res) => {
-  res.json({ status: "ok", version: "0.6.0" });
+  res.json({ status: "ok", version: "0.15.0" });
 });
 
 // SPA fallback：非 API 请求返回 index.html（前端路由）

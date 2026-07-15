@@ -78,7 +78,7 @@ export const readFileTool: ToolDef = {
 /** 按文件名搜索 */
 export const searchFilesTool: ToolDef = {
   name: "search-files",
-  description: "在指定目录及其子目录中搜索匹配文件名的文件。只在用户明确要求搜索、查找、找文件时才调用。不要在闲聊时使用。",
+  description: "在指定目录及其子目录中搜索匹配文件名的文件。搜索范围限制在指定目录内，不会搜索整个用户目录。只在用户明确要求搜索、查找、找文件时才调用。不要在闲聊时使用。",
   parameters: {
     type: "object",
     properties: {
@@ -93,19 +93,29 @@ export const searchFilesTool: ToolDef = {
     if (!fs.existsSync(dir)) return `目录不存在: ${dir}`;
 
     const results: string[] = [];
-    const walk = (current: string) => {
+    const MAX_RESULTS = 50;
+    const MAX_DEPTH = 3;
+    const SKIP_DIRS = new Set(["node_modules", ".git", "AppData", ".cache", "__pycache__"]);
+
+    const walk = (current: string, depth: number) => {
+      if (depth > MAX_DEPTH || results.length >= MAX_RESULTS) return;
       try {
         for (const name of fs.readdirSync(current)) {
+          if (results.length >= MAX_RESULTS) return;
           const full = path.join(current, name);
           if (name.toLowerCase().includes(pattern)) results.push(full);
-          try { if (fs.statSync(full).isDirectory()) walk(full); } catch {}
+          try {
+            if (fs.statSync(full).isDirectory() && !SKIP_DIRS.has(name)) {
+              walk(full, depth + 1);
+            }
+          } catch {}
         }
       } catch {}
     };
-    walk(dir);
+    walk(dir, 1);
 
     if (results.length === 0) return `在 "${dir}" 中未找到匹配 "${pattern}" 的文件`;
-    return `找到 ${results.length} 个匹配 "${pattern}" 的文件:\n${results.slice(0, 50).join("\n")}`;
+    return `找到 ${results.length} 个匹配 "${pattern}" 的文件:\n${results.slice(0, MAX_RESULTS).join("\n")}`;
   },
 };
 

@@ -33,7 +33,7 @@ interface SkillMeta {
   id: string;
   name: string;
   description: string;
-  input: { type: string; properties?: Record<string, { type: string; description: string }>; required?: string[] };
+  input: { type: string; properties?: Record<string, { type: string; description: string; enum?: string[] }>; required?: string[] };
   output: { type: string; properties?: Record<string, unknown> };
   requiredTools: string[];
   keywords?: string[];
@@ -55,6 +55,9 @@ function ChatPanel({ conversationId, onTitleChange, onCreateSkill }: { showModal
   const [skillSearch, setSkillSearch] = useState("");
   const [allSkills, setAllSkills] = useState<SkillMeta[]>([]);
   const [permDialog, setPermDialog] = useState<{ reason: string; path: string } | null>(null);
+  const [showPulse, setShowPulse] = useState(false);
+  const [lastStats, setLastStats] = useState<{totalTokens: number; totalTime: number; rounds: number; toolCalls: number; model: string} | null>(null);
+  const lastEventRef = useRef(Date.now());
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // 加载 Skill 列表（下拉用）
@@ -103,6 +106,15 @@ function ChatPanel({ conversationId, onTitleChange, onCreateSkill }: { showModal
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
+  // 脉冲指示器：流进行中但暂无新内容到达时显示"思考中…"
+  useEffect(() => {
+    if (!streaming) { setShowPulse(false); return; }
+    const timer = setInterval(() => {
+      setShowPulse(Date.now() - lastEventRef.current > 500);
+    }, 250);
+    return () => clearInterval(timer);
+  }, [streaming]);
+
   const sendMessage = useCallback(async () => {
     const text = input.trim();
     if (!text || streaming) return;
@@ -115,6 +127,7 @@ function ChatPanel({ conversationId, onTitleChange, onCreateSkill }: { showModal
     setStreaming(conversationId, true);
     appendMessage(conversationId, { id: (Date.now() + 1).toString(), role: "assistant", content: "" });
     setToolCalls([]);
+    setLastStats(null);
 
     const history = currentMessages.map((m: any) => ({ role: m.role, content: m.content }));
 
@@ -141,9 +154,10 @@ function ChatPanel({ conversationId, onTitleChange, onCreateSkill }: { showModal
           if (!line.startsWith("data: ")) continue;
           try {
             const event = JSON.parse(line.slice(6));
-            if (event.type === "skill_matched") { setSkillName(event.data.skillName); setThinkingStatus(`已匹配「${event.data.skillName}」，正在分析…`); addDebugEvent("skill", event.data.skillName); }
-            else if (event.type === "tool_call") { setThinkingStatus(`正在${toolLabel(event.data.toolName)}…`); setToolCalls(prev => [...prev, event.data.toolName]); addDebugEvent("tool_call", event.data.toolName); }
+            if (event.type === "skill_matched") { lastEventRef.current = Date.now(); setSkillName(event.data.skillName); setThinkingStatus(`已匹配「${event.data.skillName}」，正在分析…`); addDebugEvent("skill", event.data.skillName); }
+            else if (event.type === "tool_call") { lastEventRef.current = Date.now(); setThinkingStatus(`正在${toolLabel(event.data.toolName)}…`); setToolCalls(prev => [...prev, event.data.toolName]); addDebugEvent("tool_call", event.data.toolName); }
             else if (event.type === "tool_result") {
+              lastEventRef.current = Date.now();
               setThinkingStatus("正在整理结果…");
               addDebugEvent("tool_result", "完成");
               // 检测权限拦截
@@ -153,9 +167,10 @@ function ChatPanel({ conversationId, onTitleChange, onCreateSkill }: { showModal
                 setPermDialog({ reason: parts[1] || "未知", path: parts[2] || "" });
               }
             }
-            else if (event.type === "delta") { setThinkingStatus(""); appendToLast(conversationId, event.data); }
-            else if (event.type === "error") { setThinkingStatus(""); appendToLast(conversationId, `\n\n❌ ${event.data}`); addDebugEvent("error", event.data); }
-            else if (event.type === "done") { setThinkingStatus(""); addDebugEvent("done", "流结束"); }
+            else if (event.type === "delta") { lastEventRef.current = Date.now(); setThinkingStatus(""); appendToLast(conversationId, event.data); }
+            else if (event.type === "stats") { lastEventRef.current = Date.now(); setLastStats(event.data as any); }
+            else if (event.type === "error") { lastEventRef.current = Date.now(); setThinkingStatus(""); appendToLast(conversationId, `\n\n❌ ${event.data}`); addDebugEvent("error", event.data); }
+            else if (event.type === "done") { lastEventRef.current = Date.now(); setThinkingStatus(""); if ((event.data as any)?.stats) setLastStats((event.data as any).stats); addDebugEvent("done", "流结束"); }
           } catch { /* skip */ }
         }
       }
@@ -186,7 +201,7 @@ function ChatPanel({ conversationId, onTitleChange, onCreateSkill }: { showModal
         {messages.length === 0 && (
           <div className="welcome"><h2>🤔 Waht?</h2><p>问点什么吧，何以委帮你搞定。</p></div>
         )}
-        {messages.map((msg: any) => (
+        {messages.map((msg: any, idx: number) => (
           <div key={msg.id} className={`message ${msg.role}`}>
             <div className="avatar">{msg.role === "user" ? "👤" : "🤖"}</div>
             <div className="bubble">
@@ -194,6 +209,16 @@ function ChatPanel({ conversationId, onTitleChange, onCreateSkill }: { showModal
               {msg.role === "assistant" ? (
                 <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content}</ReactMarkdown>
               ) : <p>{msg.content}</p>}
+              {streaming && idx === messages.length - 1 && msg.role === "assistant" && showPulse && msg.content && (
+                <span className="stream-pulse">⟳ 思考中…</span>
+              )}
+              {lastStats && idx === messages.length - 1 && msg.role === "assistant" && (
+                <div className="msg-stats">
+                  {lastStats.totalTokens > 0 && <span>{lastStats.totalTokens} tokens</span>}
+                  <span>{(lastStats.totalTime / 1000).toFixed(1)}s</span>
+                  {lastStats.toolCalls > 0 && <span>{lastStats.toolCalls} 次工具调用</span>}
+                </div>
+              )}
             </div>
           </div>
         ))}

@@ -1,6 +1,6 @@
 {
   "name": "wahtway-client",
-  "version": "0.7.0",
+  "version": "0.15.0",
   "private": true,
   "description": "WahtWay 客户端 — 本地 AI 文件管理助手",
   "main": "electron/main.cjs",

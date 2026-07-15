@@ -1,8 +1,8 @@
-// Agent 核心 — V0.9 Agentic Loop + Tool Calling
+// Agent 核心 — V0.15 实时流式 Agentic Loop + Tool Calling
 // 职责：匹配 Skill → LLM+Tool 循环 → 流式返回
 
 import OpenAI from "openai";
-import { Skill, AgentResult, TokenUsage, ToolDef } from "./types";
+import { Skill, AgentResult } from "./types";
 import { registeredSkills } from "./skills/loader";
 import { matchSkillByKeywords, GENERAL_PROMPT } from "./skills/matcher";
 import { getTool, formatToolsForLLM } from "./tools/registry";
@@ -30,17 +30,23 @@ async function matchSkill(userMessage: string): Promise<Skill | null> {
   return matchSkillByKeywords(userMessage, registeredSkills);
 }
 
-// ---- 非流式 Agentic Loop ----
-async function agenticLoop(
-  systemPrompt: string,
-  userMessage: string,
-  history?: { role: string; content: string }[],
-  traceId?: string,
-  onToolCall?: (name: string, args: Record<string, unknown>) => void,
-  onToolResult?: (name: string, result: string) => void
-): Promise<string> {
-  const log = logger(traceId || "no-trace", "agent");
-  const toolPolicy = `
+// ---- 流式 Agentic Loop ----
+
+export interface StreamEvent {
+  type: "skill_matched" | "tool_call" | "tool_result" | "delta" | "thinking" | "stats" | "done";
+  data: unknown;
+}
+
+export interface AgentStats {
+  totalTokens: number;
+  totalTime: number;
+  rounds: number;
+  toolCalls: number;
+  model: string;
+}
+
+function toolPolicy(): string {
+  return `
 ## 系统信息
 - 用户主目录: ${require("os").homedir()}
 - 桌面路径: ${require("os").homedir() + "\\Desktop"}
@@ -53,12 +59,23 @@ async function agenticLoop(
 - 这些不是"需要决定要不要用的工具"——是你的眼睛和手
 - 用户说"看看桌面"、"回收站里有什么"、"找一下报告"——和呼吸一样自然地调用
 - 只有"你好"、"谢谢"、"再见"这种纯社交场合才不操作文件`.trim();
+}
+
+async function* agenticLoopStream(
+  systemPrompt: string,
+  userMessage: string,
+  history?: { role: string; content: string }[],
+  traceId?: string
+): AsyncGenerator<StreamEvent> {
+  const log = logger(traceId || "no-trace", "agent");
+  const startTime = Date.now();
+  let totalRoundTokens = 0;
+  let toolCallCount = 0;
 
   const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
-    { role: "system", content: systemPrompt + "\n\n" + toolPolicy },
+    { role: "system", content: systemPrompt + "\n\n" + toolPolicy() },
   ];
 
-  // 注入历史对话（V0.10 多轮记忆）
   if (history) {
     for (const h of history) {
       if (h.role === "user" || h.role === "assistant") {
@@ -67,88 +84,132 @@ async function agenticLoop(
     }
   }
 
-  // 当前用户消息
   messages.push({ role: "user", content: userMessage });
 
-  // 所有已注册 Tool 始终可用，LLM 自行判断是否需要调用
   const tools = formatToolsForLLM();
 
+  function buildStats(round: number): AgentStats {
+    return {
+      totalTokens: totalRoundTokens,
+      totalTime: Date.now() - startTime,
+      rounds: round + 1,
+      toolCalls: toolCallCount,
+      model: getModel(),
+    };
+  }
+
   for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
-    log.info("llm_call", { round, toolsAvailable: tools.length });
-    const t0 = Date.now();
-    const response = await getClient().chat.completions.create({
+    log.info("llm_call_stream", { round, toolsAvailable: tools.length });
+
+    const stream = await getClient().chat.completions.create({
       model: getModel(),
       messages,
       tools: tools.length > 0 ? tools as any : undefined,
       temperature: 0.7,
       max_tokens: 2048,
-      stream: false,
-    });
-    const elapsed = Date.now() - t0;
-
-    const msg = response.choices[0]?.message;
-    if (!msg) return "（无回复）";
-    log.info("llm_response", {
-      round,
-      elapsed: `${elapsed}ms`,
-      hasToolCalls: !!(msg.tool_calls?.length),
-      contentLen: msg.content?.length || 0,
-      tokens: response.usage?.total_tokens,
+      stream: true,
+      stream_options: { include_usage: true } as any,
     });
 
-    // 如果有 tool_calls，执行它们
-    if (msg.tool_calls && msg.tool_calls.length > 0) {
-      // 添加 assistant 消息（含 tool_calls）
+    let content = "";
+    const toolCallMap = new Map<number, { id: string; name: string; args: string }>();
+    let hasToolCalls = false;
+    let roundTokens = 0;
+
+    for await (const chunk of stream) {
+      // 提取 usage（DeepSeek stream 末尾可能返回）
+      if ((chunk as any).usage) {
+        const u = (chunk as any).usage;
+        roundTokens = u.total_tokens || 0;
+      }
+
+      const delta = chunk.choices[0]?.delta;
+      if (!delta) continue;
+
+      if ((delta as any).reasoning_content) {
+        yield { type: "thinking", data: (delta as any).reasoning_content };
+      }
+
+      if (delta.content) {
+        content += delta.content;
+        yield { type: "delta", data: delta.content };
+      }
+
+      if (delta.tool_calls) {
+        hasToolCalls = true;
+        for (const tc of delta.tool_calls) {
+          const idx = tc.index;
+          if (!toolCallMap.has(idx)) {
+            toolCallMap.set(idx, {
+              id: tc.id || "",
+              name: tc.function?.name || "",
+              args: "",
+            });
+          }
+          const entry = toolCallMap.get(idx)!;
+          if (tc.id) entry.id = tc.id;
+          if (tc.function?.name) entry.name = tc.function.name;
+          if (tc.function?.arguments) entry.args += tc.function.arguments;
+        }
+      }
+    }
+
+    totalRoundTokens += roundTokens;
+
+    if (hasToolCalls && toolCallMap.size > 0) {
+      const toolCalls = Array.from(toolCallMap.values());
+      toolCallCount += toolCalls.length;
+
       messages.push({
         role: "assistant",
-        content: msg.content || "",
-        tool_calls: msg.tool_calls as any,
+        content: content || null,
+        tool_calls: toolCalls.map((tc, i) => ({
+          id: tc.id || `call_${i}`,
+          type: "function" as const,
+          function: { name: tc.name, arguments: tc.args },
+        })),
       } as any);
 
-      for (const tc of msg.tool_calls) {
-        const toolName = tc.function.name;
-        const args = JSON.parse(tc.function.arguments || "{}");
-        log.info("tool_call", { tool: toolName, args });
+      for (const tc of toolCalls) {
+        let args: Record<string, unknown> = {};
+        try { args = JSON.parse(tc.args); } catch {}
 
-        onToolCall?.(toolName, args);
+        log.info("tool_call", { tool: tc.name, args });
+        yield { type: "tool_call", data: { toolName: tc.name, args } };
 
-        const tt0 = Date.now();
-        const tool = getTool(toolName);
+        const tool = getTool(tc.name);
         const result = tool
           ? await tool.execute(args)
-          : `错误: 未知 Tool "${toolName}"`;
-        log.info("tool_result", {
-          tool: toolName,
-          elapsed: `${Date.now() - tt0}ms`,
-          resultLen: result.length,
-          resultPreview: result.slice(0, 100),
-        });
+          : `错误: 未知 Tool "${tc.name}"`;
 
-        onToolResult?.(toolName, result);
+        yield {
+          type: "tool_result",
+          data: { toolName: tc.name, result: result.slice(0, 500) },
+        };
 
-        // 添加 tool 结果消息
         messages.push({
           role: "tool",
-          tool_call_id: tc.id,
+          tool_call_id: tc.id || `call_${Array.from(toolCallMap.keys()).indexOf(tc.name)}`,
           content: result,
         } as any);
       }
-      continue; // 继续下一轮，让 LLM 处理 Tool 结果
+
+      // 每轮结束后推送实时统计
+      yield { type: "stats", data: buildStats(round) };
+      continue;
     }
 
-    // 纯文本回复，结束循环
-    return msg.content || "（空回复）";
+    // 纯文本回复 → 结束
+    yield { type: "stats", data: buildStats(round) };
+    yield { type: "done", data: { fullContent: content, stats: buildStats(round) } };
+    return;
   }
 
-  return "已达到最大工具调用轮数，请尝试更具体的问题。";
+  const finalStats = buildStats(MAX_TOOL_ROUNDS);
+  yield { type: "done", data: { fullContent: "已达到最大工具调用轮数", stats: finalStats } };
 }
 
-// ---- 流式执行 Skill（含 Tool Calling）----
-
-export interface StreamEvent {
-  type: "skill_matched" | "tool_call" | "tool_result" | "delta" | "done";
-  data: unknown;
-}
+// ---- 流式执行 Skill ----
 
 export async function* executeSkillStream(
   skill: Skill,
@@ -159,47 +220,14 @@ export async function* executeSkillStream(
   const log = logger(traceId || "no-trace", "skill");
   log.info("matched", { skillId: skill.id, skillName: skill.name });
 
-  // 推送 Skill 匹配信息
   yield {
     type: "skill_matched",
     data: { skillName: skill.name, skillId: skill.id },
   };
 
-  // Agentic Loop（非流式），收集 tool 调用事件
-  const toolEvents: StreamEvent[] = [];
-
-  const finalText = await agenticLoop(
-    skill.systemPrompt,
-    userMessage,
-    history,
-    traceId,
-    (name, args) => {
-      toolEvents.push({ type: "tool_call", data: { toolName: name, args } });
-    },
-    (name, result) => {
-      toolEvents.push({
-        type: "tool_result",
-        data: { toolName: name, result: result.slice(0, 500) },
-      });
-    }
-  );
-
-  // 先推 Tool 事件
-  for (const ev of toolEvents) {
-    yield ev;
+  for await (const event of agenticLoopStream(skill.systemPrompt, userMessage, history, traceId)) {
+    yield event;
   }
-
-  // 把最终回复按字符拆成 delta 推送（模拟流式效果）
-  for (const char of finalText) {
-    yield { type: "delta", data: char };
-    await sleep(15); // 模拟打字机节奏
-  }
-
-  yield { type: "done", data: { fullContent: finalText } };
-}
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((r) => setTimeout(r, ms));
 }
 
 // ---- 入口 ----
@@ -207,8 +235,15 @@ function sleep(ms: number): Promise<void> {
 export async function runAgent(userMessage: string): Promise<AgentResult> {
   const skill = await matchSkill(userMessage);
   if (!skill) throw new Error("未找到合适的 Skill");
-  const output = await agenticLoop(skill.systemPrompt, userMessage);
-  return { skillName: skill.name, skillId: skill.id, output, tokenUsage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 } };
+  const gen = agenticLoopStream(skill.systemPrompt, userMessage);
+  let output = "";
+  for await (const ev of gen) {
+    if (ev.type === "delta") output += ev.data as string;
+  }
+  return {
+    skillName: skill.name, skillId: skill.id, output,
+    tokenUsage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
+  };
 }
 
 export async function runAgentStream(
@@ -224,18 +259,15 @@ export async function runAgentStream(
 
   let skill: Skill | null = null;
 
-  // 手动指定 Skill
   if (skillId) {
     skill = registeredSkills.find((s) => s.id === skillId) || null;
     if (!skill) log.warn("skill_not_found", { skillId });
   }
 
-  // 自动匹配
   if (!skill) {
     skill = await matchSkill(userMessage);
   }
 
-  // 无匹配 → 通用闲聊
   if (!skill) {
     const general: Skill = {
       id: "general", name: "闲聊", description: "通用对话",

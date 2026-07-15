@@ -1,6 +1,6 @@
 # WahtWay — 开发待办清单
 
-> 更新：2026-07-15
+> 更新：2026-07-16
 
 ---
 
@@ -22,6 +22,7 @@
 | V0.12 | 调试体系：结构化日志 + traceId 全链路追踪 + 日志文件导出 |
 | V0.13 | 对话模式切换：普通对话 / Skill 模式 + 搜索下拉 + 思考可视化 |
 | V0.14 | 文件写操作(5个Tool) + 安全护栏 + 权限弹窗 + 能力层重构 |
+| V0.15 | Skill Hub 客户端对接 + 实时流式 Agentic Loop + Token/时间统计 |
 
 ---
 
@@ -31,8 +32,8 @@
 
 | # | 内容 | 说明 |
 |---|------|------|
-| 1 | **服务端部署上线** | server/ 部署到 Railway，提供在线 Skill Hub |
-| 2 | **客户端下载 Skill** | 从服务端拉取 Skill 列表 → 下载 JSON → 安装到本地 |
+| 1 | ~~服务端部署上线~~ ✅ | server/ 部署 Railway，wahtway-production.up.railway.app |
+| 2 | ~~客户端下载 Skill~~ ✅ | Hub 列表浏览/搜索/下载安装，已安装标记 |
 | 3 | ~~更多文件 Tool~~ ✅ | move/copy/new-folder/write-file/delete-file(回收站) |
 | 4 | **文件内容总结 Tool** | 读取文件后调 LLM 做摘要、翻译、格式化 |
 | 5 | ~~Tool 执行前确认~~ ✅ | PERMISSION_REQUIRED 自动弹窗 + 授权后重试 |
@@ -41,7 +42,7 @@
 
 | # | 内容 | 说明 |
 |---|------|------|
-| 6 | **流式 Tool 调用** | Tool 循环期间也逐字输出（目前循环完再一次性推 delta） |
+| 6 | ~~流式 Tool 调用~~ ✅ | Agentic Loop 全面改为 stream:true，delta/tool 事件实时推送 |
 | 7 | **文件拖拽上传** | 聊天框拖入文件，自动识别路径 |
 | 8 | **Skill 编辑器增强** | 在 Skill 库页面直接编辑已有 Skill 的 systemPrompt |
 | 9 | **错误提示优化** | API 超时/断网时给出友好提示而非白屏 |
@@ -127,7 +128,7 @@
 
 ## 📋 下个迭代建议
 
-- **A. 服务端闭环**（#1 #2）：客户端从 Skill Hub 下载 Skill，打通端到端
-- **B. 小优化**（#24 #25 #31）：whenToUse + input_examples，低投入高回报
-- **C. Agent 记忆**（#37 #38）：Todo规划 + 文件系统笔记，Agent 能给自己记东西
+- **A. Agent 记忆**（#37 #38）：Todo规划 + 文件系统笔记，Agent 能给自己记东西
+- **B. 小优化**（#24 #25 #31）：whenToUse + input_examples + allowed-tools，低投入高回报
+- **C. 文件内容总结**（#4）：读取文件后调 LLM 做摘要、翻译、格式化
 - **D. 对话摘要**（#19）：借鉴 ChatGPT，对话列表展示 AI 生成的摘要
