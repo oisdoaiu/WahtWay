@@ -78,9 +78,16 @@ app.whenReady().then(async () => {
     },
   });
 
-  // 等 Express 就绪
+  // 等 Express 就绪，读取实际端口
+  let port = 3000;
   setTimeout(() => {
-    mainWindow.loadURL("http://localhost:3000");
+    try {
+      const portFile = require("path").join(__dirname, "..", "be", ".port");
+      if (require("fs").existsSync(portFile)) {
+        port = parseInt(require("fs").readFileSync(portFile, "utf-8").trim()) || 3000;
+      }
+    } catch {}
+    mainWindow.loadURL(`http://localhost:${port}`);
   }, 1500);
   mainWindow.setMenuBarVisibility(false);
 

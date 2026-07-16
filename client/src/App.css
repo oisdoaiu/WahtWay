@@ -797,3 +797,89 @@ body {
 
 .workspace-badge { margin-left: 8px; padding: 4px 10px; background: #f5f0ff; color: #7c4dff; border-radius: 10px; font-size: 12px; cursor: pointer; transition: background 0.2s; }
 .workspace-badge:hover { background: #ede0ff; }
+
+/* === 深色主题 === */
+.app.dark { background: #1e1e2e; color: #cdd6f4; }
+.app.dark .sidebar { background: #181825; border-color: #313244; }
+.app.dark .header { background: #1e1e2e; border-color: #313244; }
+.app.dark .input-area { background: #1e1e2e; border-color: #313244; }
+.app.dark .input-area textarea { background: #313244; color: #cdd6f4; border-color: #45475a; }
+.app.dark .chat-area { background: #1e1e2e; }
+.app.dark .bubble h2, .app.dark .bubble h3 { color: #cdd6f4; }
+.app.dark .bubble p, .app.dark .bubble li { color: #bac2de; }
+.app.dark .bubble code { background: #313244; color: #f38ba8; }
+.app.dark .bubble th { background: #313244; color: #cdd6f4; }
+.app.dark .bubble td { border-color: #45475a; }
+.app.dark .bubble strong { color: #f5c2e7; }
+.app.dark .bubble hr { border-color: #313244; }
+.app.dark .skill-card { background: #313244; border-color: #45475a; }
+.app.dark .skill-card-header code { background: #45475a; color: #a6adc8; }
+.app.dark .skill-card-desc { color: #a6adc8; }
+.app.dark .skill-card-details { color: #a6adc8; }
+.app.dark .skill-card-details summary { color: #cdd6f4; }
+.app.dark .skill-card-details li { color: #bac2de; }
+.app.dark .skills-tab { color: #a6adc8; }
+.app.dark .skills-tab.active { color: #89b4fa; border-color: #89b4fa; }
+.app.dark .nav-item { color: #a6adc8; }
+.app.dark .nav-item.active { background: #313244; color: #89b4fa; }
+.app.dark .nav-item:hover { background: #313244; }
+.app.dark .sidebar-footer { border-color: #313244; }
+.app.dark .conv-item { color: #a6adc8; }
+.app.dark .conv-item.active { background: #313244; color: #89b4fa; }
+.app.dark .hub-toolbar { background: #313244; border-color: #45475a; }
+.app.dark .hub-search, .app.dark .hub-sort { background: #45475a; color: #cdd6f4; border-color: #585b70; }
+.app.dark .todo-panel { background: #313244; border-color: #45475a; }
+.app.dark .todo-text { color: #cdd6f4; }
+.app.dark .todo-item.done .todo-text { color: #585b70; }
+.app.dark .msg-stats { border-color: #45475a; color: #585b70; }
+.app.dark .sidebar-reset { color: #a6adc8; }
+.app.dark .toast.info { background: #313244; color: #a6e3a1; border-color: #45475a; }
+
+/* === 命令面板 === */
+.cmd-palette {
+  position: fixed; top: 20%; left: 50%; transform: translateX(-50%); z-index: 10001;
+  width: 500px; max-width: 90vw; background: #fff; border-radius: 16px;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.3); overflow: hidden;
+}
+.app.dark .cmd-palette { background: #313244; }
+.cmd-input {
+  width: 100%; padding: 16px 20px; border: none; border-bottom: 1px solid #eee;
+  font-size: 16px; outline: none; background: transparent;
+}
+.app.dark .cmd-input { color: #cdd6f4; border-color: #45475a; }
+.cmd-list { max-height: 300px; overflow-y: auto; }
+.cmd-item { padding: 12px 20px; cursor: pointer; font-size: 14px; transition: background 0.1s; }
+.cmd-item:hover { background: #f0f7ff; }
+.app.dark .cmd-item { color: #cdd6f4; }
+.app.dark .cmd-item:hover { background: #45475a; }
+
+/* === 侧边栏按钮 === */
+.sidebar-item { padding: 8px 14px; font-size: 12px; color: #888; cursor: pointer; border-radius: 8px; transition: background 0.15s; }
+.sidebar-item:hover { background: #eee; }
+.app.dark .sidebar-item { color: #a6adc8; }
+.app.dark .sidebar-item:hover { background: #313244; }
+
+.conv-edit-btn { opacity: 0; font-size: 10px; padding: 2px 4px; border: none; background: none; cursor: pointer; color: #999; margin-left: 4px; }
+.conv-item:hover .conv-edit-btn { opacity: 1; }
+.conv-title-input { width: 100%; padding: 2px 6px; border: 1px solid #1a73e8; border-radius: 4px; font-size: 13px; outline: none; }
+
+.conv-title { display: flex; align-items: center; flex: 1; min-width: 0; }
+.conv-title-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.conv-delete { flex-shrink: 0; margin-left: auto; }
+
+.app.dark .sidebar-brand h2 { color: #cdd6f4; }
+.app.dark .header h1 { color: #cdd6f4; }
+.app.dark .mode-badge { background: #45475a; color: #cdd6f4; }
+.app.dark .mode-selector { background: #313244; }
+.app.dark .conv-list-header { color: #a6adc8; }
+.app.dark .conv-title { color: #bac2de; }
+.app.dark .conv-title-text { color: #bac2de; }
+
+.skill-delete-text { color: #c62828; font-weight: 800; font-size: 20px; line-height: 1; }
+
+.app.dark .modal { background: #313244; }
+.app.dark .modal-header h2 { color: #cdd6f4; }
+.app.dark .modal-body { color: #bac2de; }
+.app.dark .modal-body p { color: #bac2de; }
+.app.dark .modal-actions button { background: #45475a; color: #cdd6f4; border-color: #585b70; }
+.app.dark .modal-actions button.primary { background: #89b4fa; color: #fff; }

@@ -116,9 +116,25 @@ if (fs.existsSync(publicDir)) {
   });
 }
 
-app.listen(PORT, () => {
-  console.log(`🚀 WahtWay running on http://localhost:${PORT}`);
-});
+function startServer(port: number, maxRetries = 10) {
+  const server = app.listen(port, () => {
+    console.log(`🚀 WahtWay running on http://localhost:${port}`);
+    // 写入端口文件供 Electron 读取
+    try {
+      const pkgDir = path.resolve(__dirname, "..");
+      fs.writeFileSync(path.join(pkgDir, ".port"), String(port), "utf-8");
+    } catch {}
+  });
+  server.on("error", (err: any) => {
+    if (err.code === "EADDRINUSE" && maxRetries > 0) {
+      console.log(`端口 ${port} 被占用，尝试 ${port + 1}…`);
+      startServer(port + 1, maxRetries - 1);
+    } else {
+      console.error("启动失败:", err.message);
+    }
+  });
+}
+startServer(Number(PORT));
 
 // V0.1 CLI 模式保留：无参数启动时进入命令行交互
 // 仅当没有其他参数时才启用（Express 启动后不再走 CLI）

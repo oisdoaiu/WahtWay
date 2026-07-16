@@ -2,11 +2,19 @@
 // 存储: be/data/conversations/{id}.json
 
 import { Router, Request, Response } from "express";
+import OpenAI from "openai";
 import * as fs from "fs";
 import * as path from "path";
 
 const router = Router();
 const DATA_DIR = path.resolve(__dirname, "../../data/conversations");
+
+function getAIClient(): OpenAI {
+  return new OpenAI({
+    apiKey: process.env.DEEPSEEK_API_KEY,
+    baseURL: process.env.DEEPSEEK_BASE_URL || "https://api.deepseek.com",
+  });
+}
 
 function listFiles(): string[] {
   if (!fs.existsSync(DATA_DIR)) return [];
@@ -77,6 +85,26 @@ router.put("/:id", (req: Request, res: Response) => {
   data.updatedAt = Date.now();
   fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
   res.json({ success: true });
+});
+
+// POST /api/conversations/:id/summarize — AI 生成对话标题
+router.post("/:id/summarize", async (req: Request, res: Response) => {
+  const filePath = path.join(DATA_DIR, `${req.params.id}.json`);
+  if (!fs.existsSync(filePath)) { res.status(404).json({ error: "Not found" }); return; }
+  try {
+    const data = JSON.parse(fs.readFileSync(filePath, "utf-8"));
+    const firstMsg = data.messages?.find((m: any) => m.role === "user")?.content?.slice(0, 200);
+    if (!firstMsg) { res.json({ title: data.title }); return; }
+    const resp = await getAIClient().chat.completions.create({
+      model: process.env.DEEPSEEK_MODEL || "deepseek-chat",
+      messages: [{ role: "user", content: `用不超过15个字给这段对话起一个标题，直接输出标题：${firstMsg}` }],
+      max_tokens: 30, temperature: 0.3,
+    });
+    const title = resp.choices[0]?.message?.content?.trim()?.slice(0, 30) || data.title;
+    data.title = title;
+    fs.writeFileSync(filePath, JSON.stringify(data, null, 2), "utf-8");
+    res.json({ title });
+  } catch { res.json({ title: "" }); }
 });
 
 export default router;

@@ -72,6 +72,8 @@ function ChatPanel({ conversationId, onTitleChange, onCreateSkill }: { showModal
 
   // 加载 Skill 列表（下拉用）
   const loadSkills = () => fetch("/api/skills").then(r => r.json()).then(d => setAllSkills(d.skills || []));
+
+
   useEffect(() => { loadSkills(); }, []);
 
   // 订阅 store → 触发重渲染
@@ -495,6 +497,7 @@ function SkillsPanel({ onCreateSkill, onEditSkill, skillsVersion }: { onCreateSk
   const [hubError, setHubError] = useState("");
   const [hubSearch, setHubSearch] = useState("");
   const [hubSort, setHubSort] = useState("latest");
+  const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
   const [downloading, setDownloading] = useState<Set<string>>(new Set());
 
   const fetchHub = (q?: string, sort?: string) => {
@@ -549,7 +552,7 @@ function SkillsPanel({ onCreateSkill, onEditSkill, skillsVersion }: { onCreateSk
           {loading && <div className="skills-loading">加载中...</div>}
           {!loading && skills.map(skill => (
             <div key={skill.id} className="skill-card">
-              <div className="skill-card-header"><h3>🧠 {skill.name}</h3><code>{skill.id}</code><button className="skill-edit-btn" onClick={() => onEditSkill(skill)}>✏️</button><button className="skill-delete-btn" onClick={() => deleteSkill(skill.id)}>🗑️</button></div>
+              <div className="skill-card-header"><h3>🧠 {skill.name}</h3><code>{skill.id}</code><button className="skill-edit-btn" onClick={() => onEditSkill(skill)}>✏️</button><button className="skill-delete-btn skill-delete-text" onClick={(e) => { e.stopPropagation(); setDeleteConfirm(skill.id); }}>×</button></div>
               <p className="skill-card-desc">{skill.description}</p>
               <details className="skill-card-details">
                 <summary>建议提供的信息</summary>
@@ -610,6 +613,21 @@ function SkillsPanel({ onCreateSkill, onEditSkill, skillsVersion }: { onCreateSk
           ))}
           {!hubLoading && !hubError && hubSkills.length === 0 && <div className="welcome"><h2>🌐</h2><p>Hub 上暂时没有匹配的 Skill</p></div>}
         </main>
+      )}
+
+      {deleteConfirm && (
+        <div className="modal-overlay" onClick={() => setDeleteConfirm(null)}>
+          <div className="modal" style={{ maxWidth: 360 }} onClick={e => e.stopPropagation()}>
+            <div className="modal-header"><h2>确认删除</h2></div>
+            <div className="modal-body">
+              <p>确定要删除 Skill「{skills.find(s => s.id === deleteConfirm)?.name}」吗？此操作不可恢复。</p>
+              <div className="modal-actions">
+                <button onClick={() => setDeleteConfirm(null)}>取消</button>
+                <button className="primary" style={{ background: "#c62828", color: "#fff" }} onClick={() => { deleteSkill(deleteConfirm); setDeleteConfirm(null); }}>确认删除</button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
@@ -699,9 +717,24 @@ export default function App() {
   const [view, setView] = useState<"chat" | "skills">("chat");
   const [showModal, setShowModal] = useState(false);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
+  const [showCmdPalette, setShowCmdPalette] = useState(false);
   const [skillsVersion, setSkillsVersion] = useState(0);
   const [prefillSkillDesc, setPrefillSkillDesc] = useState("");
+  const [appSkills, setAppSkills] = useState<SkillMeta[]>([]);
+  const [editingConvId, setEditingConvId] = useState("");
+  const [editTitle, setEditTitle] = useState("");
+
+  // Load skills for command palette
+  useEffect(() => { fetch("/api/skills").then(r => r.json()).then(d => setAppSkills(d.skills || [])); }, [showCmdPalette]);
+
+  // Ctrl+K global handler
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if ((e.ctrlKey || e.metaKey) && e.key === "k") { e.preventDefault(); setShowCmdPalette(true); } };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
   const [skillToEdit, setSkillToEdit] = useState<SkillMeta | null>(null);
+  const [theme, setTheme] = useState(() => localStorage.getItem("wahtway-theme") || "light");
   const [conversationId, setConversationId] = useState<string>("");
   const [conversations, setConversations] = useState<any[]>([]);
   const [convVersion, setConvVersion] = useState(0);
@@ -744,6 +777,10 @@ export default function App() {
     setConvVersion(v => v + 1);
   };
 
+  const saveConvTitle = async (id: string, title: string) => {
+    await fetch(`/api/conversations/${id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title }) });
+  };
+
   const deleteConversation = async (id: string) => {
     await fetch(`/api/conversations/${id}`, { method: "DELETE" });
     const list = await refreshConvs();
@@ -762,7 +799,7 @@ export default function App() {
   };
 
   return (
-    <div className="app">
+    <div className={`app ${theme}`}>
       <ToastContainer />
       <nav className="sidebar">
         <div className="sidebar-brand"><h2>WahtWay</h2><span>何以委</span></div>
@@ -775,7 +812,17 @@ export default function App() {
             <div className="conv-list-header"><span>历史对话</span><button className="conv-new-btn" onClick={newConversation}>＋</button></div>
             {conversations.map(c => (
               <div key={c.id} className={`conv-item ${c.id === conversationId ? "active" : ""}`} onClick={() => setConversationId(c.id)}>
-                <span className="conv-title">{c.title}</span>
+                {editingConvId === c.id ? (
+                <input className="conv-title-input" value={editTitle} onChange={e => setEditTitle(e.target.value)}
+                  onKeyDown={e => { if (e.key === "Enter") { const t = editTitle.trim() || c.title; saveConvTitle(c.id, t); setEditingConvId(""); setConvVersion(v => v + 1); } if (e.key === "Escape") setEditingConvId(""); }}
+                  onBlur={() => { const t = editTitle.trim() || c.title; saveConvTitle(c.id, t); setEditingConvId(""); setConvVersion(v => v + 1); }}
+                  onClick={e => e.stopPropagation()} autoFocus />
+              ) : (
+                <span className="conv-title" onDoubleClick={() => { setEditingConvId(c.id); setEditTitle(c.title); }}>
+                  <span className="conv-title-text">{c.title.length > 12 ? c.title.slice(0, 12) + "…" : c.title}</span>
+                  <button className="conv-edit-btn" onClick={e => { e.stopPropagation(); setEditingConvId(c.id); setEditTitle(c.title); }}>✎</button>
+                </span>
+              )}
                 <button className="conv-delete" onClick={e => { e.stopPropagation(); deleteConversation(c.id); }}>×</button>
               </div>
             ))}
@@ -784,7 +831,9 @@ export default function App() {
         <div className="sidebar-footer">
           <button id="sidebar-create-skill" className="nav-item" onClick={() => setShowModal(true)}><span className="nav-icon">✨</span><span>创建 Skill</span></button>
           <div className="sidebar-reset" onClick={() => setShowResetConfirm(true)}>🔄 重置</div>
-          <div className="sidebar-reset" onClick={() => { DEBUG.on = !DEBUG.on; setConvVersion(v => v + 1); }}>{DEBUG.on ? "🟢 调试中" : "⚫ 调试关"}</div>
+          <div className="sidebar-item" onClick={() => { const t = theme === "light" ? "dark" : "light"; setTheme(t); localStorage.setItem("wahtway-theme", t); }}>{theme === "light" ? "🌙 深色模式" : "☀️ 浅色模式"}</div>
+        <div className="sidebar-reset" onClick={() => { DEBUG.on = !DEBUG.on; setConvVersion(v => v + 1); }}>{DEBUG.on ? "🟢 调试中" : "⚫ 调试关"}</div>
+        <div className="sidebar-reset" onClick={() => setShowCmdPalette(true)}>⌨ 命令面板 (Ctrl+K)</div>
         </div>
       </nav>
       <div className="main-content">
@@ -794,6 +843,12 @@ export default function App() {
           <SkillsPanel onCreateSkill={() => setShowModal(true)} onEditSkill={(s) => { setSkillToEdit(s); setShowModal(true); }} skillsVersion={skillsVersion} />
         )}
       </div>
+      <CommandPalette show={showCmdPalette} onClose={() => setShowCmdPalette(false)} skills={appSkills}
+        onSelectSkill={() => { setView("chat"); }}
+        onCreateSkill={() => setShowModal(true)}
+        onGoHub={() => setView("skills")}
+        onToggleTheme={() => { const t = theme === "light" ? "dark" : "light"; setTheme(t); localStorage.setItem("wahtway-theme", t); }}
+        theme={theme} />
       <CreateSkillModal show={showModal} onClose={() => { setShowModal(false); setPrefillSkillDesc(""); setSkillToEdit(null); }} onSaved={() => { setSkillsVersion(v => v + 1); setSkillToEdit(null); }} prefill={prefillSkillDesc} skillToEdit={skillToEdit} />
 
       <SetupScreen show={needsSetup === true} onDone={() => setNeedsSetup(false)} />
@@ -867,6 +922,35 @@ function SetupScreen({ show, onDone }: { show: boolean; onDone: () => void }) {
         <button className="setup-btn" onClick={submit} disabled={busy || !key.trim()}>
           {busy ? "验证中…" : "开始使用"}
         </button>
+      </div>
+    </div>
+  );
+}
+
+function CommandPalette({ show, onClose, skills, onSelectSkill, onCreateSkill, onGoHub, onToggleTheme, theme }: { show: boolean; onClose: () => void; skills: SkillMeta[]; onSelectSkill: () => void; onCreateSkill: () => void; onGoHub: () => void; onToggleTheme: () => void; theme: string }) {
+  const [q, setQ] = useState("");
+  if (!show) return null;
+  const cmds: { id: string; label: string; icon: string; action: () => void }[] = [
+    { id: "chat", label: "💬 切换到对话", icon: "💬", action: () => { onSelectSkill(); onClose(); } },
+    { id: "create", label: "✨ 创建新 Skill", icon: "✨", action: () => { onCreateSkill(); onClose(); } },
+    { id: "hub", label: "🌐 Skill Hub", icon: "🌐", action: () => { onGoHub(); onClose(); } },
+    { id: "theme", label: theme === "light" ? "🌙 切换深色模式" : "☀️ 切换浅色模式", icon: theme === "light" ? "🌙" : "☀️", action: () => { onToggleTheme(); onClose(); } },
+  ];
+  const filtered = cmds.filter(c => !q || c.label.toLowerCase().includes(q.toLowerCase()));
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="cmd-palette" onClick={e => e.stopPropagation()}>
+        <input className="cmd-input" placeholder="输入命令…" value={q} onChange={e => setQ(e.target.value)} autoFocus onKeyDown={e => {
+          if (e.key === "Escape") onClose();
+          if (e.key === "Enter" && filtered.length > 0) { filtered[0].action(); }
+        }} />
+        <div className="cmd-list">
+          {filtered.map(c => (
+            <div key={c.id} className="cmd-item" onClick={c.action}>
+              <span>{c.label}</span>
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   );
