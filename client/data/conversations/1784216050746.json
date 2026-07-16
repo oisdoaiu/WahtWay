@@ -1,0 +1,38 @@
+{
+  "id": "1784216050746",
+  "title": "这个pdf讲了什么",
+  "messages": [
+    {
+      "id": "1784216060327",
+      "role": "user",
+      "content": "📎 F:\\作业\\大二下\\中软\\Agent-Skill平台架构设计讨论.pdf\n这个pdf讲了什么"
+    },
+    {
+      "id": "1784216060328",
+      "role": "assistant",
+      "content": "好的，我先解析这个PDF文件看看内容！## 📄 文档概览\n\n这份 **《Agent-Skill 平台架构设计讨论》** 是你们中软项目的一份**架构设计文档**，共 6 页，记录了团队关于搭建一个面向大学生的通用 Agent 平台的讨论结果。\n\n---\n\n### 🎯 项目定位\n- **通用型 Agent**，面向**学生群体**\n- 建立 **Skill 接口**，维护 **Skill 库**\n- 支持用户**下载**和**自定义 Skill**\n\n### 🛠 技术栈：Node.js + TypeScript\n选它的理由很清晰：\n| 原因 | 说明 |\n|------|------|\n| 前后端统一语言 | 降低团队协作成本 |\n| JSON 原生对象 | 序列化零成本 |\n| 异步 IO | 天然适配 Agent（大量等待 LLM 响应） |\n| dynamic import() | Skill 热加载比 Python 干净 |\n| TS 类型系统 | 编译时捕获接口不匹配 |\n\n> 💡 **Python 为什么不合适？** 项目核心是\"路由 + 编排 + 存储\"，没有科学计算/模型训练需求，Python 的优势用不上。\n\n### 🧩 核心概念：Skill vs Tool\n\n| | **Tool** | **Skill** |\n|---|---|---|\n| 本质 | 一个函数，执行一个动作 | 一个角色/能力包，完成一个任务 |\n| 类比 | 螺丝刀 | 修电脑的师傅 |\n| 粒度 | 原子操作 | 复合任务 |\n| 包含关系 | 被 Skill 调用 | 包含 prompt + 流程 + 若干 Tool |\n| 状态 | 纯函数，无状态 | 带 prompt、带场景 |\n\n### 🚫 重要规则\n> **Skill 之间不直接互相调用！** 所有多 Skill 协作都走 **Agent 核心编排**。\n\n比如用户说\"总结 PPT 重点并出选择题\"：\n```\nAgent 核心\n  └→ Skill: \"课件转自测题\"\n        ├→ Tool: PPT解析器\n        ├→ Tool: 文本摘要\n        └→ Tool: 题目生成\n```\n\n### 📐 核心数据模型\n**Skill 定义**包含：id、name、description、systemPrompt、input/output schema、requiredTools、customTools\n\n**Tool 定义**包含：name、description、input/output schema（不需要 prompt，只执行不思考）\n\n### 🏗 系统架构\n```\n用户 → 前端（对话界面 / Skill商店 / Skill编辑器）\n         → 后端 API 网关（Skill仓库 / Agent编排 / 用户系统）\n              → LLM API（Claude / GPT）\n```\n\n### 🥇 MVP 范围（V0.1）\n- ✅ 1 个硬编码 Skill（如\"每日学习计划生成\"）\n- ✅ 最简对话界面\n- ✅ Agent 核心：接收 → 匹配 Skill → 调 LLM → 返回\n- ✅ Skill 数据存在 JSON 文件中\n- ❌ 不做：Skill 商店、用户登录、可视化编辑器、数据库等\n\n### 📈 渐进路线\n```\nV0.1 → V0.2 → V0.3 → V0.4 → V0.5 → V1.0\n硬编码1个Skill → Web界面 → JSON加载 → 用户自定义Skill → Skill市场 → 完整平台\n```\n\n---\n\n**总结：** 这是一份非常务实的技术设计文档，核心思路是 **Agent 做编排，Skill 做能力包，Tool 做原子操作**，MVP 先跑通一个闭环再逐步扩展。你们团队对技术选型的思考很清晰！👏"
+    },
+    {
+      "id": "1784216447551",
+      "role": "user",
+      "content": "📎 F:\\作业\\大二下\\中软\\agent.docx\n这个文档讲了什么"
+    },
+    {
+      "id": "1784216447552",
+      "role": "assistant",
+      "content": "好的，我来看看这个文档的内容。## 📄 文档概览\n\n这是一份 **《Agent + Skill 平台设计补充文档》**，是对之前那份架构设计讨论的**详细展开**，覆盖了从数据库到部署的全链路设计。日期标注为 **2026-07-13**（未来的时间戳，应该是你们项目规划中的里程碑）。\n\n---\n\n### 🗄️ 一、数据库设计\n\n**演进路线：** JSON → SQLite → PostgreSQL（随版本逐步升级）\n\n**核心表结构：**\n| 表名 | 说明 |\n|------|------|\n| `users` | 用户（含角色：student/creator/admin） |\n| `skills` | Skill 定义（含 schema、prompt、版本、状态） |\n| `tools` | Tool 定义（内置/社区/废弃） |\n| `conversations` | 对话记录 |\n| `messages` | 消息（含 token 消耗） |\n| `user_skills` | 用户安装的 Skill 关联表 |\n\n> MVP 阶段（V0.1-V0.3）直接用 JSON 文件存，不碰数据库。\n\n---\n\n### 🌐 二、API 接口设计\n\n**通用规范：** `/api/v1` 前缀，JWT 认证，SSE 流式响应\n\n**核心接口：**\n- **对话模块：** 创建/列表/详情/删除/发送消息（SSE 流式）\n- **Skill 模块：** 列表（搜索+分类+排序）/详情/创建/编辑/安装/卸载/测试\n- **Tool 模块：** 列表/详情\n- **用户模块：** 注册/登录/刷新 Token/个人信息\n\n> SSE 事件流设计得很完整：`thinking` → `skill_matched` → `tool_call` → `delta`（逐 token）→ `done`，用户体验可以做得很好 👍\n\n---\n\n### 🤖 三、LLM 交互层\n\n**抽象接口设计：** 统一的 `LLMProvider` 接口，支持 Claude / GPT / 国产模型切换\n\n**关键机制：**\n- **Prompt 组装策略：** 基础人设 + Skill 指令 + 输入输出 schema + Tool 定义 → 拼成 system prompt\n- **上下文窗口管理：** 滑动窗口（保留最近 N 轮）+ 早期消息摘要压缩，控制在 ~8000 tokens\n- **Token 预算控制：** 每日/每月限额，调用前检查、调用后扣减\n- **重试与降级策略：** 超时重试、格式错误自我修正、5xx 指数退避、主模型不可用自动切换备用模型\n\n---\n\n### ⚙️ 四、Agent 编排引擎\n\n**请求处理流水线（6 步）：**\n```\n预处理 → 意图分类 → Skill 匹配 → 参数提取 → 执行编排(Tool循环) → 输出校验\n```\n\n**Skill 匹配算法（MVP）：** 把所有 Skill 信息注入 LLM，让 LLM 自己选（后期可加 embedding 语义匹配）\n\n**多 Skill 编排（V0.5+）：** 用户一条消息涉及多个 Skill 时，LLM 自动拆解为有依赖关系的子任务 DAG\n\n**Tool 调用循环（Agentic Loop）：** 核心机制——LLM 判断需要调 Tool → 执行 → 结果返回 LLM → 再判断 → ... → 直到完成（最多 10 次迭代）\n\n---\n\n### 🎨 五、前端设计\n\n**路由：** 对话 / Skill 市场 / Skill 详情 / Skill 编辑器 / 个人中心 / 登录注册\n\n**组件树：** 详细到每个页面下的组件层级\n\n**技术选型：** React 18 + Vite + Zustand + Ant Design + react-markdown + CodeMirror 6\n\n**状态管理：** 拆分为 `chatStore`、`skillStore`、`userStore`\n\n---\n\n### 🔒 六、安全设计\n\n**威胁模型覆盖 7 类风险：**\n| 威胁 | 防护 |\n|------|------|\n| Prompt Injection | XML 标签隔离 + 发布时自动扫描危险模式 |\n| SSRF | DNS 解析后检查 IP 黑名单（内网地址） |\n| 沙箱逃逸 | `isolated-vm` 沙箱执行（内存+时间限制） |\n| Token 盗用 | API Key 仅存服务端 |\n| 资源滥用 | 滑动窗口限流 |\n| XSS | DOMPurify 过滤 |\n| 敏感信息泄露 | 文件按 user_id 隔离存储 |\n\n---\n\n### 🔄 七、Skill 生命周期\n\n**状态流转：** `draft` → 自动验证 → `published` / `rejected` → `deprecated`\n\n**版本管理：** 语义化版本 `MAJOR.MINOR.PATCH`，破坏性变更（schema 不兼容）升 MAJOR\n\n**依赖管理：** 定时扫描所有已发布 Skill 的 Tool 依赖是否有效，发现废弃自动告警\n\n---\n\n### 🧪 八、测试策略\n\n**测试金字塔：** 大量单元测试 + 中等集成测试 + 少量 E2E\n\n**特色：** 设计了 **Skill 测试沙箱**，可以在不调用真实 LLM 的情况下验证 Skill 定义的一致性\n\n---\n\n### 🚀 九、部署与运维\n\n**Monorepo 结构：** `packages/core` / `agent-engine` / `skill-engine` / `server` / `web`\n\n**Docker 化：** 开发环境 hot-reload，生产环境多阶段构建\n\n**CI/CD：** GitHub Actions，lint → typecheck → test → build\n\n**监控：** 结构化日志 + 关键指标（LLM 调用耗时/成功率、Skill 执行时间、API 错误率等）\n\n---\n\n### 👥 十、项目管理\n\n**团队（建议 3-4 人）：** 后端 1-2 人 + 前端 1 人 + 产品/设计 1 人\n\n**5 个 Sprint（8 周）规划：**\n| Sprint | 周期 | 产出 |\n|--------|------|------|\n| Sprint 0 | 第 1 周 | 环境搭建 + 技术预研 |\n| Sprint 1 | 第 2-3 周 | **V0.1** 硬编码 1 个 Skill，跑通全链路 |\n| Sprint 2 | 第 4-5 周 | **V0.2** 多 Skill + Tool 执行器 |\n| Sprint 3 | 第 6-7 周 | **V0.3** 用户系统 + Skill 编辑器 |\n| Sprint 4 | 第 8 周 | 打磨 + 答辩准备 |\n\n**风险识别：** LLM API 不稳定、Node.js 不熟、时间不足等，都给出了应对措施\n\n---\n\n**总结：** 这份文档非常**完整且务实**，从数据库到前端到安全到部署到分工全都有，而且 MVP 裁剪思路清晰——\"先砍掉所有锦上添花的功能\"。相比第一份架构讨论，这份是**可以直接拿来开发的技术规格书**了。你们团队准备得很充分啊！👏"
+    },
+    {
+      "id": "1784216506253",
+      "role": "user",
+      "content": "📎 F:\\作业\\大二下\\并行\\协程技术调研.pptx\n这个ppt讲了啥"
+    },
+    {
+      "id": "1784216506254",
+      "role": "assistant",
+      "content": "好的，我来解析这个 PPT 文件的内容！## 📊 协程技术调研 — PPT 内容概览\n\n这份 PPT 是你（陈彦兴）做的 **并行计算课程作业**，非常系统地调研了协程技术的方方面面，内容很扎实！👏\n\n---\n\n### 🧭 一、并发演进：为什么需要协程？\n\n| 模型 | 切换耗时 | 内存/任务 | 调度方 | 内核态 |\n|------|---------|----------|-------|-------|\n| 进程 | 1–10μs | ~1–4GB | OS | ✅ |\n| 线程 | 1–10μs | ~1MB | OS | ✅ |\n| Fiber | ~100ns | ~64KB | 用户态 | ❌ |\n| **协程** | **10–50ns** | **~100B–2KB** | **用户态** | **❌** |\n\n> **核心洞察：** 并发 ≠ 并行。I/O 密集场景大部分在等待，不需要真正的并行，用**用户态协作调度替代内核抢占调度**。\n\n---\n\n### 🔬 二、有栈 vs 无栈协程\n\n| | 有栈（Go/Java VThread） | 无栈（C++20/Python/Rust） |\n|---|---|---|\n| 栈 | 独立栈 2KB–64KB | 复用线程栈 |\n| 内存 | 较大 | ~100B，极致紧凑 |\n| 侵入性 | 低，传统代码直接可用 | 高，需重构调用链 |\n| 暂停限制 | 任意深度函数可暂停 | 仅在顶层可暂停 |\n\n---\n\n### ⚡ 三、性能实验数据\n\n**上下文切换延迟：**\n- 协程切换 **~32ns**（接近函数调用 5ns）\n- 线程切换 **~1500ns**\n- **协程比线程快约 47 倍** 🚀\n\n**内存对比（1 万个并发任务）：**\n| 线程 | Goroutine | C++20 协程 | Java VThread |\n|:---:|:---------:|:----------:|:------------:|\n| ~10 GB | ~20 MB | **~1.1 MB** | ~2.5 MB |\n\n**HTTP 吞吐量（高并发 10,000 时）：**\n- C++20+io_uring：**9,500** req/s ✅\n- Go：**7,200** req/s\n- Java VT：**7,800** req/s\n- Python：**3,800** req/s ❌\n\n---\n\n### 🛠 四、底层机制\n\n- **C++20 编译器状态机变换：** `co_await` → switch-case 状态机 + 协程帧（~112B）\n- **Go GMP 调度模型：** G（协程）+ P（逻辑 CPU）+ M（线程），Work Stealing\n- **io_uring + 协程：** `user_data` 字段作为桥梁，mmap 共享环形缓冲区，**零系统调用 I/O**\n\n---\n\n### 🗺 五、选型决策树\n\n```\n1. 严格延迟要求（<1μs）？            → C++20 / Rust\n2. 快速开发、团队不熟悉 C++/Rust？   → Go\n3. 遗留 Java 代码需低成本迁移？      → Java 21 虚拟线程\n4. 数据科学生态依赖？                → Python asyncio\n5. 系统级编程、零成本抽象？          → C++20 / Rust\n```\n\n---\n\n### 💡 总结要点\n\n1. **协程是必然选择** — 线程模型（1MB/任务）已触碰物理极限\n2. **有栈 vs 无栈不是优劣之分** — 各有适用场景\n3. **编译器 + 运行时 + OS 三层协同** — 全栈配合才能发挥协程威力\n4. **性能数据说话** — 切换快 33 倍，内存省 10,000 倍\n5. **语言选择取决于场景** — 没有银弹\n\n---\n\n这份 PPT 结构清晰、数据翔实，从演进历史到底层原理到实战性能到选型指南，**覆盖了协程技术的全貌**，作为课程作业质量很高！👍 你后面还准备了 AI 使用说明，很规范～"
+    }
+  ],
+  "createdAt": 1784216050746,
+  "updatedAt": 1784216517607
+}

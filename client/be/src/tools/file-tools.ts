@@ -5,6 +5,7 @@ import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
 import OpenAI from "openai";
+import AdmZip from "adm-zip";
 import { ToolDef } from "../types";
 
 /** 列出目录下的文件和子目录 */
@@ -423,6 +424,59 @@ export const summarizeFileTool: ToolDef = {
   },
 };
 
+export const parseFileTool: ToolDef = {
+  name: "parse-file",
+  description: "解析 PDF、Word(docx)、PPT(pptx) 文件，提取文本内容。用户说打开这个PDF、看看这个Word文档、这个PPT说了什么时调用。",
+  input_examples: [
+    { description: "解析PDF论文", args: { path: "C:\Users\asus\Documents\论文.pdf" } },
+    { description: "提取Word文档内容", args: { path: "C:\Users\asus\Desktop\报告.docx" } },
+  ],
+  parameters: {
+    type: "object",
+    properties: {
+      path: { type: "string", description: "文件完整路径" },
+    },
+    required: ["path"],
+  },
+  execute: async (args) => {
+    const fp = String(args.path);
+    if (!fs.existsSync(fp)) return "文件不存在: " + fp;
+    const ext = path.extname(fp).toLowerCase();
+    try {
+      if (ext === ".pdf") {
+        const pdf = require("pdf-parse");
+        const buf = fs.readFileSync(fp);
+        const data = await pdf(buf);
+        const text = (data.text || "").trim();
+        if (!text && data.numpages === 0) return "PDF 解析失败: 文件可能损坏或为空。";
+        if (!text) return "PDF 解析失败: 该文件可能是扫描图片版 PDF，无法提取文本。建议截图贴给我。";
+        return "PDF 内容 (共 " + data.numpages + " 页):\n" + text.slice(0, 50 * 1024);
+      }
+      if (ext === ".docx") {
+        const mammoth = require("mammoth");
+        const result = await mammoth.extractRawText({ path: fp });
+        return "Word 文档内容:\n" + result.value.slice(0, 50 * 1024);
+      }
+      if (ext === ".pptx") {
+        const zip = new AdmZip(fp);
+        const texts: string[] = [];
+        const re = new RegExp("<a:t[^>]*>([^<]*)<\\/a:t>", "g");
+        const entries = zip.getEntries().filter(e => e.entryName.startsWith("ppt/slides/slide"));
+        for (const entry of entries) {
+          const xml = entry.getData().toString("utf-8");
+          let m;
+          while ((m = re.exec(xml)) !== null) {
+            if (m[1]) texts.push(m[1]);
+          }
+        }
+        return "PPT 内容:\n" + texts.join("\n").slice(0, 50 * 1024);
+      }
+      return "不支持的文件格式: " + ext + "。支持 PDF、DOCX、PPTX。";
+    } catch (e: any) {
+      return `解析 ${ext} 文件失败: ${e.message}。该文件可能已损坏或使用了不支持的编码格式。`;
+    }
+  },
+};
 function formatSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
@@ -442,4 +496,5 @@ export function registerFileTools(register: (t: ToolDef) => void): void {
   register(writeFileTool);
   register(deleteFileTool);
   register(summarizeFileTool);
+  register(parseFileTool);
 }
