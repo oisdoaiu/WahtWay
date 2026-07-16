@@ -4,7 +4,7 @@ import remarkGfm from "remark-gfm";
 import { DEBUG, addDebugEvent, getDebugEvents, onDebugEvents, clearDebugEvents } from "./debug";
 import {
   getMessages, isStreaming, setMessages, appendMessage,
-  appendToLast, setStreaming, subscribe,
+  appendToLast, setStreaming, subscribe, getTodoItems, setTodoItems,
 } from "./conversations";
 import "./App.css";
 
@@ -62,7 +62,11 @@ function ChatPanel({ conversationId, onTitleChange, onCreateSkill }: { showModal
   const [showPulse, setShowPulse] = useState(false);
   const [attachedFiles, setAttachedFiles] = useState<string[]>([]);
   const [showFileMenu, setShowFileMenu] = useState(false);
+  const [workspace, setWorkspace] = useState(() => localStorage.getItem("wahtway-workspace") || "");
   const [lastStats, setLastStats] = useState<{totalTokens: number; totalTime: number; rounds: number; toolCalls: number; model: string} | null>(null);
+    const abortRef = useRef<AbortController | null>(null);
+  const msgHistory = useRef<string[]>([]);
+  const historyIdx = useRef(-1);
   const lastEventRef = useRef(Date.now());
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -133,25 +137,29 @@ function ChatPanel({ conversationId, onTitleChange, onCreateSkill }: { showModal
       ? attachedFiles.map(f => `📎 ${f}`).join("\n") + (text ? "\n" + text : "")
       : text;
     appendMessage(conversationId, { id: Date.now().toString(), role: "user", content: fullText });
+    msgHistory.current.push(text);
+    historyIdx.current = -1;
     setInput("");
     setAttachedFiles([]);
     setStreaming(conversationId, true);
     appendMessage(conversationId, { id: (Date.now() + 1).toString(), role: "assistant", content: "" });
     setToolCalls([]);
+    setTodoItems(conversationId, []);
     setLastStats(null);
 
     const history = currentMessages.map((m: any) => ({ role: m.role, content: m.content }));
 
     try {
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 120_000); // 2分钟超时
+      abortRef.current = controller;
+      
 
       const response = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: text, history, model, skillId: skillId || undefined }),
+        body: JSON.stringify({ message: text, history, model, skillId: skillId || undefined, workspace: workspace || undefined }),
         signal: controller.signal,
-      }).finally(() => clearTimeout(timeout));
+      });
 
       if (!response.ok) {
         const msg = response.status === 504 ? "请求超时，请重试" : response.status >= 500 ? "服务器异常，稍后重试" : `请求失败 (${response.status})`;
@@ -178,12 +186,20 @@ function ChatPanel({ conversationId, onTitleChange, onCreateSkill }: { showModal
             else if (event.type === "tool_result") {
               lastEventRef.current = Date.now();
               const tn = (event.data as any).toolName as string;
+              const res = (event.data as any)?.result;
               const elapsed = toolTimersRef.current.has(tn) ? ((Date.now() - toolTimersRef.current.get(tn)!) / 1000).toFixed(1) + "s" : "";
               setToolCalls(prev => prev.map(t => t.name === tn ? {...t, name: tn} : t)); // keep for display
               setThinkingStatus(elapsed ? `${toolLabel(tn)} 完成 (${elapsed})` : "正在整理结果…");
               addDebugEvent("tool_result", "完成");
-              // 检测权限拦截
-              const res = (event.data as any)?.result;
+              // 解析 todo-update 结果 → 可视化面板
+              if (tn === "todo-update" && typeof res === "string") {
+                const items = res.split(/\r?\n/).filter(function(l) { return l.startsWith("✅") || l.startsWith("⬜"); }).map(function(l, i) {
+                  return { id: i, text: l.slice(2).trim(), done: l.startsWith("✅") };
+                });
+                if (items.length > 0) setTodoItems(conversationId, items);
+              }
+              // 检测权限拦截// 检测权限拦截// 检测权限拦截// 检测权限拦截// 检测权限拦截
+const res2 = (event.data as any)?.result; // was here
               if (typeof res === "string" && res.startsWith("PERMISSION_REQUIRED::")) {
                 const parts = res.split("::");
                 setPermDialog({ reason: parts[1] || "未知", path: parts[2] || "" });
@@ -197,21 +213,81 @@ function ChatPanel({ conversationId, onTitleChange, onCreateSkill }: { showModal
         }
       }
     } catch (err: any) {
-      const msg = err.name === "AbortError" ? "请求超时（2分钟），请简化问题重试"
-        : err.message === "Failed to fetch" ? "网络连接失败，请检查网络后重试"
-        : err.message || "未知错误";
-      toast(msg, "error");
-      appendToLast(conversationId, `\n\n❌ ${msg}`);
-    } finally {
+      if (err.name !== "AbortError") {
+        const msg = err.message === "Failed to fetch" ? "网络连接失败，请检查网络后重试"
+          : err.message || "未知错误";
+        toast(msg, "error");
+        appendToLast(conversationId, `\n\n❌ ${msg}`);
+      }
+          } finally {
+      abortRef.current = null;
       setStreaming(conversationId, false);
     }
   }, [input, streaming, conversationId, onTitleChange]);
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); }
+  const stopStreaming = () => {
+    if (abortRef.current) {
+      abortRef.current.abort();
+      abortRef.current = null;
+      setStreaming(conversationId, false);
+      setStreaming(conversationId, false);
+    }
   };
 
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); }
+    else if (e.key === "ArrowUp") {
+      const ta = e.currentTarget as HTMLTextAreaElement;
+      if (ta.selectionStart === 0) {
+        e.preventDefault();
+        if (msgHistory.current.length > 0) {
+          historyIdx.current = Math.min(historyIdx.current + 1, msgHistory.current.length - 1);
+          setInput(msgHistory.current[msgHistory.current.length - 1 - historyIdx.current]);
+          setTimeout(() => { ta.setSelectionRange(0, 0); }, 0);
+        }
+      }
+    }
+    else if (e.key === "ArrowDown") {
+      const ta = e.currentTarget as HTMLTextAreaElement;
+      if (ta.selectionStart === ta.value.length) {
+        e.preventDefault();
+        if (historyIdx.current > 0) {
+          historyIdx.current--;
+          setInput(msgHistory.current[msgHistory.current.length - 1 - historyIdx.current]);
+          setTimeout(() => { ta.setSelectionRange(ta.value.length, ta.value.length); }, 0);
+        } else {
+          historyIdx.current = -1;
+          setInput('');
+        }
+      }
+    }
+  };
+
+  // ESC 中断当前请求 / 关闭弹窗
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      if (permDialog) { setPermDialog(null); return; }
+      if (showFileMenu) { setShowFileMenu(false); return; }
+      if (showSkillPicker) { setShowSkillPicker(false); return; }
+      if (streaming && abortRef.current) {
+        abortRef.current.abort();
+        setStreaming(conversationId, false);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [streaming, permDialog, showFileMenu, showSkillPicker, conversationId]);
+
   // 文件选择器（Electron 原生对话框 / 浏览器隐藏 input）
+  const openFolderPicker = async () => {
+    const api = (window as any).electronAPI;
+    if (api?.openFolderDialog) {
+      const dir = await api.openFolderDialog();
+      if (dir) { setWorkspace(dir); localStorage.setItem("wahtway-workspace", dir); }
+    }
+  };
+
   const openFilePicker = async () => {
     setShowFileMenu(false);
     const api = (window as any).electronAPI;
@@ -248,6 +324,7 @@ function ChatPanel({ conversationId, onTitleChange, onCreateSkill }: { showModal
         <h1>WahtWay</h1>
         <span className="subtitle">何以委</span>
         {skillName && <span className="skill-badge">已激活: {skillName}</span>}
+        <span className="workspace-badge" onClick={openFolderPicker} title="切换工作目录">{workspace ? `📂 ${workspace.split(/[\/]/).pop()}` : "📂 未设置工作区"}</span>
         <select className="model-select" value={model} onChange={(e) => { const m = e.target.value; setModel(m); localStorage.setItem("wahtway-model", m); }}>
           <option value="deepseek-chat">DeepSeek V3 (快)</option>
           <option value="deepseek-v4-pro">DeepSeek V4 Pro (深)</option>
@@ -294,6 +371,17 @@ function ChatPanel({ conversationId, onTitleChange, onCreateSkill }: { showModal
                 </div>
               )}
             </div>
+          </div>
+        )}
+        {getTodoItems(conversationId).length > 0 && (
+          <div className="todo-panel">
+            <div className="todo-header">📋 任务进度 ({getTodoItems(conversationId).filter(function(t) { return t.done; }).length}/{getTodoItems(conversationId).length})</div>
+            {getTodoItems(conversationId).map(function(t) { return (
+              <div key={t.id} className={`todo-item ${t.done ? "done" : ""}`}>
+                <span className="todo-check">{t.done ? "✅" : "⬜"}</span>
+                <span className="todo-text">{t.text}</span>
+              </div>
+            ); })}
           </div>
         )}
         <div ref={messagesEndRef} />
@@ -353,6 +441,7 @@ function ChatPanel({ conversationId, onTitleChange, onCreateSkill }: { showModal
             onKeyDown={handleKeyDown} placeholder="输入你的问题…（Enter 发送，Shift+Enter 换行）"
             rows={2} disabled={streaming} />
           <button onClick={sendMessage} disabled={streaming || (!input.trim() && attachedFiles.length === 0)}>发送</button>
+          {streaming && <button className="stop-btn" onClick={stopStreaming}>⏹</button>}
         </div>
       </footer>
 

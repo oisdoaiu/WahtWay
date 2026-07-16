@@ -8,9 +8,16 @@ export interface ConvMessage {
   skillName?: string;
 }
 
+export interface TodoItem {
+  id: number;
+  text: string;
+  done: boolean;
+}
+
 interface ConvState {
   messages: ConvMessage[];
   streaming: boolean;
+  todoItems: TodoItem[];
 }
 
 // 全局对话状态 Map
@@ -20,7 +27,7 @@ const listeners = new Set<() => void>();
 
 function getOrCreate(id: string): ConvState {
   if (!store.has(id)) {
-    store.set(id, { messages: [], streaming: false });
+    store.set(id, { messages: [], streaming: false, todoItems: [] });
   }
   return store.get(id)!;
 }
@@ -31,6 +38,16 @@ export function getMessages(id: string): ConvMessage[] {
 
 export function isStreaming(id: string): boolean {
   return getOrCreate(id).streaming;
+}
+
+export function getTodoItems(id: string): TodoItem[] {
+  return getOrCreate(id).todoItems;
+}
+
+export function setTodoItems(id: string, items: TodoItem[]) {
+  const s = getOrCreate(id);
+  s.todoItems = items;
+  notify();
 }
 
 export function setMessages(id: string, msgs: ConvMessage[]) {

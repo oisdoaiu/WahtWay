@@ -7,7 +7,7 @@ import { createTraceId, logger } from "../logger";
 const router = Router();
 
 router.post("/", async (req: Request, res: Response) => {
-  const { message, history, model, skillId } = req.body;
+  const { message, history, model, skillId, workspace } = req.body;
 
   if (!message || typeof message !== "string") {
     res.status(400).json({ error: "请提供 message 字段" });
@@ -27,7 +27,7 @@ router.post("/", async (req: Request, res: Response) => {
   res.flushHeaders();
 
   try {
-    const stream = await runAgentStream(message, history, traceId, model, skillId);
+    const stream = await runAgentStream(message, history, traceId, model, skillId, workspace);
 
     for await (const event of stream) {
       res.write(`data: ${JSON.stringify(event)}\n\n`);

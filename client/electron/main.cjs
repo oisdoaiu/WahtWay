@@ -31,6 +31,15 @@ ipcMain.handle("open-file-dialog", async () => {
   return result.canceled ? [] : result.filePaths;
 });
 
+// IPC: 打开文件夹选择对话框
+ipcMain.handle("open-folder-dialog", async () => {
+  const result = await dialog.showOpenDialog(mainWindow, {
+    properties: ["openDirectory"],
+    title: "选择工作目录",
+  });
+  return result.canceled ? "" : result.filePaths[0] || "";
+});
+
 app.whenReady().then(async () => {
   loadEnv();
 

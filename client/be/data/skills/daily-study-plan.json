@@ -6,18 +6,48 @@
   "input": {
     "type": "object",
     "properties": {
-      "subject": { "type": "string", "description": "学科名称" },
-      "availableHours": { "type": "string", "description": "可用学习时长" },
-      "focusAreas": { "type": "string", "description": "重点学习的内容" }
+      "subject": {
+        "type": "string",
+        "description": "学科名称"
+      },
+      "availableHours": {
+        "type": "string",
+        "description": "可用学习时长"
+      },
+      "focusAreas": {
+        "type": "string",
+        "description": "重点学习的内容"
+      }
     },
-    "required": ["subject"]
+    "required": [
+      "subject"
+    ]
   },
   "output": {
     "type": "object",
-    "properties": { "plan": { "type": "string", "description": "Markdown 格式的学习计划" } }
+    "properties": {
+      "plan": {
+        "type": "string",
+        "description": "Markdown 格式的学习计划"
+      }
+    }
   },
   "requiredTools": [],
-  "allowedTools": ["write-file", "read-file"],
-  "whenToUse": "用户想制定学习/复习/备考计划、安排学习时间、需要每日学习规划时触发。不要在纯文件操作或闲聊时触发。",
-  "keywords": ["学习", "复习", "计划", "备考", "考试", "课程", "刷题", "预习", "笔记", "背书"]
+  "allowedTools": [
+    "write-file",
+    "read-file"
+  ],
+  "whenToUse": "仅当用户明确要求制定每日学习计划、复习时间表、备考安排、课程学习规划时触发。不要对写代码、编程任务等包含计划二字但不是学习规划的任务触发。",
+  "keywords": [
+    "学习",
+    "复习",
+    "计划",
+    "备考",
+    "考试",
+    "课程",
+    "刷题",
+    "预习",
+    "笔记",
+    "背书"
+  ]
 }

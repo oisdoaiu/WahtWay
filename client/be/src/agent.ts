@@ -58,7 +58,13 @@ function toolPolicy(): string {
 - 你能操作文件：move-file / copy-file / new-folder / write-file / delete-file
 - 这些不是"需要决定要不要用的工具"——是你的眼睛和手
 - 用户说"看看桌面"、"回收站里有什么"、"找一下报告"——和呼吸一样自然地调用
-- 只有"你好"、"谢谢"、"再见"这种纯社交场合才不操作文件`.trim();
+- 只有"你好"、"谢谢"、"再见"这种纯社交场合才不操作文件
+
+## 你的记忆能力
+- 你可以在 ${require("os").homedir()}\\.wahtway-notes\\ 目录下读写 .md 笔记文件
+- 遇到复杂任务时，先写笔记记录分析结果，下次对话可以直接读笔记，不用重复扫描
+- 用户信息、偏好、之前做过什么都可以记在笔记里，形成长期记忆
+- 用 write-file 记笔记，用 read-file 读笔记`.trim();
 }
 
 async function* agenticLoopStream(
@@ -66,7 +72,8 @@ async function* agenticLoopStream(
   userMessage: string,
   history?: { role: string; content: string }[],
   traceId?: string,
-  allowedTools?: string[]
+  allowedTools?: string[],
+  workspace?: string
 ): AsyncGenerator<StreamEvent> {
   const log = logger(traceId || "no-trace", "agent");
   const startTime = Date.now();
@@ -216,7 +223,8 @@ export async function* executeSkillStream(
   skill: Skill,
   userMessage: string,
   history?: { role: string; content: string }[],
-  traceId?: string
+  traceId?: string,
+  workspace?: string
 ): AsyncGenerator<StreamEvent> {
   const log = logger(traceId || "no-trace", "skill");
   log.info("matched", { skillId: skill.id, skillName: skill.name });
@@ -226,7 +234,7 @@ export async function* executeSkillStream(
     data: { skillName: skill.name, skillId: skill.id },
   };
 
-  for await (const event of agenticLoopStream(skill.systemPrompt, userMessage, history, traceId, skill.allowedTools)) {
+  for await (const event of agenticLoopStream(skill.systemPrompt, userMessage, history, traceId, skill.allowedTools, workspace)) {
     yield event;
   }
 }
@@ -252,7 +260,8 @@ export async function runAgentStream(
   history?: { role: string; content: string }[],
   traceId?: string,
   model?: string,
-  skillId?: string
+  skillId?: string,
+  workspace?: string
 ): Promise<AsyncGenerator<StreamEvent>> {
   if (model) setModel(model);
   const log = logger(traceId || "no-trace", "agent");
@@ -277,10 +286,10 @@ export async function runAgentStream(
       output: { type: "object", properties: {} },
       requiredTools: [],
     };
-    return executeSkillStream(general, userMessage, history, traceId);
+    return executeSkillStream(general, userMessage, history, traceId, undefined, workspace);
   }
 
-  return executeSkillStream(skill, userMessage, history, traceId);
+  return executeSkillStream(skill, userMessage, history, traceId, undefined, workspace);
 }
 
 export { matchSkill };

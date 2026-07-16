@@ -4,6 +4,7 @@
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
+import OpenAI from "openai";
 import { ToolDef } from "../types";
 
 /** 列出目录下的文件和子目录 */
@@ -54,7 +55,7 @@ export const listFilesTool: ToolDef = {
 /** 读取文本文件内容 */
 export const readFileTool: ToolDef = {
   name: "read-file",
-  description: "读取文本文件的内容（.txt .md .js .ts .py .json .html .css 等）。只在用户明确要求查看、打开、读取某个文件时才调用。不要自动读取用户没提到的文件。",
+  description: "读取文件内容。任何涉及文件内容的任务都必须先用此工具获取内容，包括查看、分析、总结、翻译等。这是文件操作的入口。",
       input_examples: [
         { description: "读取桌面的笔记", args: { path: "C:\Users\asus\Desktop\notes.txt" } },
         { description: "读取项目配置文件", args: { path: "C:\Users\asus\project\config.json" } },
@@ -376,6 +377,52 @@ export const deleteFileTool: ToolDef = {
   },
 };
 
+/** 文件内容总结 / 翻译 / 格式化 */
+export const summarizeFileTool: ToolDef = {
+  name: "summarize-file",
+  description: "读取文本文件并调用 AI 进行总结、翻译或格式化。适合用户说'帮我总结这个文件'、'翻译这份文档'、'把这个 txt 整理成表格'等场景。",
+  input_examples: [
+    { description: "总结报告内容", args: { path: "C:\\Users\\asus\\Documents\\报告.txt", task: "总结" } },
+    { description: "翻译英文文档", args: { path: "C:\\Users\\asus\\Desktop\\readme.md", task: "翻译成中文" } },
+  ],
+  parameters: {
+    type: "object",
+    properties: {
+      path: { type: "string", description: "文件完整路径" },
+      task: { type: "string", description: "处理任务，如：总结要点、翻译成中文、格式化为表格、提取关键信息" },
+    },
+    required: ["path", "task"],
+  },
+  execute: async (args) => {
+    const filePath = String(args.path);
+    const task = String(args.task);
+    if (!fs.existsSync(filePath)) return `文件不存在: ${filePath}`;
+    try {
+      const stat = fs.statSync(filePath);
+      const maxLen = 30 * 1024;
+      const content = fs.readFileSync(filePath, "utf-8").slice(0, maxLen);
+      const truncated = stat.size > maxLen ? "（文件过大，仅读取前 30KB）\n" : "";
+
+      const client = new OpenAI({
+        apiKey: process.env.DEEPSEEK_API_KEY,
+        baseURL: process.env.DEEPSEEK_BASE_URL || "https://api.deepseek.com",
+      });
+      const response = await client.chat.completions.create({
+        model: process.env.DEEPSEEK_MODEL || "deepseek-chat",
+        messages: [
+          { role: "system", content: `你是文件处理助手。对用户提供的文件内容执行：${task}。简洁输出结果。` },
+          { role: "user", content: `文件: ${path.basename(filePath)}\n\n${truncated}${content}` },
+        ],
+        temperature: 0.3,
+        max_tokens: 1024,
+      });
+      return response.choices[0]?.message?.content || "（AI 未返回内容）";
+    } catch (e: any) {
+      return `处理失败: ${e.message}`;
+    }
+  },
+};
+
 function formatSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
@@ -394,4 +441,5 @@ export function registerFileTools(register: (t: ToolDef) => void): void {
   register(newFolderTool);
   register(writeFileTool);
   register(deleteFileTool);
+  register(summarizeFileTool);
 }

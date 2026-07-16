@@ -780,3 +780,20 @@ body {
 }
 .setup-btn:hover:not(:disabled) { opacity: 0.9; }
 .setup-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* === Todo 可视化面板 === */
+.todo-panel {
+  margin: 0 20px 12px; padding: 12px 16px; background: #fafafa;
+  border: 1px solid #e8e8e8; border-radius: 12px;
+}
+.todo-header { font-size: 12px; color: #888; margin-bottom: 8px; font-weight: 600; }
+.todo-item { display: flex; align-items: center; gap: 8px; padding: 4px 0; }
+.todo-item.done .todo-text { text-decoration: line-through; color: #bbb; }
+.todo-check { font-size: 16px; }
+.todo-text { font-size: 14px; color: #333; }
+
+.stop-btn { padding: 0 16px; border: none; border-radius: 12px; background: #e74c3c; color: #fff; font-size: 14px; font-weight: 600; cursor: pointer; }
+.stop-btn:hover { background: #c0392b; }
+
+.workspace-badge { margin-left: 8px; padding: 4px 10px; background: #f5f0ff; color: #7c4dff; border-radius: 10px; font-size: 12px; cursor: pointer; transition: background 0.2s; }
+.workspace-badge:hover { background: #ede0ff; }

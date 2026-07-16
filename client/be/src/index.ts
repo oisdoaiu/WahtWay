@@ -13,10 +13,12 @@ import { initSkills, getSkillsDir } from "./skills/loader";
 import { setModel, getCurrentModel } from "./agent";
 import { registerTool } from "./tools/registry";
 import { registerFileTools, approvePath } from "./tools/file-tools";
+import { todoUpdateTool, clearTodo } from "./tools/todo-tool";
 
 // 启动时加载 Skill + 注册 Tool
 initSkills();
 registerFileTools(registerTool);
+registerTool(todoUpdateTool);
 
 const app = express();
 const PORT = process.env.PORT || 3000;

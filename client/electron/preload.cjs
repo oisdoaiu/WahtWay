@@ -15,6 +15,8 @@ contextBridge.exposeInMainWorld("electronAPI", {
   },
   // 打开原生文件选择对话框
   openFileDialog: () => ipcRenderer.invoke("open-file-dialog"),
+  // 打开文件夹选择对话框
+  openFolderDialog: () => ipcRenderer.invoke("open-folder-dialog"),
 });
 
 // 关键修复：劫持任意点击，确保焦点落到对应元素
