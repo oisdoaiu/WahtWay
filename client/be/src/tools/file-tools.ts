@@ -6,6 +6,7 @@ import * as path from "path";
 import * as os from "os";
 import OpenAI from "openai";
 import AdmZip from "adm-zip";
+import { resolveModel } from "../models";
 import { ToolDef } from "../types";
 
 /** 列出目录下的文件和子目录 */
@@ -409,7 +410,7 @@ export const summarizeFileTool: ToolDef = {
         baseURL: process.env.DEEPSEEK_BASE_URL || "https://api.deepseek.com",
       });
       const response = await client.chat.completions.create({
-        model: process.env.DEEPSEEK_MODEL || "deepseek-chat",
+        model: resolveModel(process.env.DEEPSEEK_MODEL),
         messages: [
           { role: "system", content: `你是文件处理助手。对用户提供的文件内容执行：${task}。简洁输出结果。` },
           { role: "user", content: `文件: ${path.basename(filePath)}\n\n${truncated}${content}` },

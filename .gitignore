@@ -1,8 +1,22 @@
+# Dependencies and build outputs
 node_modules/
 dist/
 release/
 *.exe
+
+# Local configuration
 .env
-# Skill Hub 运行时数据（服务端启动时自动生成）
-server/data/hub/
+.env.*
+!.env.example
+
+# Runtime state
 *.port
+*.log
+client/data/conversations/
+client/data/logs/
+client/be/data/conversations/
+server/data/hub/
+
+# OS metadata
+.DS_Store
+Thumbs.db

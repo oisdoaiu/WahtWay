@@ -8,6 +8,14 @@ import {
 } from "./conversations";
 import "./App.css";
 
+const DEFAULT_MODEL = "deepseek-v4-flash";
+const SUPPORTED_MODELS = new Set([DEFAULT_MODEL, "deepseek-v4-pro"]);
+
+function getInitialModel(): string {
+  const savedModel = localStorage.getItem("wahtway-model");
+  return savedModel && SUPPORTED_MODELS.has(savedModel) ? savedModel : DEFAULT_MODEL;
+}
+
 // ---- 全局 Toast（替代 alert，解决 Electron 焦点丢失） ----
 let _showToast: (msg: string, type?: "info" | "error") => void = () => {};
 export function toast(msg: string, type: "info" | "error" = "info") { _showToast(msg, type); }
@@ -53,7 +61,7 @@ function ChatPanel({ conversationId, onTitleChange, onCreateSkill }: { showModal
   const [thinkingStatus, setThinkingStatus] = useState("");
   const [toolCalls, setToolCalls] = useState<{name: string; startTime: number}[]>([]);
   const toolTimersRef = useRef<Map<string, number>>(new Map());
-  const [model, setModel] = useState(() => localStorage.getItem("wahtway-model") || "deepseek-chat");
+  const [model, setModel] = useState(getInitialModel);
   const [skillId, setSkillId] = useState<string>("");
   const [showSkillPicker, setShowSkillPicker] = useState(false);
   const [skillSearch, setSkillSearch] = useState("");
@@ -336,9 +344,8 @@ const res2 = (event.data as any)?.result; // was here
         {skillName && <span className="skill-badge">已激活: {skillName}</span>}
         <span className="workspace-badge" onClick={openFolderPicker} title="切换工作目录">{workspace ? `📂 ${workspace.split(/[\/]/).pop()}` : "📂 未设置工作区"}</span>
         <select className="model-select" value={model} onChange={(e) => { const m = e.target.value; setModel(m); localStorage.setItem("wahtway-model", m); }}>
-          <option value="deepseek-chat">DeepSeek V3 (快)</option>
+          <option value="deepseek-v4-flash">DeepSeek V4 Flash (快)</option>
           <option value="deepseek-v4-pro">DeepSeek V4 Pro (深)</option>
-          <option value="deepseek-reasoner">DeepSeek R1 (推理)</option>
         </select>
       </header>
       <main className="chat-area">

@@ -1,7 +1,8 @@
 // WahtWay 后端入口
-// 启动: npm run dev (CLI 需先加载 dotenv)
+// 启动: npm run dev（自动加载本地 .env）
 // Electron 模式: 由 main.cjs 设置 process.env 后 require
 
+import { getEnvPath } from "./env";
 import express from "express";
 import cors from "cors";
 import path from "path";
@@ -15,6 +16,7 @@ import { registerTool } from "./tools/registry";
 import { registerFileTools, approvePath } from "./tools/file-tools";
 import { todoUpdateTool, clearTodo } from "./tools/todo-tool";
 import { runCommandTool, approveAndExecute, clearApprovedCommands } from "./tools/command-tool";
+import { resolveModel } from "./models";
 
 // 启动时加载 Skill + 注册 Tool
 initSkills();
@@ -107,22 +109,18 @@ app.post("/api/setup", (req, res) => {
     return;
   }
   try {
+    const selectedModel = resolveModel(typeof model === "string" ? model : undefined);
     const envContent = [
       `DEEPSEEK_API_KEY=${apiKey.trim()}`,
       `DEEPSEEK_BASE_URL=${baseUrl?.trim() || "https://api.deepseek.com"}`,
-      `DEEPSEEK_MODEL=${model?.trim() || "deepseek-chat"}`,
+      `DEEPSEEK_MODEL=${selectedModel}`,
     ].join("\n");
-    // 写入 .env（与 main.cjs loadEnv 的读取路径一致）
-    const envPaths = [
-      path.join(path.dirname(process.execPath), ".env"),  // Electron: EXE 同目录
-      path.resolve(__dirname, "../../", ".env"),           // Dev: be/ 的上级 = client/
-    ];
-    const target = envPaths.find(p => { try { return fs.existsSync(path.dirname(p)); } catch { return false; } }) || envPaths[0];
+    const target = getEnvPath();
     fs.writeFileSync(target, envContent, "utf-8");
     // 立即生效
     process.env.DEEPSEEK_API_KEY = apiKey.trim();
     if (baseUrl) process.env.DEEPSEEK_BASE_URL = baseUrl.trim();
-    if (model) process.env.DEEPSEEK_MODEL = model.trim();
+    process.env.DEEPSEEK_MODEL = selectedModel;
     console.log("🔑 API Key 已保存:", target);
     res.json({ success: true });
   } catch (err: any) {

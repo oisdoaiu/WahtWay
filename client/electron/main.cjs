@@ -6,9 +6,13 @@ let mainWindow = null;
 
 // 加载 .env
 function loadEnv() {
+  const envPath = app.isPackaged
+    ? path.join(path.dirname(process.execPath), ".env")
+    : path.join(__dirname, "..", ".env");
+  process.env.WAHTWAY_ENV_PATH = envPath;
   const candidates = [
+    envPath,
     path.join(__dirname, "..", "be", ".env"),
-    path.join(path.dirname(process.execPath), ".env"),
   ];
   for (const p of candidates) {
     if (!fs.existsSync(p)) continue;

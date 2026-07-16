@@ -2,6 +2,7 @@
 // 把所有 Skill 描述发给 DeepSeek，让它选最合适的，或识别为闲聊
 
 import OpenAI from "openai";
+import { resolveModel } from "../models";
 import { Skill } from "../types";
 
 let _client: OpenAI | null = null;
@@ -48,7 +49,7 @@ ${skillList}
 只回复一个数字（-1 或 Skill 编号），不要任何其他文字。`;
 
   const response = await getClient().chat.completions.create({
-    model: process.env.DEEPSEEK_MODEL || "deepseek-chat",
+    model: resolveModel(process.env.DEEPSEEK_MODEL),
     messages: [{ role: "user", content: prompt }],
     temperature: 0,
     max_tokens: 5,

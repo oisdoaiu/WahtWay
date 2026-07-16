@@ -6,6 +6,7 @@
 
 import { Router, Request, Response } from "express";
 import OpenAI from "openai";
+import { resolveModel } from "../models";
 import { registeredSkills, saveSkill, deleteSkill } from "../skills/loader";
 import { Skill } from "../types";
 
@@ -54,7 +55,7 @@ function getClient(): OpenAI {
   }
   return _client;
 }
-const MODEL = process.env.DEEPSEEK_MODEL || "deepseek-chat";
+const MODEL = resolveModel(process.env.DEEPSEEK_MODEL);
 
 // GET /api/skills — 已注册 Skill 列表（脱敏）
 router.get("/", (_req: Request, res: Response) => {

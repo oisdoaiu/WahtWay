@@ -7,6 +7,7 @@ import { registeredSkills } from "./skills/loader";
 import { matchSkillByKeywords, GENERAL_PROMPT } from "./skills/matcher";
 import { getTool, formatToolsForLLM } from "./tools/registry";
 import { logger } from "./logger";
+import { resolveModel } from "./models";
 
 let _client: OpenAI | null = null;
 function getClient(): OpenAI {
@@ -20,9 +21,9 @@ function getClient(): OpenAI {
 }
 let _model: string | null = null;
 function getModel(override?: string): string {
-  return override || _model || process.env.DEEPSEEK_getModel() || "deepseek-chat";
+  return resolveModel(override || _model || process.env.DEEPSEEK_MODEL);
 }
-export function setModel(m: string) { _model = m; }
+export function setModel(m: string) { _model = resolveModel(m); }
 export function getCurrentModel(): string { return getModel(); }
 const MAX_TOOL_ROUNDS = 10;
 

@@ -44,7 +44,7 @@ cd WahtWay
 ```
 DEEPSEEK_API_KEY=sk-你的key
 DEEPSEEK_BASE_URL=https://api.deepseek.com
-DEEPSEEK_MODEL=deepseek-chat
+DEEPSEEK_MODEL=deepseek-v4-flash
 ```
 
 ### 3. 安装依赖
