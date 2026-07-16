@@ -26,6 +26,7 @@ interface CreateSkillInput {
   manifest: Skill;
   version: string;
   changelog?: string;
+  authorUserId: string;
   authorName?: string;
   category?: string;
   tags: string[];
@@ -247,6 +248,7 @@ export function createSkill(input: CreateSkillInput): SkillHubRecord {
     slug: skillId,
     name: manifest.name,
     description: manifest.description,
+    authorUserId: input.authorUserId,
     authorName: input.authorName,
     category: input.category,
     tags: input.tags,

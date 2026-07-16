@@ -67,6 +67,28 @@ button:disabled {
   margin: 6px 0 0;
 }
 
+.top-actions {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: flex-end;
+}
+
+.user-badge {
+  background: var(--accent-soft);
+  border: 1px solid #c7e4d4;
+  border-radius: 999px;
+  color: var(--accent-strong);
+  font-size: 13px;
+  font-weight: 700;
+  max-width: 180px;
+  overflow: hidden;
+  padding: 8px 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .workspace {
   display: grid;
   gap: 18px;
@@ -136,6 +158,11 @@ select:focus,
 textarea:focus {
   border-color: var(--accent);
   box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+input:disabled {
+  background: #f4f6f5;
+  color: var(--muted);
 }
 
 .list-meta {
@@ -375,6 +402,10 @@ textarea:focus {
   width: min(780px, 100%);
 }
 
+.compact-modal {
+  max-width: 430px;
+}
+
 .modal-header,
 .modal-actions {
   align-items: center;
@@ -391,6 +422,29 @@ textarea:focus {
   display: grid;
   gap: 12px;
   grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.segmented {
+  background: var(--panel-soft);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  padding: 3px;
+}
+
+.segmented button {
+  background: transparent;
+  border-radius: 4px;
+  color: var(--muted);
+  min-height: 34px;
+}
+
+.segmented button.active {
+  background: #fff;
+  color: var(--text);
+  font-weight: 700;
+  box-shadow: 0 1px 5px rgba(23, 32, 27, 0.1);
 }
 
 .form-message {
@@ -412,6 +466,19 @@ textarea:focus {
   .topbar {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .top-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    justify-content: stretch;
+  }
+
+  .top-actions .primary-btn,
+  .top-actions .ghost-btn,
+  .user-badge {
+    max-width: none;
+    width: 100%;
   }
 
   .workspace {

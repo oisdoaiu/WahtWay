@@ -23,6 +23,26 @@ export interface Skill {
 
 export type SkillStatus = "draft" | "pending" | "published" | "rejected" | "archived";
 export type SkillVisibility = "public" | "unlisted";
+export type UserRole = "user" | "admin";
+
+export interface PublicUser {
+  id: string;
+  username: string;
+  displayName: string;
+  role: UserRole;
+  createdAt: string;
+}
+
+export interface StoredUser extends PublicUser {
+  passwordSalt: string;
+  passwordHash: string;
+  passwordIterations: number;
+}
+
+export interface AuthDatabase {
+  schemaVersion: 1;
+  users: StoredUser[];
+}
 
 export interface SkillVersion {
   version: string;
@@ -48,6 +68,7 @@ export interface SkillHubRecord {
   slug: string;
   name: string;
   description: string;
+  authorUserId?: string;
   authorName?: string;
   category?: string;
   tags: string[];

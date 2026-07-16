@@ -4,6 +4,7 @@ import express from "express";
 import cors from "cors";
 import * as fs from "fs";
 import * as path from "path";
+import authRouter from "./routes/auth";
 import skillsRouter from "./routes/skills";
 
 const app = express();
@@ -21,6 +22,7 @@ app.get("/api/health", (_req, res) => {
   res.json({ status: "ok", service: "skill-hub", version: "0.8.0" });
 });
 
+app.use("/api/auth", authRouter);
 app.use("/api/skills", skillsRouter);
 
 if (fs.existsSync(publicDir)) {
