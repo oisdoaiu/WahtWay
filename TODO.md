@@ -96,6 +96,20 @@ undefined
 | 1 | 长时间无操作后 LLM 超时无友好提示 | 待修 |
 | 2 | EXE 体积较大（~180MB，含 Electron + Chromium） | 待优化 |
 
+### 参考 Claude Code 命令执行权限模型 — 可借鉴方向
+
+> 来源：Claude Code Permission Model + Sandboxing + Cursor Security
+
+| # | 做法 | 对 WahtWay 的启发 | 难度 |
+|---|------|-----------------|:---:|
+| 46 | 只读命令自动放行：ls/cat/grep/find/stat/git status 等不弹窗 | run-command 区分只读/写入，只读命令直接执行 | 小 |
+| 47 | 命令规则持久化：allow/ask/deny 三级权限 + glob 匹配 | 用户批准过的命令记住，同项目同命令不再弹 | 中 |
+| 48 | 沙箱隔离：OS 级文件系统+网络隔离，沙箱内免审批 | 长期方向，当前可用 Electron 限制替代 | 大 |
+| 49 | 复合命令拆分：cmd1 && cmd2 拆开审批 | 解析 && / || / ; / | 拆分后逐个审批 | 小 |
+| 50 | 危险命令硬拦截：rm -rf /、sudo 永远弹窗 | 黑名单：sudo、rm -rf /、format、del /f /s | 小 |
+| 51 | 审批后直接执行不重发消息 | 改流程：审批后直接 execute → SSE 推回结果 | 中 |
+
+
 ### 参考 Anthropic Tool Use / OpenAI Agents SDK — 可借鉴方向
 
 > 来源：[Anthropic Tool Use Best Practices](https://platform.claude.com/cookbook/tool-use-programmatic-tool-calling-ptc) + [OpenAI Agents SDK Patterns](https://developers.openai.com/cookbook/examples/agents_sdk/multi-agent-portfolio-collaboration/)

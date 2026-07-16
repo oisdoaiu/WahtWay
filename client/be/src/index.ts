@@ -14,11 +14,13 @@ import { setModel, getCurrentModel } from "./agent";
 import { registerTool } from "./tools/registry";
 import { registerFileTools, approvePath } from "./tools/file-tools";
 import { todoUpdateTool, clearTodo } from "./tools/todo-tool";
+import { runCommandTool, approveAndExecute, clearApprovedCommands } from "./tools/command-tool";
 
 // 启动时加载 Skill + 注册 Tool
 initSkills();
 registerFileTools(registerTool);
 registerTool(todoUpdateTool);
+registerTool(runCommandTool);
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -45,6 +47,25 @@ app.post("/api/tools/approve", (req, res) => {
   approvePath(p);
   console.log(`🔓 已授权路径: ${p}`);
   res.json({ success: true });
+});
+
+// 清除命令审批缓存（新对话时调用）
+app.post("/api/tools/clear-approvals", (_req, res) => {
+  clearApprovedCommands();
+  res.json({ success: true });
+});
+
+// 命令审批：批准后立即执行并缓存结果
+app.post("/api/tools/approve-command", async (req, res) => {
+  const { command, cwd } = req.body;
+  if (!command) { res.status(400).json({ error: "请提供 command" }); return; }
+  try {
+    const result = await approveAndExecute(command, cwd || require("os").homedir());
+    console.log(`💻 已执行命令: ${command}`);
+    res.json({ success: true, result });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // 健康检查

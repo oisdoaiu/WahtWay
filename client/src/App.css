@@ -883,3 +883,8 @@ body {
 .app.dark .modal-body p { color: #bac2de; }
 .app.dark .modal-actions button { background: #45475a; color: #cdd6f4; border-color: #585b70; }
 .app.dark .modal-actions button.primary { background: #89b4fa; color: #fff; }
+
+.perm-cwd { font-size: 11px; color: #888; margin-top: 4px; }
+
+.app.dark .perm-path { background: #45475a; color: #cdd6f4; }
+.app.dark .perm-reason { color: #f9e2af; }

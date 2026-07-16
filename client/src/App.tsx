@@ -58,7 +58,8 @@ function ChatPanel({ conversationId, onTitleChange, onCreateSkill }: { showModal
   const [showSkillPicker, setShowSkillPicker] = useState(false);
   const [skillSearch, setSkillSearch] = useState("");
   const [allSkills, setAllSkills] = useState<SkillMeta[]>([]);
-  const [permDialog, setPermDialog] = useState<{ reason: string; path: string } | null>(null);
+  const [permDialog, setPermDialog] = useState<{ reason: string; path: string; isCommand?: boolean; command?: string; cwd?: string } | null>(null);
+  const [permBusy, setPermBusy] = useState(false);
   const [showPulse, setShowPulse] = useState(false);
   const [attachedFiles, setAttachedFiles] = useState<string[]>([]);
   const [showFileMenu, setShowFileMenu] = useState(false);
@@ -204,7 +205,14 @@ function ChatPanel({ conversationId, onTitleChange, onCreateSkill }: { showModal
 const res2 = (event.data as any)?.result; // was here
               if (typeof res === "string" && res.startsWith("PERMISSION_REQUIRED::")) {
                 const parts = res.split("::");
-                setPermDialog({ reason: parts[1] || "未知", path: parts[2] || "" });
+                const reason = parts[1] || "未知";
+                const path = parts[2] || "";
+                // 检测是否是命令执行（含普通命令和危险命令）
+                if (reason.includes("执行命令") || reason.includes("命令需确认") || reason.includes("命令含危险")) {
+                  setPermDialog({ reason, path, isCommand: true, command: path, cwd: parts[3] || "" });
+                } else {
+                  setPermDialog({ reason, path });
+                }
               }
             }
             else if (event.type === "delta") { lastEventRef.current = Date.now(); setThinkingStatus(""); appendToLast(conversationId, event.data); }
@@ -449,20 +457,37 @@ const res2 = (event.data as any)?.result; // was here
 
       {permDialog && (
         <div className="modal-overlay" onClick={() => setPermDialog(null)}>
-          <div className="modal" style={{ maxWidth: 420 }} onClick={e => e.stopPropagation()}>
-            <div className="modal-header"><h2>🔐 需要授权</h2></div>
+          <div className="modal" style={{ maxWidth: 480 }} onClick={e => e.stopPropagation()}>
+            <div className="modal-header"><h2>🔐 确认操作</h2></div>
             <div className="modal-body">
-              <p>Agent 尝试操作受限路径：</p>
-              <p className="perm-path">{permDialog.path || "未知路径"}</p>
+              <p>{permDialog.isCommand ? "即将执行命令：" : "即将操作路径："}</p>
+              <p className="perm-path">{permDialog.isCommand && permDialog.command ? permDialog.command : (permDialog.path || "未知路径")}</p>
+              {permDialog.cwd && <p className="perm-cwd">📂 {permDialog.cwd}</p>}
               <p className="perm-reason">原因：{permDialog.reason}</p>
               <div className="modal-actions">
-                <button onClick={() => setPermDialog(null)}>取消</button>
-                <button className="primary" onClick={async () => {
-                  await fetch("/api/tools/approve", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path: permDialog.path }) });
-                  setPermDialog(null);
-                  // 自动重试：重新发送同一条消息
-                  setTimeout(() => sendMessage(), 300);
-                }}>授权并重试</button>
+                <button onClick={() => setPermDialog(null)} disabled={permBusy}>取消</button>
+                <button className="primary" disabled={permBusy}
+                  style={permDialog.reason.includes("危险") ? { background: "#c62828" } : {}}
+                  onClick={async () => {
+                  setPermBusy(true);
+                  const isCmd = permDialog.isCommand;
+                  const cmd = permDialog.command;
+                  const cwd = permDialog.cwd;
+                  setPermDialog(null); // 立即关闭弹窗
+                  try {
+                    if (isCmd) {
+                      const r = await fetch("/api/tools/approve-command", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ command: cmd, cwd }) });
+                      const d = await r.json();
+                      if (d.result) {
+                        appendToLast(conversationId, `\n\n> Input\n\`\`\`sh\n${cmd}\n\`\`\`\n> Output\n\`\`\`\n${d.result.slice(0, 2000)}\n\`\`\``);
+                      }
+                    } else {
+                      await fetch("/api/tools/approve", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path: permDialog.path }) });
+                    }
+                    setTimeout(() => sendMessage(), 300);
+                  } catch (e) { /* ignore */ }
+                  finally { setPermBusy(false); }
+                }}>{permBusy ? "执行中…" : "批准执行"}</button>
               </div>
             </div>
           </div>
@@ -775,6 +800,7 @@ export default function App() {
     const c = await r.json();
     setConversationId(c.id);
     setConvVersion(v => v + 1);
+    fetch("/api/tools/clear-approvals", { method: "POST" }).catch(() => {});
   };
 
   const saveConvTitle = async (id: string, title: string) => {
