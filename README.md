@@ -90,7 +90,6 @@ WahtWay/
 ├── client/                       # Electron 客户端
 │   ├── be/                       #   内嵌后端
 │   │   ├── data/skills/          #   ★ 本地 Skill 定义（JSON 文件）
-│   │   ├── data/conversations/   #   对话历史持久化
 │   │   └── src/
 │   │       ├── index.ts          #   Express 入口
 │   │       ├── agent.ts          #   Agent 核心（流式 Agentic Loop）

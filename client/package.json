@@ -20,7 +20,7 @@
     "files": [
       "electron/**/*",
       "be/dist/**/*",
-      "be/data/**/*",
+      "be/data/skills/**/*",
       "be/node_modules/**/*",
       "be/package.json",
       "dist/**/*"

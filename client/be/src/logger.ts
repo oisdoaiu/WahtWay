@@ -1,8 +1,9 @@
 // 结构化调试日志 + 自动导出文件
 // 每条日志带 traceId，同时输出到控制台和文件
-// 文件路径: be/data/logs/wahtway.log（自动轮转，最大 1MB × 3 份）
+// 文件路径: 用户数据目录/logs/wahtway.log（自动轮转，最大 1MB × 3 份）
 
 import { randomUUID } from "crypto";
+import { getLogsDir } from "./runtime-data";
 import * as fs from "fs";
 import * as path from "path";
 
@@ -23,16 +24,7 @@ const MAX_SIZE = 1 * 1024 * 1024; // 1MB
 const MAX_FILES = 3;
 
 // 日志文件目录
-const LOG_DIR = (() => {
-  const candidates = [
-    path.join(process.cwd(), "data", "logs"),
-    path.resolve(__dirname, "../data/logs"),
-  ];
-  for (const d of candidates) {
-    try { if (!fs.existsSync(d)) fs.mkdirSync(d, { recursive: true }); return d; } catch {}
-  }
-  return candidates[0];
-})();
+const LOG_DIR = getLogsDir();
 
 const LOG_FILE = path.join(LOG_DIR, "wahtway.log");
 
@@ -67,6 +59,7 @@ function rotateLog() {
 
 function writeToFile(line: string) {
   try {
+    if (!fs.existsSync(LOG_DIR)) fs.mkdirSync(LOG_DIR, { recursive: true });
     rotateLog();
     fs.appendFileSync(LOG_FILE, line + "\n", "utf-8");
   } catch {}

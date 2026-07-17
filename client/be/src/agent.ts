@@ -183,7 +183,7 @@ async function* agenticLoopStream(
         let args: Record<string, unknown> = {};
         try { args = JSON.parse(tc.args); } catch {}
 
-        log.info("tool_call", { tool: tc.name, args });
+        log.info("tool_call", { tool: tc.name, argKeys: Object.keys(args) });
         yield { type: "tool_call", data: { toolName: tc.name, args } };
 
         const tool = getTool(tc.name);

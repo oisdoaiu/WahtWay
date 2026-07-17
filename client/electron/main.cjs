@@ -46,6 +46,7 @@ ipcMain.handle("open-folder-dialog", async () => {
 
 app.whenReady().then(async () => {
   loadEnv();
+  process.env.WAHTWAY_DATA_DIR = path.join(app.getPath("userData"), "data");
 
   // require 后端（asar: false 直接文件访问）
   const beDir = path.join(__dirname, "..", "be");

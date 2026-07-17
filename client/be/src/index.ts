@@ -17,8 +17,10 @@ import { registerFileTools, approvePath } from "./tools/file-tools";
 import { todoUpdateTool, clearTodo } from "./tools/todo-tool";
 import { runCommandTool, approveAndExecute, clearApprovedCommands } from "./tools/command-tool";
 import { resolveModel } from "./models";
+import { getConversationsDir, migrateLegacyConversations } from "./runtime-data";
 
 // 启动时加载 Skill + 注册 Tool
+migrateLegacyConversations();
 initSkills();
 registerFileTools(registerTool);
 registerTool(todoUpdateTool);
@@ -73,16 +75,14 @@ app.post("/api/tools/approve-command", async (req, res) => {
 // 健康检查
 // 重置：清空对话 + 清空用户创建的 Skill，保留内置 Skill
 app.post("/api/reset", (_req, res) => {
-  const convCandidates = [
-    path.join(process.cwd(), "data", "conversations"),
-    path.resolve(__dirname, "../data/conversations"),
-  ];
-  const convDir = convCandidates.find((d) => fs.existsSync(d)) || convCandidates[0];
+  const convDir = getConversationsDir();
   const skillsDir = getSkillsDir();
   const builtin = ["daily-study-plan", "code-explain"];
   try {
     if (fs.existsSync(convDir)) {
-      fs.readdirSync(convDir).forEach((f) => fs.unlinkSync(path.join(convDir, f)));
+      fs.readdirSync(convDir)
+        .filter((f) => /^\d+\.json$/.test(f))
+        .forEach((f) => fs.unlinkSync(path.join(convDir, f)));
     }
     if (fs.existsSync(skillsDir)) {
       fs.readdirSync(skillsDir)

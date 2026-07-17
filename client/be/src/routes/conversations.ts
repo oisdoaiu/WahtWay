@@ -1,14 +1,21 @@
 // 对话历史 CRUD
-// 存储: be/data/conversations/{id}.json
+// 存储: 用户数据目录/conversations/{id}.json
 
 import { Router, Request, Response } from "express";
 import OpenAI from "openai";
 import { resolveModel } from "../models";
+import { getConversationsDir } from "../runtime-data";
 import * as fs from "fs";
 import * as path from "path";
 
 const router = Router();
-const DATA_DIR = path.resolve(__dirname, "../../data/conversations");
+const DATA_DIR = getConversationsDir();
+const CONVERSATION_ID = /^\d+$/;
+
+function getConversationPath(id: string): string | null {
+  if (!CONVERSATION_ID.test(id)) return null;
+  return path.join(DATA_DIR, `${id}.json`);
+}
 
 function getAIClient(): OpenAI {
   return new OpenAI({
@@ -19,7 +26,7 @@ function getAIClient(): OpenAI {
 
 function listFiles(): string[] {
   if (!fs.existsSync(DATA_DIR)) return [];
-  return fs.readdirSync(DATA_DIR).filter((f) => f.endsWith(".json"));
+  return fs.readdirSync(DATA_DIR).filter((f) => /^\d+\.json$/.test(f));
 }
 
 // GET 对话列表（元信息，不含完整消息）
@@ -39,7 +46,8 @@ router.get("/", (_req: Request, res: Response) => {
 
 // GET 单个对话完整消息
 router.get("/:id", (req: Request, res: Response) => {
-  const filePath = path.join(DATA_DIR, `${req.params.id}.json`);
+  const filePath = getConversationPath(req.params.id);
+  if (!filePath) return res.status(400).json({ error: "无效的对话 ID" });
   if (!fs.existsSync(filePath)) {
     return res.status(404).json({ error: "对话不存在" });
   }
@@ -65,7 +73,8 @@ router.post("/", (req: Request, res: Response) => {
 
 // DELETE 删除对话
 router.delete("/:id", (req: Request, res: Response) => {
-  const filePath = path.join(DATA_DIR, `${req.params.id}.json`);
+  const filePath = getConversationPath(req.params.id);
+  if (!filePath) return res.status(400).json({ error: "无效的对话 ID" });
   if (!fs.existsSync(filePath)) {
     return res.status(404).json({ error: "对话不存在" });
   }
@@ -76,7 +85,8 @@ router.delete("/:id", (req: Request, res: Response) => {
 // PUT 保存对话（聊天过程中自动保存）
 router.put("/:id", (req: Request, res: Response) => {
   const { title, messages } = req.body;
-  const filePath = path.join(DATA_DIR, `${req.params.id}.json`);
+  const filePath = getConversationPath(req.params.id);
+  if (!filePath) return res.status(400).json({ error: "无效的对话 ID" });
   if (!fs.existsSync(filePath)) {
     return res.status(404).json({ error: "对话不存在" });
   }
@@ -90,7 +100,8 @@ router.put("/:id", (req: Request, res: Response) => {
 
 // POST /api/conversations/:id/summarize — AI 生成对话标题
 router.post("/:id/summarize", async (req: Request, res: Response) => {
-  const filePath = path.join(DATA_DIR, `${req.params.id}.json`);
+  const filePath = getConversationPath(req.params.id);
+  if (!filePath) { res.status(400).json({ error: "无效的对话 ID" }); return; }
   if (!fs.existsSync(filePath)) { res.status(404).json({ error: "Not found" }); return; }
   try {
     const data = JSON.parse(fs.readFileSync(filePath, "utf-8"));
