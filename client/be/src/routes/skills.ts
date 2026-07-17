@@ -6,6 +6,7 @@
 
 import { Router, Request, Response } from "express";
 import OpenAI from "openai";
+import { formatLlmError } from "../llm-errors";
 import { resolveModel } from "../models";
 import { registeredSkills, saveSkill, deleteSkill } from "../skills/loader";
 import { Skill } from "../types";
@@ -143,7 +144,7 @@ router.post("/generate", async (req: Request, res: Response) => {
       });
     }
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: formatLlmError(err) });
   }
 });
 

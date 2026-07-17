@@ -2,6 +2,7 @@
 // 把所有 Skill 描述发给 DeepSeek，让它选最合适的，或识别为闲聊
 
 import OpenAI from "openai";
+import { formatLlmError } from "../llm-errors";
 import { resolveModel } from "../models";
 import { Skill } from "../types";
 
@@ -74,5 +75,10 @@ export async function matchSkillByKeywords(
   skills: Skill[]
 ): Promise<Skill | null> {
   if (skills.length === 0) return null;
-  return llmMatch(userMessage, skills);
+  try {
+    return await llmMatch(userMessage, skills);
+  } catch (err) {
+    console.warn(`⚠️ Skill 匹配失败，已降级为普通对话: ${formatLlmError(err)}`);
+    return null;
+  }
 }
