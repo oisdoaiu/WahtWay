@@ -3,6 +3,7 @@
 import { Router, Request, Response } from "express";
 import { runAgentStream, setModel, getCurrentModel } from "../agent";
 import { createTraceId, logger } from "../logger";
+import { formatLlmError } from "../llm-errors";
 
 const router = Router();
 
@@ -34,9 +35,10 @@ router.post("/", async (req: Request, res: Response) => {
     }
     log.info("done");
   } catch (err: any) {
-    log.error("error", { message: err.message });
+    const message = formatLlmError(err);
+    log.error("error", { message: err.message, friendlyMessage: message });
     res.write(
-      `data: ${JSON.stringify({ type: "error", data: err.message })}\n\n`
+      `data: ${JSON.stringify({ type: "error", data: message })}\n\n`
     );
   }
 

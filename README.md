@@ -39,7 +39,7 @@ cd WahtWay
 
 ### 2. 配置 API Key
 
-在 `be/.env` 中填入你的 DeepSeek API Key：
+在 `client/.env` 中填入你的 DeepSeek API Key：
 
 ```
 DEEPSEEK_API_KEY=sk-你的key
@@ -51,11 +51,11 @@ DEEPSEEK_MODEL=deepseek-v4-flash
 
 ```bash
 # 后端
-cd be
+cd client/be
 npm install
 
 # 前端（另开终端）
-cd fe
+cd client
 npm install
 ```
 
@@ -64,7 +64,7 @@ npm install
 **终端 1 — 启动后端**（端口 3000）：
 
 ```bash
-cd be
+cd client/be
 npm run dev
 ```
 
@@ -73,7 +73,7 @@ npm run dev
 **终端 2 — 启动前端**（端口 5173）：
 
 ```bash
-cd fe
+cd client
 npm run dev
 ```
 

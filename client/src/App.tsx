@@ -225,7 +225,7 @@ const res2 = (event.data as any)?.result; // was here
             }
             else if (event.type === "delta") { lastEventRef.current = Date.now(); setThinkingStatus(""); appendToLast(conversationId, event.data); }
             else if (event.type === "stats") { lastEventRef.current = Date.now(); setLastStats(event.data as any); }
-            else if (event.type === "error") { lastEventRef.current = Date.now(); setThinkingStatus(""); appendToLast(conversationId, `\n\n❌ ${event.data}`); addDebugEvent("error", event.data); }
+            else if (event.type === "error") { lastEventRef.current = Date.now(); setThinkingStatus(""); toast(String(event.data), "error"); appendToLast(conversationId, `\n\n❌ ${event.data}`); addDebugEvent("error", event.data); }
             else if (event.type === "done") { lastEventRef.current = Date.now(); setThinkingStatus(""); if ((event.data as any)?.stats) setLastStats((event.data as any).stats); addDebugEvent("done", "流结束"); }
           } catch { /* skip */ }
         }
