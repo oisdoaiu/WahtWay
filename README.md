@@ -39,7 +39,7 @@ cd WahtWay
 
 ### 2. 配置 API Key
 
-在 `client/be/.env` 中填入你的 DeepSeek API Key：
+在 `client/.env` 中填入你的 DeepSeek API Key：
 
 ```
 DEEPSEEK_API_KEY=sk-你的key
