@@ -709,6 +709,9 @@ function CreateSkillModal({ show, onClose, onSaved, prefill, skillToEdit }: { sh
   };
 
   const handleClose = () => { setStep("describe"); setSkillDesc(""); setEditSkill(null); setMsg(""); onClose(); };
+  const descLength = String(editSkill?.description || "").length;
+  const systemPromptLength = String(editSkill?.systemPrompt || "").length;
+  const whenToUseLength = String(editSkill?.whenToUse || "").length;
 
   return (
     <div className="modal-overlay" onClick={handleClose}>
@@ -727,11 +730,25 @@ function CreateSkillModal({ show, onClose, onSaved, prefill, skillToEdit }: { sh
             <p className="modal-hint">以下是 AI 生成的 Skill 定义，你可以修改后保存。</p>
             {editSkill && (
               <div className="edit-form">
-                <label>ID</label><input value={editSkill.id || ""} onChange={e => setEditSkill({ ...editSkill, id: e.target.value })} />
-                <label>名称</label><input value={editSkill.name || ""} onChange={e => setEditSkill({ ...editSkill, name: e.target.value })} />
-                <label>描述</label><input value={editSkill.description || ""} onChange={e => setEditSkill({ ...editSkill, description: e.target.value })} />
-                <label>System Prompt</label><textarea rows={6} value={editSkill.systemPrompt || ""} onChange={e => setEditSkill({ ...editSkill, systemPrompt: e.target.value })} />
-                <label>触发场景 (whenToUse)</label><textarea rows={2} placeholder="描述何时触发此 Skill，如：用户想制定学习计划时触发，不要在文件操作时触发" value={editSkill.whenToUse || ""} onChange={e => setEditSkill({ ...editSkill, whenToUse: e.target.value })} />
+                <label>ID</label>
+                <p className="field-hint">用于文件名和内部识别，建议使用小写英文、数字和短横线，例如 <code>weekly-report</code>。</p>
+                <input value={editSkill.id || ""} onChange={e => setEditSkill({ ...editSkill, id: e.target.value })} />
+
+                <label>名称</label>
+                <p className="field-hint">展示给用户看的 Skill 名称，建议简短明确。</p>
+                <input value={editSkill.name || ""} onChange={e => setEditSkill({ ...editSkill, name: e.target.value })} />
+
+                <label className="field-label"><span>描述</span><span className={`field-count ${descLength > 50 ? "over" : ""}`}>{descLength}/50</span></label>
+                <p className="field-hint">用于 Skill 卡片和匹配，建议 50 字以内，突出“能帮用户做什么”。</p>
+                <input value={editSkill.description || ""} onChange={e => setEditSkill({ ...editSkill, description: e.target.value })} />
+
+                <label className="field-label"><span>System Prompt</span><span className="field-count">{systemPromptLength} 字</span></label>
+                <p className="field-hint">给模型看的核心指令，建议写清角色、输入要求、输出格式和边界。</p>
+                <textarea rows={6} value={editSkill.systemPrompt || ""} onChange={e => setEditSkill({ ...editSkill, systemPrompt: e.target.value })} />
+
+                <label className="field-label"><span>触发场景 (whenToUse)</span><span className={`field-count ${whenToUseLength > 120 ? "over" : ""}`}>{whenToUseLength}/120</span></label>
+                <p className="field-hint">说明什么时候该用、什么时候不该用，可减少误触发。</p>
+                <textarea rows={2} placeholder="例如：用户想制定学习计划时触发；不要在文件操作或闲聊时触发。" value={editSkill.whenToUse || ""} onChange={e => setEditSkill({ ...editSkill, whenToUse: e.target.value })} />
               </div>
             )}
             <div className="modal-actions"><button onClick={handleClose}>取消</button><button className="primary" onClick={handleSave}>保存</button></div>

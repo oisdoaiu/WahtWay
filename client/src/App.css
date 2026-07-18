@@ -621,6 +621,39 @@ body {
   margin-top: 8px;
 }
 
+.field-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.field-hint {
+  margin: -2px 0 2px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: #999;
+}
+
+.field-hint code {
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: #f0f0f0;
+  color: #666;
+  font-family: "SF Mono", "Fira Code", "Courier New", monospace;
+}
+
+.field-count {
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 400;
+  color: #aaa;
+}
+
+.field-count.over {
+  color: #e67e22;
+}
+
 .edit-form input,
 .edit-form textarea {
   width: 100%;
@@ -875,6 +908,10 @@ body {
 .app.dark .skill-card-details { color: #a6adc8; }
 .app.dark .skill-card-details summary { color: #cdd6f4; }
 .app.dark .skill-card-details li { color: #bac2de; }
+.app.dark .field-hint { color: #7f849c; }
+.app.dark .field-hint code { background: #45475a; color: #bac2de; }
+.app.dark .field-count { color: #7f849c; }
+.app.dark .field-count.over { color: #fab387; }
 .app.dark .skills-tab { color: #a6adc8; }
 .app.dark .skills-tab.active { color: #89b4fa; border-color: #89b4fa; }
 .app.dark .nav-item { color: #a6adc8; }
