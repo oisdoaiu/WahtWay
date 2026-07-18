@@ -1,0 +1,37 @@
+name: Sync to GitLab
+
+on:
+  workflow_dispatch:
+  schedule:
+    # GitHub Actions uses UTC. This runs at 00:00 Asia/Shanghai (UTC+8).
+    - cron: "0 16 * * *"
+
+permissions:
+  contents: read
+
+jobs:
+  sync:
+    name: Mirror main to GitLab
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out main
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Push current commit to GitLab
+        env:
+          GITLAB_REPOSITORY_URL: ${{ vars.GITLAB_REPOSITORY_URL }}
+          GITLAB_PUSH_TOKEN: ${{ secrets.GITLAB_PUSH_TOKEN }}
+        run: |
+          if [ -z "$GITLAB_REPOSITORY_URL" ] || [ -z "$GITLAB_PUSH_TOKEN" ]; then
+            echo "Set GITLAB_REPOSITORY_URL and GITLAB_PUSH_TOKEN before enabling GitLab synchronization."
+            exit 1
+          fi
+
+          AUTHORIZATION=$(printf 'oauth2:%s' "$GITLAB_PUSH_TOKEN" | base64 --wrap=0)
+          git -c http.extraHeader="Authorization: Basic $AUTHORIZATION" \
+            push "$GITLAB_REPOSITORY_URL" HEAD:refs/heads/main
