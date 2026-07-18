@@ -30,6 +30,18 @@ export function getLogsDir(): string {
   return path.join(dataDir, "logs");
 }
 
+export function getSkillLearningDir(): string {
+  return path.join(dataDir, "skill-learning");
+}
+
+export function getSkillRunsDir(): string {
+  return path.join(getSkillLearningDir(), "runs");
+}
+
+export function getSkillLearningStatesDir(): string {
+  return path.join(getSkillLearningDir(), "skills");
+}
+
 export function migrateLegacyConversations(): void {
   const targetDir = getConversationsDir();
   const legacyRoots = [

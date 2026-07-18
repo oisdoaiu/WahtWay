@@ -14,7 +14,9 @@ release/
 *.log
 client/data/conversations/
 client/data/logs/
+client/data/skill-learning/
 client/be/data/conversations/
+client/be/data/skill-learning/
 server/data/hub/
 
 # OS metadata

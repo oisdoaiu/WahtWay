@@ -20,6 +20,8 @@ export interface Skill {
   input: JSONSchema;
   output: JSONSchema;
   requiredTools: string[];
+  allowedTools?: string[];
+  whenToUse?: string;
   keywords?: string[];
 }
 

@@ -2,9 +2,14 @@
 // 职责：匹配 Skill → LLM+Tool 循环 → 流式返回
 
 import OpenAI from "openai";
-import { Skill, AgentResult } from "./types";
+import { AgentStatsSnapshot, NeedSnapshot, Skill, AgentResult } from "./types";
 import { registeredSkills } from "./skills/loader";
-import { matchSkillByKeywords, GENERAL_PROMPT } from "./skills/matcher";
+import { matchSkillByKeywords, matchSkillWithNeed, GENERAL_PROMPT } from "./skills/matcher";
+import {
+  beginSkillObservation,
+  finishSkillObservation,
+  scheduleDelayedObservation,
+} from "./skills/learning-engine";
 import { getTool, formatToolsForLLM } from "./tools/registry";
 import { logger } from "./logger";
 import { resolveModel } from "./models";
@@ -44,6 +49,13 @@ export interface AgentStats {
   rounds: number;
   toolCalls: number;
   model: string;
+}
+
+export interface AgentRunMetadata {
+  conversationId?: string;
+  userMessageId?: string;
+  assistantMessageId?: string;
+  needSnapshot?: NeedSnapshot;
 }
 
 function toolPolicy(): string {
@@ -225,18 +237,79 @@ export async function* executeSkillStream(
   userMessage: string,
   history?: { role: string; content: string }[],
   traceId?: string,
-  workspace?: string
+  workspace?: string,
+  metadata?: AgentRunMetadata
 ): AsyncGenerator<StreamEvent> {
   const log = logger(traceId || "no-trace", "skill");
   log.info("matched", { skillId: skill.id, skillName: skill.name });
 
+  let runId: string | undefined;
+  if (skill.id !== "general") {
+    try {
+      const run = await beginSkillObservation({
+        traceId: traceId || "no-trace",
+        skill,
+        userMessage,
+        history,
+        conversationId: metadata?.conversationId,
+        userMessageId: metadata?.userMessageId,
+        assistantMessageId: metadata?.assistantMessageId,
+        needSnapshot: metadata?.needSnapshot,
+      });
+      runId = run.id;
+    } catch (error) {
+      log.warn("observation_start_failed", {
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
   yield {
     type: "skill_matched",
-    data: { skillName: skill.name, skillId: skill.id },
+    data: {
+      skillName: skill.name,
+      skillId: skill.id,
+      skillVersion: skill.version || 1,
+      runId,
+    },
   };
 
-  for await (const event of agenticLoopStream(skill.systemPrompt, userMessage, history, traceId, skill.allowedTools, workspace)) {
-    yield event;
+  let output = "";
+  let stats: AgentStatsSnapshot | undefined;
+  const toolCalls: { toolName: string; ok: boolean; summary: string }[] = [];
+  let status: "completed" | "aborted" | "error" = "aborted";
+
+  try {
+    for await (const event of agenticLoopStream(
+      skill.systemPrompt,
+      userMessage,
+      history,
+      traceId,
+      skill.allowedTools,
+      workspace
+    )) {
+      if (event.type === "delta") output += event.data as string;
+      if (event.type === "stats") stats = event.data as AgentStatsSnapshot;
+      if (event.type === "tool_result") {
+        const data = event.data as { toolName?: string; result?: string };
+        const result = typeof data.result === "string" ? data.result : "";
+        const ok = !result.startsWith("错误") && !result.startsWith("PERMISSION_REQUIRED::");
+        toolCalls.push({
+          toolName: data.toolName || "unknown",
+          ok,
+          summary: ok ? "执行成功" : "执行未完成",
+        });
+      }
+      if (event.type === "done") status = "completed";
+      yield event;
+    }
+  } catch (error) {
+    status = "error";
+    throw error;
+  } finally {
+    if (runId) {
+      finishSkillObservation(runId, { output, toolCalls, stats, status });
+    }
   }
 }
 
@@ -262,13 +335,17 @@ export async function runAgentStream(
   traceId?: string,
   model?: string,
   skillId?: string,
-  workspace?: string
+  workspace?: string,
+  metadata?: AgentRunMetadata
 ): Promise<AsyncGenerator<StreamEvent>> {
   if (model) setModel(model);
   const log = logger(traceId || "no-trace", "agent");
   log.info("start", { msgLen: userMessage.length, mode: skillId || "auto" });
 
+  scheduleDelayedObservation(metadata?.conversationId, userMessage);
+
   let skill: Skill | null = null;
+  let needSnapshot: NeedSnapshot | undefined;
 
   if (skillId) {
     skill = registeredSkills.find((s) => s.id === skillId) || null;
@@ -276,8 +353,12 @@ export async function runAgentStream(
   }
 
   if (!skill) {
-    skill = await matchSkill(userMessage);
+    const match = await matchSkillWithNeed(userMessage, registeredSkills, history);
+    skill = match.skill;
+    needSnapshot = match.needSnapshot;
   }
+
+  const runMetadata = { ...metadata, needSnapshot };
 
   if (!skill) {
     const general: Skill = {
@@ -287,10 +368,10 @@ export async function runAgentStream(
       output: { type: "object", properties: {} },
       requiredTools: [],
     };
-    return executeSkillStream(general, userMessage, history, traceId, undefined, workspace);
+    return executeSkillStream(general, userMessage, history, traceId, workspace, runMetadata);
   }
 
-  return executeSkillStream(skill, userMessage, history, traceId, undefined, workspace);
+  return executeSkillStream(skill, userMessage, history, traceId, workspace, runMetadata);
 }
 
 export { matchSkill };

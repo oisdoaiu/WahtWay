@@ -123,9 +123,10 @@ export function sanitizeSkillManifest(value: unknown): Skill {
   }
 
   const requiredTools = normalizeStringArray(value.requiredTools, "requiredTools", 20, 80);
-  const forbiddenTool = requiredTools.find((tool) => !allowedTools.has(tool));
+  const declaredAllowedTools = normalizeStringArray(value.allowedTools, "allowedTools", 20, 80);
+  const forbiddenTool = [...requiredTools, ...declaredAllowedTools].find((tool) => !allowedTools.has(tool));
   if (forbiddenTool) {
-    throw new SkillValidationError(`requiredTools 包含未允许的工具: ${forbiddenTool}`);
+    throw new SkillValidationError(`Skill 包含未允许的工具: ${forbiddenTool}`);
   }
 
   const skill: Skill = {
@@ -136,6 +137,8 @@ export function sanitizeSkillManifest(value: unknown): Skill {
     input: sanitizeSchema(value.input, "input"),
     output: sanitizeSchema(value.output, "output"),
     requiredTools,
+    allowedTools: declaredAllowedTools,
+    whenToUse: optionalString(value, "whenToUse", 2000),
     keywords: normalizeStringArray(value.keywords, "keywords", MAX_KEYWORDS, 40),
   };
 

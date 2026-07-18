@@ -150,6 +150,8 @@ WahtWay/
     "properties": {}
   },
   "requiredTools": [],
+  "allowedTools": [],
+  "whenToUse": "用户明确需要这个技能处理任务时",
   "keywords": ["关键词1", "关键词2", "关键词3"]
 }
 ```
@@ -157,6 +159,17 @@ WahtWay/
 - `keywords` → 用户消息命中这些词则匹配该 Skill
 - `systemPrompt` → 告诉 LLM 扮演什么角色，输出什么格式
 - 不需要写任何代码，重启即生效
+
+### Skill 持续改进
+
+观察器按上下文信号触发，而不是每轮固定调用。新对话或没有历史引用的手动 Skill 调用直接使用当前消息，不增加前置模型请求；自动匹配时，匹配模型会在同一次调用中返回需求快照。回答完成后只用本地规则记录工具失败、空回答等确定性问题。下一条消息只有表现为重复请求、纠正或补充约束时，才会在后台调用观察模型；明确继续和无关话题都由本地规则处理。
+
+只有同类问题在至少 3 次调用中以高置信度重复出现，才会生成候选版本。候选版本只能修改 `systemPrompt`、`description`、`whenToUse` 和 `keywords`，不能改变工具权限或输入输出 Schema；通过历史案例判别回放后才自动激活。预设 Skill JSON 不会被覆盖，所有本地版本均可回退。
+
+- `SKILL_OBSERVER_MODEL`：需求和差异观察模型，默认 `deepseek-v4-flash`
+- `SKILL_OPTIMIZER_MODEL`：候选生成和版本评估模型，默认 `deepseek-v4-pro`
+- 学习记录保存到 WahtWay 用户数据目录下的 `skill-learning/`
+- 完整架构、触发策略和数据模型见 [`docs/Skill持续改进设计.md`](docs/Skill持续改进设计.md)
 
 ---
 
@@ -171,6 +184,10 @@ WahtWay/
 | POST | `/api/skills/generate` | AI 自动生成 Skill JSON |
 | POST | `/api/skills/save` | 保存新 Skill 到文件 |
 | GET | `/api/skills/search?q=` | 模糊搜索本地 Skill |
+| GET | `/api/skills/:id/learning` | 获取隐式学习证据和版本历史 |
+| PATCH | `/api/skills/:id/learning` | 开关该 Skill 的持续改进 |
+| POST | `/api/skills/:id/optimize` | 使用现有证据尝试生成候选版本 |
+| POST | `/api/skills/:id/rollback` | 激活原始或已验证的历史版本 |
 | POST | `/api/tools/approve` | 临时授权文件操作路径 |
 | POST | `/api/reset` | 重置对话和自定义 Skill |
 | GET | `/api/health` | 健康检查 |
