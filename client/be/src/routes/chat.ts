@@ -1,58 +1,120 @@
-// POST /api/chat — SSE 流式对话
-
+import { randomUUID } from "crypto";
 import { Router, Request, Response } from "express";
-import { runAgentStream, setModel, getCurrentModel } from "../agent";
+import { runAgentStream, getCurrentModel } from "../agent";
+import { buildAgentContext, formatContextSections } from "../context/builder";
+import { scheduleConversationSummary } from "../context/summary";
+import { appendMessage, patchMessage, readConversation } from "../conversations/repository";
 import { createTraceId, logger } from "../logger";
 import { formatLlmError } from "../llm-errors";
 
 const router = Router();
 
 router.post("/", async (req: Request, res: Response) => {
-  const {
-    message,
-    history,
-    model,
-    skillId,
-    workspace,
-    conversationId,
-    userMessageId,
-    assistantMessageId,
-  } = req.body;
-
-  if (!message || typeof message !== "string") {
+  const { message, model, skillId, workspace, conversationId } = req.body;
+  if (typeof message !== "string" || !message.trim()) {
     res.status(400).json({ error: "请提供 message 字段" });
     return;
   }
+  if (typeof conversationId !== "string" || !readConversation(conversationId)) {
+    res.status(404).json({ error: "对话不存在或 conversationId 无效" });
+    return;
+  }
+
+  const selectedMemoryIds = Array.isArray(req.body.selectedMemoryIds)
+    ? req.body.selectedMemoryIds.filter((id: unknown): id is string => typeof id === "string").slice(0, 20)
+    : [];
+  const context = buildAgentContext(conversationId, message, selectedMemoryIds);
+  if (!context) {
+    res.status(404).json({ error: "对话不存在" });
+    return;
+  }
+
+  const now = new Date().toISOString();
+  const userMessageId = typeof req.body.userMessageId === "string" && req.body.userMessageId
+    ? req.body.userMessageId.slice(0, 100)
+    : randomUUID();
+  const assistantMessageId = typeof req.body.assistantMessageId === "string" && req.body.assistantMessageId
+    ? req.body.assistantMessageId.slice(0, 100)
+    : randomUUID();
+  appendMessage(conversationId, {
+    id: userMessageId,
+    role: "user",
+    content: message,
+    createdAt: now,
+    status: "completed",
+  });
+  appendMessage(conversationId, {
+    id: assistantMessageId,
+    role: "assistant",
+    content: "",
+    createdAt: now,
+    status: "streaming",
+    memoryIds: context.longTermMemories.map((item) => item.id),
+  });
 
   const traceId = createTraceId();
   const log = logger(traceId, "chat");
-  log.info("request", { msgLen: message.length, historyLen: history?.length || 0, model: model || getCurrentModel() });
+  log.info("request", {
+    conversationId,
+    msgLen: message.length,
+    historyLen: context.history.length,
+    memoryCount: context.longTermMemories.length,
+    hasSummary: !!context.summary,
+    model: model || getCurrentModel(),
+  });
 
-  // 设置 SSE 响应头
   res.setHeader("Content-Type", "text/event-stream");
   res.setHeader("Cache-Control", "no-cache");
   res.setHeader("Connection", "keep-alive");
   res.setHeader("X-Accel-Buffering", "no");
   res.setHeader("X-Trace-Id", traceId);
   res.flushHeaders();
+  res.write(`data: ${JSON.stringify({
+    type: "message_started",
+    data: { conversationId, userMessageId, assistantMessageId, memoryIds: context.longTermMemories.map((item) => item.id) },
+  })}\n\n`);
 
+  let output = "";
+  let assistantPatch: Record<string, unknown> = {};
   try {
-    const stream = await runAgentStream(message, history, traceId, model, skillId, workspace, {
-      conversationId: typeof conversationId === "string" ? conversationId : undefined,
-      userMessageId: typeof userMessageId === "string" ? userMessageId : undefined,
-      assistantMessageId: typeof assistantMessageId === "string" ? assistantMessageId : undefined,
+    const stream = await runAgentStream(message, context.history, traceId, model, skillId, workspace, {
+      conversationId,
+      userMessageId,
+      assistantMessageId,
+      contextSections: formatContextSections(context),
     });
 
     for await (const event of stream) {
-      res.write(`data: ${JSON.stringify(event)}\n\n`);
+      if (event.type === "delta") output += String(event.data || "");
+      if (event.type === "skill_matched" && event.data && typeof event.data === "object") {
+        const data = event.data as any;
+        assistantPatch = {
+          ...assistantPatch,
+          skillName: data.skillName,
+          skillId: data.skillId,
+          skillVersion: data.skillVersion,
+          skillRunId: data.runId,
+        };
+      }
+      if (event.type === "stats") assistantPatch.stats = event.data;
+      res.write(`data: ${JSON.stringify({ ...event, conversationId, messageId: assistantMessageId })}\n\n`);
     }
-    log.info("done");
-  } catch (err: any) {
-    const message = formatLlmError(err);
-    log.error("error", { message: err.message, friendlyMessage: message });
-    res.write(
-      `data: ${JSON.stringify({ type: "error", data: message })}\n\n`
-    );
+    patchMessage(conversationId, assistantMessageId, {
+      ...assistantPatch,
+      content: output,
+      status: "completed",
+    });
+    scheduleConversationSummary(conversationId);
+    log.info("done", { outputLength: output.length });
+  } catch (error: any) {
+    const friendlyMessage = formatLlmError(error);
+    patchMessage(conversationId, assistantMessageId, {
+      ...assistantPatch,
+      content: output,
+      status: "error",
+    });
+    log.error("error", { message: error.message, friendlyMessage });
+    res.write(`data: ${JSON.stringify({ type: "error", data: friendlyMessage, conversationId, messageId: assistantMessageId })}\n\n`);
   }
 
   res.end();

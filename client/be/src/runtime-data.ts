@@ -26,6 +26,10 @@ export function getConversationsDir(): string {
   return path.join(dataDir, "conversations");
 }
 
+export function getMemoryDir(): string {
+  return path.join(dataDir, "memory");
+}
+
 export function getLogsDir(): string {
   return path.join(dataDir, "logs");
 }

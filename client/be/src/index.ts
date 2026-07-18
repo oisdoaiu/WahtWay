@@ -10,6 +10,7 @@ import fs from "fs";
 import chatRouter from "./routes/chat";
 import skillsRouter from "./routes/skills";
 import conversationsRouter from "./routes/conversations";
+import memoryRouter from "./routes/memory";
 import { initSkills, getSkillsDir } from "./skills/loader";
 import { setModel, getCurrentModel } from "./agent";
 import { registerTool } from "./tools/registry";
@@ -17,7 +18,7 @@ import { registerFileTools, approvePath } from "./tools/file-tools";
 import { todoUpdateTool, clearTodo } from "./tools/todo-tool";
 import { runCommandTool, approveAndExecute, clearApprovedCommands } from "./tools/command-tool";
 import { resolveModel } from "./models";
-import { getConversationsDir, getSkillLearningDir, migrateLegacyConversations } from "./runtime-data";
+import { getConversationsDir, getMemoryDir, getSkillLearningDir, migrateLegacyConversations } from "./runtime-data";
 
 // 启动时加载 Skill + 注册 Tool
 migrateLegacyConversations();
@@ -43,6 +44,7 @@ if (fs.existsSync(publicDir)) {
 app.use("/api/chat", chatRouter);
 app.use("/api/skills", skillsRouter);
 app.use("/api/conversations", conversationsRouter);
+app.use("/api/memory", memoryRouter);
 
 // 临时授权：批准某个路径的操作
 app.post("/api/tools/approve", (req, res) => {
@@ -91,6 +93,8 @@ app.post("/api/reset", (_req, res) => {
     }
     const learningDir = getSkillLearningDir();
     if (fs.existsSync(learningDir)) fs.rmSync(learningDir, { recursive: true, force: true });
+    const memoryDir = getMemoryDir();
+    if (fs.existsSync(memoryDir)) fs.rmSync(memoryDir, { recursive: true, force: true });
     initSkills();
     res.json({ success: true });
   } catch (err: any) {

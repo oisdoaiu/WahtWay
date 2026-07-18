@@ -10,6 +10,8 @@ export interface ConvMessage {
   skillVersion?: number;
   skillRunId?: string;
   stats?: MessageStats;
+  status?: "streaming" | "completed" | "aborted" | "error";
+  memoryIds?: string[];
 }
 
 export interface MessageStats {
