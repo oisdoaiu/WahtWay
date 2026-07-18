@@ -6,6 +6,15 @@ export interface ConvMessage {
   role: "user" | "assistant";
   content: string;
   skillName?: string;
+  stats?: MessageStats;
+}
+
+export interface MessageStats {
+  totalTokens: number;
+  totalTime: number;
+  rounds: number;
+  toolCalls: number;
+  model: string;
 }
 
 export interface TodoItem {
@@ -59,6 +68,14 @@ export function appendMessage(id: string, msg: ConvMessage) {
   const s = getOrCreate(id);
   s.messages.push(msg);
   flushAndNotify();
+}
+
+export function updateLastMessage(id: string, updater: (msg: ConvMessage) => ConvMessage) {
+  if (flushTimer) { clearTimeout(flushTimer); flushTimer = null; flushDeltas(); }
+  const s = getOrCreate(id);
+  if (s.messages.length === 0) return;
+  s.messages[s.messages.length - 1] = updater(s.messages[s.messages.length - 1]);
+  notify();
 }
 
 // delta 批处理 — 每 60ms flush 一次，避免高频 re-render

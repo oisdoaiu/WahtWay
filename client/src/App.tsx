@@ -5,6 +5,7 @@ import { DEBUG, addDebugEvent, getDebugEvents, onDebugEvents, clearDebugEvents }
 import {
   getMessages, isStreaming, setMessages, appendMessage,
   appendToLast, setStreaming, subscribe, getTodoItems, setTodoItems,
+  updateLastMessage,
 } from "./conversations";
 import "./App.css";
 
@@ -72,7 +73,6 @@ function ChatPanel({ conversationId, onTitleChange, onCreateSkill }: { showModal
   const [attachedFiles, setAttachedFiles] = useState<string[]>([]);
   const [showFileMenu, setShowFileMenu] = useState(false);
   const [workspace, setWorkspace] = useState(() => localStorage.getItem("wahtway-workspace") || "");
-  const [lastStats, setLastStats] = useState<{totalTokens: number; totalTime: number; rounds: number; toolCalls: number; model: string} | null>(null);
     const abortRef = useRef<AbortController | null>(null);
   const msgHistory = useRef<string[]>([]);
   const historyIdx = useRef(-1);
@@ -156,7 +156,6 @@ function ChatPanel({ conversationId, onTitleChange, onCreateSkill }: { showModal
     appendMessage(conversationId, { id: (Date.now() + 1).toString(), role: "assistant", content: "" });
     setToolCalls([]);
     setTodoItems(conversationId, []);
-    setLastStats(null);
 
     const history = currentMessages.map((m: any) => ({ role: m.role, content: m.content }));
 
@@ -224,9 +223,9 @@ const res2 = (event.data as any)?.result; // was here
               }
             }
             else if (event.type === "delta") { lastEventRef.current = Date.now(); setThinkingStatus(""); appendToLast(conversationId, event.data); }
-            else if (event.type === "stats") { lastEventRef.current = Date.now(); setLastStats(event.data as any); }
+            else if (event.type === "stats") { lastEventRef.current = Date.now(); updateLastMessage(conversationId, msg => ({ ...msg, stats: event.data as any })); }
             else if (event.type === "error") { lastEventRef.current = Date.now(); setThinkingStatus(""); toast(String(event.data), "error"); appendToLast(conversationId, `\n\n❌ ${event.data}`); addDebugEvent("error", event.data); }
-            else if (event.type === "done") { lastEventRef.current = Date.now(); setThinkingStatus(""); if ((event.data as any)?.stats) setLastStats((event.data as any).stats); addDebugEvent("done", "流结束"); }
+            else if (event.type === "done") { lastEventRef.current = Date.now(); setThinkingStatus(""); if ((event.data as any)?.stats) updateLastMessage(conversationId, msg => ({ ...msg, stats: (event.data as any).stats })); addDebugEvent("done", "流结束"); }
           } catch { /* skip */ }
         }
       }
@@ -363,11 +362,11 @@ const res2 = (event.data as any)?.result; // was here
               {streaming && idx === messages.length - 1 && msg.role === "assistant" && showPulse && msg.content && (
                 <span className="stream-pulse">⟳ 思考中…</span>
               )}
-              {lastStats && idx === messages.length - 1 && msg.role === "assistant" && (
+              {msg.stats && msg.role === "assistant" && (
                 <div className="msg-stats">
-                  {lastStats.totalTokens > 0 && <span>{lastStats.totalTokens} tokens</span>}
-                  <span>{(lastStats.totalTime / 1000).toFixed(1)}s</span>
-                  {lastStats.toolCalls > 0 && <span>{lastStats.toolCalls} 次工具调用</span>}
+                  {msg.stats.totalTokens > 0 && <span>{msg.stats.totalTokens} tokens</span>}
+                  <span>{(msg.stats.totalTime / 1000).toFixed(1)}s</span>
+                  {msg.stats.toolCalls > 0 && <span>{msg.stats.toolCalls} 次工具调用</span>}
                 </div>
               )}
             </div>
