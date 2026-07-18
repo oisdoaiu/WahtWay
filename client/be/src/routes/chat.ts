@@ -8,7 +8,16 @@ import { formatLlmError } from "../llm-errors";
 const router = Router();
 
 router.post("/", async (req: Request, res: Response) => {
-  const { message, history, model, skillId, workspace } = req.body;
+  const {
+    message,
+    history,
+    model,
+    skillId,
+    workspace,
+    conversationId,
+    userMessageId,
+    assistantMessageId,
+  } = req.body;
 
   if (!message || typeof message !== "string") {
     res.status(400).json({ error: "请提供 message 字段" });
@@ -28,7 +37,11 @@ router.post("/", async (req: Request, res: Response) => {
   res.flushHeaders();
 
   try {
-    const stream = await runAgentStream(message, history, traceId, model, skillId, workspace);
+    const stream = await runAgentStream(message, history, traceId, model, skillId, workspace, {
+      conversationId: typeof conversationId === "string" ? conversationId : undefined,
+      userMessageId: typeof userMessageId === "string" ? userMessageId : undefined,
+      assistantMessageId: typeof assistantMessageId === "string" ? assistantMessageId : undefined,
+    });
 
     for await (const event of stream) {
       res.write(`data: ${JSON.stringify(event)}\n\n`);

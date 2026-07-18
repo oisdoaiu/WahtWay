@@ -17,7 +17,7 @@ import { registerFileTools, approvePath } from "./tools/file-tools";
 import { todoUpdateTool, clearTodo } from "./tools/todo-tool";
 import { runCommandTool, approveAndExecute, clearApprovedCommands } from "./tools/command-tool";
 import { resolveModel } from "./models";
-import { getConversationsDir, migrateLegacyConversations } from "./runtime-data";
+import { getConversationsDir, getSkillLearningDir, migrateLegacyConversations } from "./runtime-data";
 
 // 启动时加载 Skill + 注册 Tool
 migrateLegacyConversations();
@@ -89,6 +89,8 @@ app.post("/api/reset", (_req, res) => {
         .filter((f) => !builtin.some((b) => f.startsWith(b)))
         .forEach((f) => fs.unlinkSync(path.join(skillsDir, f)));
     }
+    const learningDir = getSkillLearningDir();
+    if (fs.existsSync(learningDir)) fs.rmSync(learningDir, { recursive: true, force: true });
     initSkills();
     res.json({ success: true });
   } catch (err: any) {

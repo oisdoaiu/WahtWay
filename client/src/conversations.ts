@@ -6,6 +6,9 @@ export interface ConvMessage {
   role: "user" | "assistant";
   content: string;
   skillName?: string;
+  skillId?: string;
+  skillVersion?: number;
+  skillRunId?: string;
   stats?: MessageStats;
 }
 
@@ -67,6 +70,14 @@ export function setMessages(id: string, msgs: ConvMessage[]) {
 export function appendMessage(id: string, msg: ConvMessage) {
   const s = getOrCreate(id);
   s.messages.push(msg);
+  flushAndNotify();
+}
+
+export function patchMessage(id: string, messageId: string, patch: Partial<ConvMessage>) {
+  const state = getOrCreate(id);
+  const index = state.messages.findIndex((message) => message.id === messageId);
+  if (index === -1) return;
+  state.messages[index] = { ...state.messages[index], ...patch };
   flushAndNotify();
 }
 

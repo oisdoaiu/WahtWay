@@ -1,0 +1,98 @@
+name: CI
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    # GitHub Actions uses UTC. This runs at 21:00 Asia/Shanghai (UTC+8).
+    - cron: "0 13 * * *"
+
+permissions:
+  contents: read
+
+jobs:
+  build-client:
+    name: Build client and embedded API
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: |
+            client/package-lock.json
+            client/be/package-lock.json
+
+      - name: Install client dependencies
+        run: npm ci
+        working-directory: client
+
+      - name: Install embedded API dependencies
+        run: npm ci
+        working-directory: client/be
+
+      - name: Build client and embedded API
+        run: npm run build
+        working-directory: client
+
+  build-skill-hub:
+    name: Build Skill Hub
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+
+      - name: Install Skill Hub dependencies
+        run: npm ci
+        working-directory: server
+
+      - name: Build Skill Hub
+        run: npm run build
+        working-directory: server
+
+  notify-feishu:
+    name: Notify Feishu
+    needs: [build-client, build-skill-hub]
+    if: >-
+      always() &&
+      (github.event_name == 'schedule' ||
+      github.event_name == 'workflow_dispatch' ||
+      needs.build-client.result == 'failure' ||
+      needs.build-skill-hub.result == 'failure')
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Send status to Feishu
+        env:
+          WEBHOOK: ${{ secrets.FEISHU_WEBHOOK }}
+          EVENT_NAME: ${{ github.event_name }}
+          CLIENT_RESULT: ${{ needs.build-client.result }}
+          SKILL_HUB_RESULT: ${{ needs.build-skill-hub.result }}
+          REPOSITORY: ${{ github.repository }}
+          REF_NAME: ${{ github.ref_name }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          if [ -z "$WEBHOOK" ]; then
+            echo "FEISHU_WEBHOOK is not configured; skipping notification."
+            exit 0
+          fi
+
+          curl --fail-with-body --request POST "$WEBHOOK" \
+            --header "Content-Type: application/json" \
+            --data "{\"msg_type\":\"text\",\"content\":{\"text\":\"CI status\\nProject: $REPOSITORY\\nTrigger: $EVENT_NAME\\nBranch: $REF_NAME\\nClient: $CLIENT_RESULT\\nSkill Hub: $SKILL_HUB_RESULT\\nLogs: $RUN_URL\"}}"

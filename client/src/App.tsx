@@ -4,8 +4,8 @@ import remarkGfm from "remark-gfm";
 import { DEBUG, addDebugEvent, getDebugEvents, onDebugEvents, clearDebugEvents } from "./debug";
 import {
   getMessages, isStreaming, setMessages, appendMessage,
-  appendToLast, setStreaming, subscribe, getTodoItems, setTodoItems,
-  updateLastMessage,
+  appendToLast, patchMessage, setStreaming, subscribe,
+  getTodoItems, setTodoItems, updateLastMessage,
 } from "./conversations";
 import "./App.css";
 
@@ -49,6 +49,18 @@ interface SkillMeta {
   output: { type: string; properties?: Record<string, unknown> };
   requiredTools: string[];
   keywords?: string[];
+  version?: number;
+  origin?: "builtin" | "custom" | "hub" | "learned";
+  learning?: {
+    autoImprove: boolean;
+    activeVersion: number;
+    latestVersion: number;
+    runCount: number;
+    evidenceCount: number;
+    lastObservedAt?: string;
+    lastImprovedAt?: string;
+    lastInsight?: string;
+  };
 }
 
 // ---- 对话面板 ----
@@ -140,24 +152,26 @@ function ChatPanel({ conversationId, onTitleChange, onCreateSkill }: { showModal
     const text = input.trim();
     if (!text || streaming) return;
 
-    const currentMessages = getMessages(conversationId);
+    const currentMessages = [...getMessages(conversationId)];
     if (currentMessages.length === 0) onTitleChange(text.slice(0, 15) + (text.length > 15 ? "…" : ""));
+
+    const history = currentMessages.map((m: any) => ({ role: m.role, content: m.content }));
+    const userMessageId = Date.now().toString();
+    const assistantMessageId = (Date.now() + 1).toString();
 
     // 合并附件路径到消息
     const fullText = attachedFiles.length > 0
       ? attachedFiles.map(f => `📎 ${f}`).join("\n") + (text ? "\n" + text : "")
       : text;
-    appendMessage(conversationId, { id: Date.now().toString(), role: "user", content: fullText });
+    appendMessage(conversationId, { id: userMessageId, role: "user", content: fullText });
     msgHistory.current.push(text);
     historyIdx.current = -1;
     setInput("");
     setAttachedFiles([]);
     setStreaming(conversationId, true);
-    appendMessage(conversationId, { id: (Date.now() + 1).toString(), role: "assistant", content: "" });
+    appendMessage(conversationId, { id: assistantMessageId, role: "assistant", content: "" });
     setToolCalls([]);
     setTodoItems(conversationId, []);
-
-    const history = currentMessages.map((m: any) => ({ role: m.role, content: m.content }));
 
     try {
       const controller = new AbortController();
@@ -167,7 +181,16 @@ function ChatPanel({ conversationId, onTitleChange, onCreateSkill }: { showModal
       const response = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: text, history, model, skillId: skillId || undefined, workspace: workspace || undefined }),
+        body: JSON.stringify({
+          message: text,
+          history,
+          model,
+          skillId: skillId || undefined,
+          workspace: workspace || undefined,
+          conversationId,
+          userMessageId,
+          assistantMessageId,
+        }),
         signal: controller.signal,
       });
 
@@ -191,7 +214,18 @@ function ChatPanel({ conversationId, onTitleChange, onCreateSkill }: { showModal
           if (!line.startsWith("data: ")) continue;
           try {
             const event = JSON.parse(line.slice(6));
-            if (event.type === "skill_matched") { lastEventRef.current = Date.now(); setSkillName(event.data.skillName); setThinkingStatus(`已匹配「${event.data.skillName}」，正在分析…`); addDebugEvent("skill", event.data.skillName); }
+            if (event.type === "skill_matched") {
+              lastEventRef.current = Date.now();
+              setSkillName(event.data.skillName);
+              patchMessage(conversationId, assistantMessageId, {
+                skillName: event.data.skillName,
+                skillId: event.data.skillId,
+                skillVersion: event.data.skillVersion,
+                skillRunId: event.data.runId,
+              });
+              setThinkingStatus(`已匹配「${event.data.skillName}」，正在分析…`);
+              addDebugEvent("skill", event.data.skillName);
+            }
             else if (event.type === "tool_call") { lastEventRef.current = Date.now(); const tn = event.data.toolName; toolTimersRef.current.set(tn, Date.now()); setThinkingStatus(`正在${toolLabel(tn)}…`); setToolCalls(prev => [...prev, {name: tn, startTime: Date.now()}]); addDebugEvent("tool_call", tn); }
             else if (event.type === "tool_result") {
               lastEventRef.current = Date.now();
@@ -355,7 +389,7 @@ const res2 = (event.data as any)?.result; // was here
           <div key={msg.id} className={`message ${msg.role}`}>
             <div className="avatar">{msg.role === "user" ? "👤" : "🤖"}</div>
             <div className="bubble">
-              {msg.skillName && <div className="skill-tag">🧠 {msg.skillName}</div>}
+              {msg.skillName && <div className="skill-tag">🧠 {msg.skillName}{msg.skillVersion ? ` · v${msg.skillVersion}` : ""}</div>}
               {msg.role === "assistant" ? (
                 <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content}</ReactMarkdown>
               ) : <p>{msg.content}</p>}
@@ -509,6 +543,8 @@ function SkillsPanel({ onCreateSkill, onEditSkill, skillsVersion }: { onCreateSk
   const [skills, setSkills] = useState<SkillMeta[]>([]);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<"local" | "hub">("local");
+  const [learningDetail, setLearningDetail] = useState<{ skill: SkillMeta; data: any } | null>(null);
+  const [learningDetailLoading, setLearningDetailLoading] = useState(false);
 
   // 本地 Skill
   const fetchSkills = () => {
@@ -519,6 +555,50 @@ function SkillsPanel({ onCreateSkill, onEditSkill, skillsVersion }: { onCreateSk
 
   const deleteSkill = async (id: string) => {
     await fetch(`/api/skills/${id}`, { method: "DELETE" });
+    fetchSkills();
+  };
+
+  const setSkillAutoImprove = async (id: string, autoImprove: boolean) => {
+    const response = await fetch(`/api/skills/${id}/learning`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ autoImprove }),
+    });
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({}));
+      toast(data.error || "更新持续改进设置失败", "error");
+      return;
+    }
+    fetchSkills();
+  };
+
+  const openLearningDetail = async (skill: SkillMeta) => {
+    setLearningDetailLoading(true);
+    try {
+      const response = await fetch(`/api/skills/${skill.id}/learning`);
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "读取学习记录失败");
+      setLearningDetail({ skill, data });
+    } catch (error: any) {
+      toast(error.message || "读取学习记录失败", "error");
+    } finally {
+      setLearningDetailLoading(false);
+    }
+  };
+
+  const rollbackSkill = async (id: string, version = 1) => {
+    const response = await fetch(`/api/skills/${id}/rollback`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ version }),
+    });
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({}));
+      toast(data.error || "回退失败", "error");
+      return;
+    }
+    toast(version === 1 ? "已恢复原始 Skill" : `已切换到 Skill v${version}`);
+    setLearningDetail(null);
     fetchSkills();
   };
 
@@ -583,8 +663,40 @@ function SkillsPanel({ onCreateSkill, onEditSkill, skillsVersion }: { onCreateSk
           {loading && <div className="skills-loading">加载中...</div>}
           {!loading && skills.map(skill => (
             <div key={skill.id} className="skill-card">
-              <div className="skill-card-header"><h3>🧠 {skill.name}</h3><code>{skill.id}</code><button className="skill-edit-btn" onClick={() => onEditSkill(skill)}>✏️</button><button className="skill-delete-btn skill-delete-text" onClick={(e) => { e.stopPropagation(); setDeleteConfirm(skill.id); }}>×</button></div>
+              <div className="skill-card-header">
+                <h3>🧠 {skill.name}</h3>
+                <code>{skill.id}</code>
+                <span className="skill-version-badge">v{skill.learning?.activeVersion || skill.version || 1}</span>
+                <button className="skill-edit-btn" title="编辑 Skill" onClick={() => onEditSkill(skill)}>✏️</button>
+                <button className="skill-delete-btn skill-delete-text" title="删除 Skill" onClick={(e) => { e.stopPropagation(); setDeleteConfirm(skill.id); }}>×</button>
+              </div>
               <p className="skill-card-desc">{skill.description}</p>
+              {skill.learning && (
+                <div className="skill-learning">
+                  <div className="skill-learning-row">
+                    <span>{skill.learning.runCount} 次观察</span>
+                    <span>{skill.learning.evidenceCount} 条高置信差异</span>
+                    <label className="skill-learning-toggle" title="允许 AI 从对话上下文中持续改进此 Skill">
+                      <input
+                        type="checkbox"
+                        checked={skill.learning.autoImprove}
+                        onChange={(event) => setSkillAutoImprove(skill.id, event.target.checked)}
+                      />
+                      <span>持续改进</span>
+                    </label>
+                    <button
+                      className="skill-learning-detail-btn"
+                      title="查看学习记录"
+                      disabled={learningDetailLoading}
+                      onClick={() => openLearningDetail(skill)}
+                    >ⓘ</button>
+                    {skill.learning.activeVersion > 1 && (
+                      <button className="skill-rollback-btn" title="恢复原始版本" onClick={() => rollbackSkill(skill.id, 1)}>↶</button>
+                    )}
+                  </div>
+                  {skill.learning.lastInsight && <p className="skill-learning-insight">{skill.learning.lastInsight}</p>}
+                </div>
+              )}
               <details className="skill-card-details">
                 <summary>建议提供的信息</summary>
                 {skill.input.properties ? (
@@ -656,6 +768,64 @@ function SkillsPanel({ onCreateSkill, onEditSkill, skillsVersion }: { onCreateSk
                 <button onClick={() => setDeleteConfirm(null)}>取消</button>
                 <button className="primary" style={{ background: "#c62828", color: "#fff" }} onClick={() => { deleteSkill(deleteConfirm); setDeleteConfirm(null); }}>确认删除</button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {learningDetail && (
+        <div className="modal-overlay" onClick={() => setLearningDetail(null)}>
+          <div className="modal learning-detail-modal" onClick={event => event.stopPropagation()}>
+            <div className="modal-header">
+              <h2>{learningDetail.skill.name} · 学习记录</h2>
+              <button className="modal-close" title="关闭" onClick={() => setLearningDetail(null)}>×</button>
+            </div>
+            <div className="modal-body">
+              <div className="learning-detail-summary">
+                <span>{learningDetail.data.summary.runCount} 次观察</span>
+                <span>{learningDetail.data.summary.evidenceCount} 条高置信差异</span>
+                <span>当前 v{learningDetail.data.summary.activeVersion}</span>
+              </div>
+
+              <section className="learning-detail-section">
+                <h3>归纳出的差异</h3>
+                {learningDetail.data.evidence.filter((item: any) => item.learnable && item.confidence >= 0.75).length === 0 ? (
+                  <p className="learning-detail-empty">暂未发现重复的高置信差异</p>
+                ) : learningDetail.data.evidence
+                  .filter((item: any) => item.learnable && item.confidence >= 0.75)
+                  .slice(0, 8)
+                  .map((item: any) => (
+                    <div className="learning-evidence-row" key={item.id}>
+                      <div><strong>{item.improvementHint || item.expected}</strong><span>{Math.round(item.confidence * 100)}% 置信度</span></div>
+                      <p>{item.expected}</p>
+                    </div>
+                  ))}
+              </section>
+
+              <section className="learning-detail-section">
+                <h3>版本历史</h3>
+                <div className="learning-version-row">
+                  <div><strong>v1</strong><span>原始版本</span></div>
+                  {learningDetail.data.summary.activeVersion !== 1 && (
+                    <button onClick={() => rollbackSkill(learningDetail.skill.id, 1)}>恢复</button>
+                  )}
+                </div>
+                {learningDetail.data.versions.map((version: any) => (
+                  <div className="learning-version-row" key={version.version}>
+                    <div>
+                      <strong>v{version.version}</strong>
+                      <span>{version.status === "active" ? "使用中" : version.status === "rejected" ? "未通过" : "历史版本"}</span>
+                      <p>{version.rationale}</p>
+                      {version.evaluation && (
+                        <small>评估 {Math.round(version.evaluation.baselineScore * 100)} → {Math.round(version.evaluation.candidateScore * 100)}</small>
+                      )}
+                    </div>
+                    {version.evaluation?.approved && learningDetail.data.summary.activeVersion !== version.version && (
+                      <button onClick={() => rollbackSkill(learningDetail.skill.id, version.version)}>恢复</button>
+                    )}
+                  </div>
+                ))}
+              </section>
             </div>
           </div>
         </div>

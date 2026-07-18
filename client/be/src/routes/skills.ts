@@ -8,7 +8,14 @@ import { Router, Request, Response } from "express";
 import OpenAI from "openai";
 import { formatLlmError } from "../llm-errors";
 import { resolveModel } from "../models";
-import { registeredSkills, saveSkill, deleteSkill } from "../skills/loader";
+import { registeredSkills, saveSkill, deleteSkill, initSkills } from "../skills/loader";
+import { scheduleSkillOptimization } from "../skills/learning-engine";
+import {
+  activateSkillVersion,
+  getLearningSummary,
+  readLearningState,
+  setAutoImprove,
+} from "../skills/learning-store";
 import { Skill } from "../types";
 
 const router = Router();
@@ -68,7 +75,12 @@ router.get("/", (_req: Request, res: Response) => {
     input: s.input,
     output: s.output,
     requiredTools: s.requiredTools,
+    allowedTools: s.allowedTools,
+    whenToUse: s.whenToUse,
     keywords: s.keywords,
+    version: s.version || 1,
+    origin: s.origin,
+    learning: getLearningSummary(s.id),
   }));
   res.json({ skills });
 });
@@ -195,6 +207,63 @@ router.get("/search", (req: Request, res: Response) => {
     })
     .map((s) => ({ id: s.id, name: s.name, description: s.description, keywords: s.keywords }));
   res.json({ skills: results });
+});
+
+// GET /api/skills/:id/learning — 本地隐式学习状态
+router.get("/:id/learning", (req: Request, res: Response) => {
+  const skill = registeredSkills.find((item) => item.id === req.params.id);
+  if (!skill) { res.status(404).json({ error: "Skill 不存在" }); return; }
+  const state = readLearningState(skill.id);
+  res.json({
+    summary: getLearningSummary(skill.id),
+    evidence: [...state.evidence].sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 30),
+    versions: state.versions.map((version) => ({
+      version: version.version,
+      status: version.status,
+      rationale: version.rationale,
+      createdAt: version.createdAt,
+      activatedAt: version.activatedAt,
+      evaluation: version.evaluation,
+    })),
+  });
+});
+
+// PATCH /api/skills/:id/learning — 开关自动改进
+router.patch("/:id/learning", (req: Request, res: Response) => {
+  const skill = registeredSkills.find((item) => item.id === req.params.id);
+  if (!skill) { res.status(404).json({ error: "Skill 不存在" }); return; }
+  if (typeof req.body?.autoImprove !== "boolean") {
+    res.status(400).json({ error: "请提供 autoImprove 布尔值" });
+    return;
+  }
+  setAutoImprove(skill.id, req.body.autoImprove);
+  res.json({ success: true, summary: getLearningSummary(skill.id) });
+});
+
+// POST /api/skills/:id/optimize — 使用现有证据立即尝试生成候选版本
+router.post("/:id/optimize", (req: Request, res: Response) => {
+  const skill = registeredSkills.find((item) => item.id === req.params.id);
+  if (!skill) { res.status(404).json({ error: "Skill 不存在" }); return; }
+  scheduleSkillOptimization(skill.id, true);
+  res.status(202).json({ success: true });
+});
+
+// POST /api/skills/:id/rollback — 激活指定本地版本，1 表示原始版本
+router.post("/:id/rollback", (req: Request, res: Response) => {
+  const skill = registeredSkills.find((item) => item.id === req.params.id);
+  if (!skill) { res.status(404).json({ error: "Skill 不存在" }); return; }
+  const version = Number(req.body?.version ?? 1);
+  if (!Number.isInteger(version) || version < 1) {
+    res.status(400).json({ error: "无效的版本号" });
+    return;
+  }
+  try {
+    activateSkillVersion(skill.id, version);
+    initSkills();
+    res.json({ success: true, summary: getLearningSummary(skill.id) });
+  } catch (error) {
+    res.status(400).json({ error: error instanceof Error ? error.message : String(error) });
+  }
 });
 
 // DELETE /api/skills/:id — 删除 Skill
