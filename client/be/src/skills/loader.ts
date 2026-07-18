@@ -4,9 +4,16 @@
 import * as fs from "fs";
 import * as path from "path";
 import { Skill } from "../types";
+import {
+  deleteSkillLearning,
+  getActiveSkillOverride,
+  resetActiveSkillVersion,
+} from "./learning-store";
+
+const BUILTIN_SKILL_IDS = new Set(["daily-study-plan", "code-explain"]);
 
 // 动态计算 skills 路径（兼容 ts-node 开发 / esbuild 编译 / Electron 三种模式）
-function getSkillsDir(): string {
+export function getSkillsDir(): string {
   const candidates = [
     path.join(process.cwd(), "data", "skills"),           // Electron / npm start
     path.resolve(__dirname, "../data/skills"),             // esbuild 编译 (dist/ → ../data/skills)
@@ -63,7 +70,13 @@ export function loadSkills(): Skill[] {
         continue;
       }
 
-      skills.push(parsed as Skill);
+      const baseSkill = parsed as Skill;
+      const activeOverride = getActiveSkillOverride(baseSkill.id);
+      skills.push(activeOverride || {
+        ...baseSkill,
+        version: 1,
+        origin: BUILTIN_SKILL_IDS.has(baseSkill.id) ? "builtin" : "custom",
+      });
       console.log(`📦 已加载 Skill: ${parsed.name} (${parsed.id})`);
     } catch (err: any) {
       console.error(`❌ 解析 Skill 文件 ${file} 失败: ${err.message}`);
@@ -88,6 +101,7 @@ export function deleteSkill(skillId: string): void {
     throw new Error(`Skill 文件不存在: ${skillId}`);
   }
   fs.unlinkSync(filePath);
+  deleteSkillLearning(skillId);
   console.log(`🗑️ 已删除 Skill: ${skillId}`);
   registeredSkills = loadSkills();
 }
@@ -116,7 +130,9 @@ export function saveSkill(skill: Skill): void {
 
   // 3. 写入文件
   const filePath = path.join(getSkillsDir(), `${skill.id}.json`);
-  fs.writeFileSync(filePath, JSON.stringify(skill, null, 2), "utf-8");
+  const { version: _version, origin: _origin, ...persistedSkill } = skill;
+  fs.writeFileSync(filePath, JSON.stringify(persistedSkill, null, 2), "utf-8");
+  resetActiveSkillVersion(skill.id);
   console.log(`💾 已保存 Skill: ${skill.name} → ${filePath}`);
 
   // 4. 重载注册表

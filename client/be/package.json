@@ -1,15 +1,19 @@
 {
   "name": "wahtway-client-be",
-  "version": "0.7.0",
+  "version": "0.15.0",
+  "type": "commonjs",
   "description": "WahtWay 客户端内嵌后端",
   "scripts": {
-    "dev": "ts-node src/index.ts"
+    "dev": "ts-node --transpile-only src/index.ts"
   },
   "dependencies": {
+    "adm-zip": "^0.6.0",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "express": "^4.21.0",
-    "openai": "^4.73.0"
+    "mammoth": "^1.12.0",
+    "openai": "^4.73.0",
+    "pdf-parse": "^1.1.1"
   },
   "devDependencies": {
     "@types/cors": "^2.8.17",

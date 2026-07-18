@@ -133,7 +133,7 @@ router.post("/download", async (req: Request, res: Response) => {
   }
 
   try {
-    const url = `${serverUrl.replace(/\/$/, "")}/api/skills/${skillId}/download`;
+    const url = `${serverUrl.replace(/\/$/, "")}/api/skills/${encodeURIComponent(skillId)}/download`;
     const response = await fetch(url);
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const payload = await response.json();

@@ -4,10 +4,15 @@
 
 ## 功能
 
-- 🤖 **智能对话**：输入问题，Agent 自动匹配 Skill + 流式逐字回复
-- 🧠 **多 Skill 支持**：内置多个 Skill（学习计划、代码解释等），按关键词自动匹配
-- ✨ **AI 创建 Skill**：用自然语言描述你想要的功能，AI 自动生成完整 Skill 定义
-- ⚡ **即创即用**：生成的 Skill 保存为 JSON 文件，无需改代码，重启即生效
+- 🤖 **智能对话**：实时流式逐字回复，多轮对话记忆，模式自由切换（普通/指定Skill）
+- 🔧 **Tool 调用**：9 个文件操作 Tool，Agentic Loop 自动编排，实时可见，支持 input_examples 精准调用
+- 📊 **用量统计**：每轮对话显示 Token 消耗、耗时、工具调用次数，动态更新
+- 📁 **文件管理**：10个文件操作Tool + AI文件总结/翻译/格式化
+- 🧠 **Agent认知**：Todo任务规划 + 跨对话文件记忆 + 工作区目录
+- 🛡️ **安全护栏**：写操作需确认，系统目录拦截，敏感文件保护，临时授权机制
+- 🧠 **Skill 系统**：内置多个 Skill + AI 自动生成 + 搜索推荐 + 一键创建
+- 📦 **Skill Hub**：在线 Skill 库，浏览/搜索/下载安装，已部署 [Railway](https://wahtway-production.up.railway.app)
+- 💻 **桌面 EXE**：Electron 打包，双击即用，无需安装环境
 
 ## 技术栈
 
@@ -34,23 +39,23 @@ cd WahtWay
 
 ### 2. 配置 API Key
 
-在 `be/.env` 中填入你的 DeepSeek API Key：
+在 `client/.env` 中填入你的 DeepSeek API Key：
 
 ```
 DEEPSEEK_API_KEY=sk-你的key
 DEEPSEEK_BASE_URL=https://api.deepseek.com
-DEEPSEEK_MODEL=deepseek-chat
+DEEPSEEK_MODEL=deepseek-v4-flash
 ```
 
 ### 3. 安装依赖
 
 ```bash
 # 后端
-cd be
+cd client/be
 npm install
 
 # 前端（另开终端）
-cd fe
+cd client
 npm install
 ```
 
@@ -59,7 +64,7 @@ npm install
 **终端 1 — 启动后端**（端口 3000）：
 
 ```bash
-cd be
+cd client/be
 npm run dev
 ```
 
@@ -68,7 +73,7 @@ npm run dev
 **终端 2 — 启动前端**（端口 5173）：
 
 ```bash
-cd fe
+cd client
 npm run dev
 ```
 
@@ -82,31 +87,39 @@ npm run dev
 
 ```
 WahtWay/
-├── be/                          # 后端
-│   ├── data/skills/             # ★ Skill 定义（JSON 文件）
-│   │   ├── daily-study-plan.json
-│   │   └── code-explain.json
-│   ├── src/
-│   │   ├── index.ts             # Express 入口
-│   │   ├── agent.ts             # Agent 核心（匹配 + 调 LLM）
-│   │   ├── types.ts             # 类型定义
-│   │   ├── cli.ts               # CLI 交互模式
-│   │   ├── routes/
-│   │   │   ├── chat.ts          # POST /api/chat（SSE 流式）
-│   │   │   └── skills.ts        # Skill API（列表/生成/保存）
-│   │   └── skills/
-│   │       ├── loader.ts        # JSON 文件加载 + 保存
-│   │       └── matcher.ts       # 关键词匹配器
-│   ├── .env                     # API Key 配置
-│   └── package.json
+├── client/                       # Electron 客户端
+│   ├── be/                       #   内嵌后端
+│   │   ├── data/skills/          #   ★ 本地 Skill 定义（JSON 文件）
+│   │   └── src/
+│   │       ├── index.ts          #   Express 入口
+│   │       ├── agent.ts          #   Agent 核心（流式 Agentic Loop）
+│   │       ├── types.ts          #   类型定义
+│   │       ├── routes/
+│   │       │   ├── chat.ts       #   POST /api/chat（SSE 流式）
+│   │       │   ├── skills.ts     #   Skill API + Hub 代理
+│   │       │   └── conversations.ts
+│   │       ├── skills/
+│   │       │   ├── loader.ts     #   JSON 文件加载 + 保存
+│   │       │   └── matcher.ts    #   LLM 语义匹配器
+│   │       └── tools/
+│   │           ├── file-tools.ts #   9 个文件操作 Tool
+│   │           └── registry.ts   #   Tool 注册表
+│   ├── src/                      #   前端 (React)
+│   │   ├── App.tsx               #   对话界面 + Skill 库 + Hub
+│   │   ├── conversations.ts      #   全局消息 store
+│   │   └── debug.ts              #   调试工具
+│   └── electron/                 #   Electron 壳
 │
-├── fe/                          # 前端
+├── server/                       # Skill Hub 服务端
+│   ├── data/skills/              #   Seed Skill
 │   ├── src/
-│   │   ├── App.tsx              # 对话界面
-│   │   ├── App.css              # 样式
-│   │   └── main.tsx             # 入口
-│   ├── vite.config.ts           # Vite 配置（含 /api 代理）
-│   └── package.json
+│   │   ├── index.ts              #   Express 入口（端口 4000）
+│   │   ├── types.ts              #   类型定义
+│   │   ├── routes/skills.ts      #   Hub API（CRUD/评分/举报）
+│   │   └── skills/
+│   │       ├── hubStore.ts       #   JSON 文件数据库
+│   │       └── validation.ts     #   输入校验
+│   └── public/                   #   Hub Web UI
 │
 └── .gitignore
 ```
@@ -137,6 +150,8 @@ WahtWay/
     "properties": {}
   },
   "requiredTools": [],
+  "allowedTools": [],
+  "whenToUse": "用户明确需要这个技能处理任务时",
   "keywords": ["关键词1", "关键词2", "关键词3"]
 }
 ```
@@ -145,17 +160,39 @@ WahtWay/
 - `systemPrompt` → 告诉 LLM 扮演什么角色，输出什么格式
 - 不需要写任何代码，重启即生效
 
+### Skill 持续改进
+
+观察器按上下文信号触发，而不是每轮固定调用。新对话或没有历史引用的手动 Skill 调用直接使用当前消息，不增加前置模型请求；自动匹配时，匹配模型会在同一次调用中返回需求快照。回答完成后只用本地规则记录工具失败、空回答等确定性问题。下一条消息只有表现为重复请求、纠正或补充约束时，才会在后台调用观察模型；明确继续和无关话题都由本地规则处理。
+
+只有同类问题在至少 3 次调用中以高置信度重复出现，才会生成候选版本。候选版本只能修改 `systemPrompt`、`description`、`whenToUse` 和 `keywords`，不能改变工具权限或输入输出 Schema；通过历史案例判别回放后才自动激活。预设 Skill JSON 不会被覆盖，所有本地版本均可回退。
+
+- `SKILL_OBSERVER_MODEL`：需求和差异观察模型，默认 `deepseek-v4-flash`
+- `SKILL_OPTIMIZER_MODEL`：候选生成和版本评估模型，默认 `deepseek-v4-pro`
+- 学习记录保存到 WahtWay 用户数据目录下的 `skill-learning/`
+- 完整架构、触发策略和数据模型见 [`docs/Skill持续改进设计.md`](docs/Skill持续改进设计.md)
+
 ---
 
 ## API 接口
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| POST | `/api/chat` | 发送消息，SSE 流式返回 |
-| GET | `/api/skills` | 获取所有 Skill 列表（不含 systemPrompt） |
+| POST | `/api/chat` | 发送消息，SSE 实时流式返回（含 delta/tool_call/stats） |
+| GET | `/api/skills` | 获取本地 Skill 列表 |
+| GET | `/api/skills/hub/list` | 代理 Hub 列表（支持 q/sort/category） |
+| POST | `/api/skills/download` | 从 Hub 下载 Skill 到本地 |
 | POST | `/api/skills/generate` | AI 自动生成 Skill JSON |
 | POST | `/api/skills/save` | 保存新 Skill 到文件 |
+| GET | `/api/skills/search?q=` | 模糊搜索本地 Skill |
+| GET | `/api/skills/:id/learning` | 获取隐式学习证据和版本历史 |
+| PATCH | `/api/skills/:id/learning` | 开关该 Skill 的持续改进 |
+| POST | `/api/skills/:id/optimize` | 使用现有证据尝试生成候选版本 |
+| POST | `/api/skills/:id/rollback` | 激活原始或已验证的历史版本 |
+| POST | `/api/tools/approve` | 临时授权文件操作路径 |
+| POST | `/api/reset` | 重置对话和自定义 Skill |
 | GET | `/api/health` | 健康检查 |
+
+> 在线 Skill Hub: [wahtway-production.up.railway.app](https://wahtway-production.up.railway.app)
 
 ---
 

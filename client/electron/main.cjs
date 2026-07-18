@@ -1,14 +1,18 @@
 // WahtWay Electron 主进程
-const { app, BrowserWindow } = require("electron");
+const { app, BrowserWindow, dialog, ipcMain } = require("electron");
 const path = require("path");
 const fs = require("fs");
 let mainWindow = null;
 
 // 加载 .env
 function loadEnv() {
+  const envPath = app.isPackaged
+    ? path.join(path.dirname(process.execPath), ".env")
+    : path.join(__dirname, "..", ".env");
+  process.env.WAHTWAY_ENV_PATH = envPath;
   const candidates = [
+    envPath,
     path.join(__dirname, "..", "be", ".env"),
-    path.join(path.dirname(process.execPath), ".env"),
   ];
   for (const p of candidates) {
     if (!fs.existsSync(p)) continue;
@@ -22,8 +26,27 @@ function loadEnv() {
   console.warn("⚠️ 未找到 .env，请配置 API Key");
 }
 
+// IPC: 打开文件选择对话框
+ipcMain.handle("open-file-dialog", async () => {
+  const result = await dialog.showOpenDialog(mainWindow, {
+    properties: ["openFile", "multiSelections"],
+    title: "选择文件",
+  });
+  return result.canceled ? [] : result.filePaths;
+});
+
+// IPC: 打开文件夹选择对话框
+ipcMain.handle("open-folder-dialog", async () => {
+  const result = await dialog.showOpenDialog(mainWindow, {
+    properties: ["openDirectory"],
+    title: "选择工作目录",
+  });
+  return result.canceled ? "" : result.filePaths[0] || "";
+});
+
 app.whenReady().then(async () => {
   loadEnv();
+  process.env.WAHTWAY_DATA_DIR = path.join(app.getPath("userData"), "data");
 
   // require 后端（asar: false 直接文件访问）
   const beDir = path.join(__dirname, "..", "be");
@@ -60,9 +83,16 @@ app.whenReady().then(async () => {
     },
   });
 
-  // 等 Express 就绪
+  // 等 Express 就绪，读取实际端口
+  let port = 3000;
   setTimeout(() => {
-    mainWindow.loadURL("http://localhost:3000");
+    try {
+      const portFile = require("path").join(__dirname, "..", "be", ".port");
+      if (require("fs").existsSync(portFile)) {
+        port = parseInt(require("fs").readFileSync(portFile, "utf-8").trim()) || 3000;
+      }
+    } catch {}
+    mainWindow.loadURL(`http://localhost:${port}`);
   }, 1500);
   mainWindow.setMenuBarVisibility(false);
 

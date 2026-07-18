@@ -3,4 +3,19 @@ dist/
 release/
 *.exe
 .env
+.env.*
+!.env.example
+
+# Runtime state
+*.port
+*.log
+client/data/conversations/
+client/data/logs/
+client/data/skill-learning/
+client/be/data/conversations/
+client/be/data/skill-learning/
 server/data/hub/
+
+# OS metadata
+.DS_Store
+Thumbs.db
