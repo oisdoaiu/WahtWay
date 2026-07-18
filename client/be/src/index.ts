@@ -103,6 +103,31 @@ app.get("/api/health", (_req, res) => {
   res.json({ status: "ok", version: "0.17.0", needsSetup: !hasKey });
 });
 
+app.get("/api/balance", async (_req, res) => {
+  const apiKey = process.env.DEEPSEEK_API_KEY;
+  if (!apiKey || !apiKey.startsWith("sk-")) {
+    res.status(400).json({ error: "请先配置 DeepSeek API Key" });
+    return;
+  }
+
+  try {
+    const baseUrl = (process.env.DEEPSEEK_BASE_URL || "https://api.deepseek.com").replace(/\/+$/, "");
+    const response = await fetch(`${baseUrl}/user/balance`, {
+      headers: { Authorization: `Bearer ${apiKey}` },
+    });
+    const data = await response.json().catch(() => ({}));
+
+    if (!response.ok) {
+      res.status(response.status).json({ error: data?.message || data?.error?.message || "余额查询失败" });
+      return;
+    }
+
+    res.json(data);
+  } catch (err: any) {
+    res.status(502).json({ error: `余额查询失败: ${err.message}` });
+  }
+});
+
 // 保存 API Key 到 .env
 app.post("/api/setup", (req, res) => {
   const { apiKey, baseUrl, model } = req.body;

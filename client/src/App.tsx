@@ -4,7 +4,8 @@ import remarkGfm from "remark-gfm";
 import { DEBUG, addDebugEvent, getDebugEvents, onDebugEvents, clearDebugEvents } from "./debug";
 import {
   getMessages, isStreaming, setMessages, appendMessage,
-  appendToLast, patchMessage, setStreaming, subscribe, getTodoItems, setTodoItems,
+  appendToLast, patchMessage, setStreaming, subscribe,
+  getTodoItems, setTodoItems, updateLastMessage,
 } from "./conversations";
 import "./App.css";
 
@@ -84,7 +85,6 @@ function ChatPanel({ conversationId, onTitleChange, onCreateSkill }: { showModal
   const [attachedFiles, setAttachedFiles] = useState<string[]>([]);
   const [showFileMenu, setShowFileMenu] = useState(false);
   const [workspace, setWorkspace] = useState(() => localStorage.getItem("wahtway-workspace") || "");
-  const [lastStats, setLastStats] = useState<{totalTokens: number; totalTime: number; rounds: number; toolCalls: number; model: string} | null>(null);
     const abortRef = useRef<AbortController | null>(null);
   const msgHistory = useRef<string[]>([]);
   const historyIdx = useRef(-1);
@@ -172,7 +172,6 @@ function ChatPanel({ conversationId, onTitleChange, onCreateSkill }: { showModal
     appendMessage(conversationId, { id: assistantMessageId, role: "assistant", content: "" });
     setToolCalls([]);
     setTodoItems(conversationId, []);
-    setLastStats(null);
 
     try {
       const controller = new AbortController();
@@ -258,9 +257,9 @@ const res2 = (event.data as any)?.result; // was here
               }
             }
             else if (event.type === "delta") { lastEventRef.current = Date.now(); setThinkingStatus(""); appendToLast(conversationId, event.data); }
-            else if (event.type === "stats") { lastEventRef.current = Date.now(); setLastStats(event.data as any); }
+            else if (event.type === "stats") { lastEventRef.current = Date.now(); updateLastMessage(conversationId, msg => ({ ...msg, stats: event.data as any })); }
             else if (event.type === "error") { lastEventRef.current = Date.now(); setThinkingStatus(""); toast(String(event.data), "error"); appendToLast(conversationId, `\n\n❌ ${event.data}`); addDebugEvent("error", event.data); }
-            else if (event.type === "done") { lastEventRef.current = Date.now(); setThinkingStatus(""); if ((event.data as any)?.stats) setLastStats((event.data as any).stats); addDebugEvent("done", "流结束"); }
+            else if (event.type === "done") { lastEventRef.current = Date.now(); setThinkingStatus(""); if ((event.data as any)?.stats) updateLastMessage(conversationId, msg => ({ ...msg, stats: (event.data as any).stats })); addDebugEvent("done", "流结束"); }
           } catch { /* skip */ }
         }
       }
@@ -397,11 +396,11 @@ const res2 = (event.data as any)?.result; // was here
               {streaming && idx === messages.length - 1 && msg.role === "assistant" && showPulse && msg.content && (
                 <span className="stream-pulse">⟳ 思考中…</span>
               )}
-              {lastStats && idx === messages.length - 1 && msg.role === "assistant" && (
+              {msg.stats && msg.role === "assistant" && (
                 <div className="msg-stats">
-                  {lastStats.totalTokens > 0 && <span>{lastStats.totalTokens} tokens</span>}
-                  <span>{(lastStats.totalTime / 1000).toFixed(1)}s</span>
-                  {lastStats.toolCalls > 0 && <span>{lastStats.toolCalls} 次工具调用</span>}
+                  {msg.stats.totalTokens > 0 && <span>{msg.stats.totalTokens} tokens</span>}
+                  <span>{(msg.stats.totalTime / 1000).toFixed(1)}s</span>
+                  {msg.stats.toolCalls > 0 && <span>{msg.stats.toolCalls} 次工具调用</span>}
                 </div>
               )}
             </div>
@@ -880,6 +879,9 @@ function CreateSkillModal({ show, onClose, onSaved, prefill, skillToEdit }: { sh
   };
 
   const handleClose = () => { setStep("describe"); setSkillDesc(""); setEditSkill(null); setMsg(""); onClose(); };
+  const descLength = String(editSkill?.description || "").length;
+  const systemPromptLength = String(editSkill?.systemPrompt || "").length;
+  const whenToUseLength = String(editSkill?.whenToUse || "").length;
 
   return (
     <div className="modal-overlay" onClick={handleClose}>
@@ -898,11 +900,25 @@ function CreateSkillModal({ show, onClose, onSaved, prefill, skillToEdit }: { sh
             <p className="modal-hint">以下是 AI 生成的 Skill 定义，你可以修改后保存。</p>
             {editSkill && (
               <div className="edit-form">
-                <label>ID</label><input value={editSkill.id || ""} onChange={e => setEditSkill({ ...editSkill, id: e.target.value })} />
-                <label>名称</label><input value={editSkill.name || ""} onChange={e => setEditSkill({ ...editSkill, name: e.target.value })} />
-                <label>描述</label><input value={editSkill.description || ""} onChange={e => setEditSkill({ ...editSkill, description: e.target.value })} />
-                <label>System Prompt</label><textarea rows={6} value={editSkill.systemPrompt || ""} onChange={e => setEditSkill({ ...editSkill, systemPrompt: e.target.value })} />
-                <label>触发场景 (whenToUse)</label><textarea rows={2} placeholder="描述何时触发此 Skill，如：用户想制定学习计划时触发，不要在文件操作时触发" value={editSkill.whenToUse || ""} onChange={e => setEditSkill({ ...editSkill, whenToUse: e.target.value })} />
+                <label>ID</label>
+                <p className="field-hint">用于文件名和内部识别，建议使用小写英文、数字和短横线，例如 <code>weekly-report</code>。</p>
+                <input value={editSkill.id || ""} onChange={e => setEditSkill({ ...editSkill, id: e.target.value })} />
+
+                <label>名称</label>
+                <p className="field-hint">展示给用户看的 Skill 名称，建议简短明确。</p>
+                <input value={editSkill.name || ""} onChange={e => setEditSkill({ ...editSkill, name: e.target.value })} />
+
+                <label className="field-label"><span>描述</span><span className={`field-count ${descLength > 50 ? "over" : ""}`}>{descLength}/50</span></label>
+                <p className="field-hint">用于 Skill 卡片和匹配，建议 50 字以内，突出“能帮用户做什么”。</p>
+                <input value={editSkill.description || ""} onChange={e => setEditSkill({ ...editSkill, description: e.target.value })} />
+
+                <label className="field-label"><span>System Prompt</span><span className="field-count">{systemPromptLength} 字</span></label>
+                <p className="field-hint">给模型看的核心指令，建议写清角色、输入要求、输出格式和边界。</p>
+                <textarea rows={6} value={editSkill.systemPrompt || ""} onChange={e => setEditSkill({ ...editSkill, systemPrompt: e.target.value })} />
+
+                <label className="field-label"><span>触发场景 (whenToUse)</span><span className={`field-count ${whenToUseLength > 120 ? "over" : ""}`}>{whenToUseLength}/120</span></label>
+                <p className="field-hint">说明什么时候该用、什么时候不该用，可减少误触发。</p>
+                <textarea rows={2} placeholder="例如：用户想制定学习计划时触发；不要在文件操作或闲聊时触发。" value={editSkill.whenToUse || ""} onChange={e => setEditSkill({ ...editSkill, whenToUse: e.target.value })} />
               </div>
             )}
             <div className="modal-actions"><button onClick={handleClose}>取消</button><button className="primary" onClick={handleSave}>保存</button></div>
@@ -1034,6 +1050,7 @@ export default function App() {
         <div className="sidebar-footer">
           <button id="sidebar-create-skill" className="nav-item" onClick={() => setShowModal(true)}><span className="nav-icon">✨</span><span>创建 Skill</span></button>
           <div className="sidebar-reset" onClick={() => setShowResetConfirm(true)}>🔄 重置</div>
+          <BalanceWidget />
           <div className="sidebar-item" onClick={() => { const t = theme === "light" ? "dark" : "light"; setTheme(t); localStorage.setItem("wahtway-theme", t); }}>{theme === "light" ? "🌙 深色模式" : "☀️ 浅色模式"}</div>
         <div className="sidebar-reset" onClick={() => { DEBUG.on = !DEBUG.on; setConvVersion(v => v + 1); }}>{DEBUG.on ? "🟢 调试中" : "⚫ 调试关"}</div>
         <div className="sidebar-reset" onClick={() => setShowCmdPalette(true)}>⌨ 命令面板 (Ctrl+K)</div>
@@ -1090,6 +1107,51 @@ function toolLabel(name: string): string {
     "delete-file": "移入回收站",
   };
   return labels[name] || name;
+}
+
+function formatBalance(data: any): string {
+  const balances = Array.isArray(data?.balance_infos) ? data.balance_infos : [];
+  if (balances.length === 0) return "未返回余额";
+
+  return balances.map((item: any) => {
+    const currency = item.currency || "余额";
+    const total = item.total_balance ?? item.topped_up_balance ?? item.granted_balance ?? "--";
+    return `${currency} ${total}`;
+  }).join(" · ");
+}
+
+function BalanceWidget() {
+  const [balance, setBalance] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  const queryBalance = async () => {
+    if (loading) return;
+    setLoading(true);
+    setError("");
+    try {
+      const response = await fetch("/api/balance");
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "余额查询失败");
+      setBalance(formatBalance(data));
+    } catch (err: any) {
+      const message = err.message || "余额查询失败";
+      setError(message);
+      toast(message, "error");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="balance-widget">
+      <button className="balance-button" onClick={queryBalance} disabled={loading} title="手动查询 DeepSeek 账户余额">
+        <span>💰</span><span>{loading ? "查询中…" : "查询余额"}</span>
+      </button>
+      {balance && <div className="balance-value">{balance}</div>}
+      {!balance && error && <div className="balance-error">查询失败</div>}
+    </div>
+  );
 }
 
 function SetupScreen({ show, onDone }: { show: boolean; onDone: () => void }) {
