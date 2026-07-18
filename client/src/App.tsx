@@ -864,6 +864,7 @@ export default function App() {
         <div className="sidebar-footer">
           <button id="sidebar-create-skill" className="nav-item" onClick={() => setShowModal(true)}><span className="nav-icon">✨</span><span>创建 Skill</span></button>
           <div className="sidebar-reset" onClick={() => setShowResetConfirm(true)}>🔄 重置</div>
+          <BalanceWidget />
           <div className="sidebar-item" onClick={() => { const t = theme === "light" ? "dark" : "light"; setTheme(t); localStorage.setItem("wahtway-theme", t); }}>{theme === "light" ? "🌙 深色模式" : "☀️ 浅色模式"}</div>
         <div className="sidebar-reset" onClick={() => { DEBUG.on = !DEBUG.on; setConvVersion(v => v + 1); }}>{DEBUG.on ? "🟢 调试中" : "⚫ 调试关"}</div>
         <div className="sidebar-reset" onClick={() => setShowCmdPalette(true)}>⌨ 命令面板 (Ctrl+K)</div>
@@ -920,6 +921,51 @@ function toolLabel(name: string): string {
     "delete-file": "移入回收站",
   };
   return labels[name] || name;
+}
+
+function formatBalance(data: any): string {
+  const balances = Array.isArray(data?.balance_infos) ? data.balance_infos : [];
+  if (balances.length === 0) return "未返回余额";
+
+  return balances.map((item: any) => {
+    const currency = item.currency || "余额";
+    const total = item.total_balance ?? item.topped_up_balance ?? item.granted_balance ?? "--";
+    return `${currency} ${total}`;
+  }).join(" · ");
+}
+
+function BalanceWidget() {
+  const [balance, setBalance] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  const queryBalance = async () => {
+    if (loading) return;
+    setLoading(true);
+    setError("");
+    try {
+      const response = await fetch("/api/balance");
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "余额查询失败");
+      setBalance(formatBalance(data));
+    } catch (err: any) {
+      const message = err.message || "余额查询失败";
+      setError(message);
+      toast(message, "error");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="balance-widget">
+      <button className="balance-button" onClick={queryBalance} disabled={loading} title="手动查询 DeepSeek 账户余额">
+        <span>💰</span><span>{loading ? "查询中…" : "查询余额"}</span>
+      </button>
+      {balance && <div className="balance-value">{balance}</div>}
+      {!balance && error && <div className="balance-error">查询失败</div>}
+    </div>
+  );
 }
 
 function SetupScreen({ show, onDone }: { show: boolean; onDone: () => void }) {

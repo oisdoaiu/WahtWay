@@ -83,6 +83,63 @@ body {
   border-top: 1px solid #eee;
 }
 
+.sidebar-footer .nav-item,
+.sidebar-footer .sidebar-item,
+.sidebar-footer .balance-button {
+  min-height: 32px;
+  padding: 8px 12px;
+  font-size: 12px;
+  text-align: left;
+}
+
+.sidebar-footer .nav-icon {
+  font-size: 14px;
+}
+
+.balance-widget {
+  margin: 0;
+}
+
+.balance-button {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 10px;
+  width: 100%;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: #888;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.balance-button:hover:not(:disabled) {
+  background: #eee;
+}
+
+.balance-button:disabled {
+  cursor: wait;
+  opacity: 0.7;
+}
+
+.balance-value,
+.balance-error {
+  margin-top: 5px;
+  padding: 0 6px;
+  font-size: 11px;
+  text-align: center;
+  line-height: 1.4;
+}
+
+.balance-value {
+  color: #2e7d32;
+}
+
+.balance-error {
+  color: #c62828;
+}
+
 /* --- Main Content --- */
 .main-content {
   flex: 1;
@@ -824,6 +881,10 @@ body {
 .app.dark .nav-item.active { background: #313244; color: #89b4fa; }
 .app.dark .nav-item:hover { background: #313244; }
 .app.dark .sidebar-footer { border-color: #313244; }
+.app.dark .balance-button { color: #a6adc8; }
+.app.dark .balance-button:hover:not(:disabled) { background: #313244; }
+.app.dark .balance-value { color: #a6e3a1; }
+.app.dark .balance-error { color: #f38ba8; }
 .app.dark .conv-item { color: #a6adc8; }
 .app.dark .conv-item.active { background: #313244; color: #89b4fa; }
 .app.dark .hub-toolbar { background: #313244; border-color: #45475a; }
