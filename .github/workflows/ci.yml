@@ -85,14 +85,98 @@ jobs:
           CLIENT_RESULT: ${{ needs.build-client.result }}
           SKILL_HUB_RESULT: ${{ needs.build-skill-hub.result }}
           REPOSITORY: ${{ github.repository }}
-          REF_NAME: ${{ github.ref_name }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          ACTOR: ${{ github.actor }}
+          PR_NUMBER: ${{ github.event.pull_request.number || '' }}
+          PR_TITLE: ${{ github.event.pull_request.title || '' }}
+          PR_URL: ${{ github.event.pull_request.html_url || '' }}
+          PR_AUTHOR: ${{ github.event.pull_request.user.login || '' }}
+          PR_AUTHOR_URL: ${{ github.event.pull_request.user.html_url || '' }}
         run: |
           if [ -z "$WEBHOOK" ]; then
             echo "FEISHU_WEBHOOK is not configured; skipping notification."
             exit 0
           fi
 
+          result_label() {
+            case "$1" in
+              success) echo "成功" ;;
+              failure) echo "失败" ;;
+              cancelled) echo "已取消" ;;
+              skipped) echo "已跳过" ;;
+              *) echo "未知" ;;
+            esac
+          }
+
+          CLIENT_LABEL=$(result_label "$CLIENT_RESULT")
+          SKILL_HUB_LABEL=$(result_label "$SKILL_HUB_RESULT")
+
+          if [ "$CLIENT_RESULT" = "failure" ] || [ "$SKILL_HUB_RESULT" = "failure" ]; then
+            STATUS="失败"
+            COLOR="red"
+          elif [ "$CLIENT_RESULT" = "success" ] && [ "$SKILL_HUB_RESULT" = "success" ]; then
+            STATUS="成功"
+            COLOR="green"
+          else
+            STATUS="未完成"
+            COLOR="yellow"
+          fi
+
+          case "$EVENT_NAME" in
+            pull_request)
+              CONTEXT="**关联 PR：** [#${PR_NUMBER} ${PR_TITLE}](${PR_URL})\n**PR 发起人：** [${PR_AUTHOR}](${PR_AUTHOR_URL})"
+              ;;
+            workflow_dispatch)
+              CONTEXT="**触发方式：** 手动运行\n**触发人：** ${ACTOR}"
+              ;;
+            schedule)
+              CONTEXT="**触发方式：** 每日定时巡检（北京时间 21:00）"
+              ;;
+            *)
+              CONTEXT="**触发人：** ${ACTOR}"
+              ;;
+          esac
+
+          PAYLOAD=$(jq -n \
+            --arg status "$STATUS" \
+            --arg color "$COLOR" \
+            --arg repository "$REPOSITORY" \
+            --arg client "$CLIENT_LABEL" \
+            --arg skillHub "$SKILL_HUB_LABEL" \
+            --arg context "$CONTEXT" \
+            --arg runUrl "$RUN_URL" \
+            '{
+              msg_type: "interactive",
+              card: {
+                header: {
+                  template: $color,
+                  title: { tag: "plain_text", content: ("CI 构建" + $status) }
+                },
+                elements: [
+                  {
+                    tag: "div",
+                    fields: [
+                      { is_short: true, text: { tag: "lark_md", content: ("**客户端与嵌入式 API**\\n" + $client) } },
+                      { is_short: true, text: { tag: "lark_md", content: ("**Skill Hub**\\n" + $skillHub) } }
+                    ]
+                  },
+                  { tag: "hr" },
+                  { tag: "div", text: { tag: "lark_md", content: ("**项目：** " + $repository + "\\n" + $context) } },
+                  {
+                    tag: "action",
+                    actions: [
+                      {
+                        tag: "button",
+                        text: { tag: "plain_text", content: "查看构建日志" },
+                        type: "primary",
+                        url: $runUrl
+                      }
+                    ]
+                  }
+                ]
+              }
+            }')
+
           curl --fail-with-body --request POST "$WEBHOOK" \
             --header "Content-Type: application/json" \
-            --data "{\"msg_type\":\"text\",\"content\":{\"text\":\"CI status\\nProject: $REPOSITORY\\nTrigger: $EVENT_NAME\\nBranch: $REF_NAME\\nClient: $CLIENT_RESULT\\nSkill Hub: $SKILL_HUB_RESULT\\nLogs: $RUN_URL\"}}"
+            --data "$PAYLOAD"
