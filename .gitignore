@@ -1,10 +1,7 @@
-# Dependencies and build outputs
 node_modules/
 dist/
 release/
 *.exe
-
-# Local configuration
 .env
 .env.*
 !.env.example

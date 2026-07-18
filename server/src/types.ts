@@ -1,5 +1,3 @@
-// WahtWay Skill Hub 类型定义
-
 export interface JSONSchema {
   type: string;
   properties?: Record<string, JSONSchemaProperty>;
@@ -20,15 +18,31 @@ export interface Skill {
   input: JSONSchema;
   output: JSONSchema;
   requiredTools: string[];
-  allowedTools?: string[];
-  whenToUse?: string;
   keywords?: string[];
 }
 
-// ---- 同学新增：Skill Hub 管理类型 ----
-
 export type SkillStatus = "draft" | "pending" | "published" | "rejected" | "archived";
 export type SkillVisibility = "public" | "unlisted";
+export type UserRole = "user" | "admin";
+
+export interface PublicUser {
+  id: string;
+  username: string;
+  displayName: string;
+  role: UserRole;
+  createdAt: string;
+}
+
+export interface StoredUser extends PublicUser {
+  passwordSalt: string;
+  passwordHash: string;
+  passwordIterations: number;
+}
+
+export interface AuthDatabase {
+  schemaVersion: 1;
+  users: StoredUser[];
+}
 
 export interface SkillVersion {
   version: string;
@@ -54,6 +68,7 @@ export interface SkillHubRecord {
   slug: string;
   name: string;
   description: string;
+  authorUserId?: string;
   authorName?: string;
   category?: string;
   tags: string[];
@@ -82,21 +97,18 @@ export interface SkillListItem {
   manifestId: string;
   name: string;
   description: string;
-  input?: JSONSchema;
-  output?: JSONSchema;
-  systemPrompt?: string;
-  requiredTools?: string[];
+  input: JSONSchema;
+  output: JSONSchema;
+  requiredTools: string[];
   keywords?: string[];
+  authorName?: string;
   category?: string;
   tags: string[];
-  authorName?: string;
   version: string;
+  status: SkillStatus;
+  visibility: SkillVisibility;
   downloadCount: number;
   ratingAverage: number;
-  createdAt?: string;
+  ratingCount: number;
   updatedAt: string;
-  status?: SkillStatus;
-  ratingCount?: number;
-  visibility?: SkillVisibility;
-  [key: string]: any;
 }

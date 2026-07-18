@@ -13,7 +13,12 @@
           <h1>WahtWay Skill Hub</h1>
           <p id="hubStatus">连接中</p>
         </div>
-        <button id="openUploadBtn" class="primary-btn" type="button">发布 Skill</button>
+        <div class="top-actions">
+          <span id="userBadge" class="user-badge hidden"></span>
+          <button id="authBtn" class="ghost-btn" type="button">登录</button>
+          <button id="logoutBtn" class="ghost-btn hidden" type="button">退出</button>
+          <button id="openUploadBtn" class="primary-btn" type="button">发布 Skill</button>
+        </div>
       </header>
 
       <main class="workspace">
@@ -118,8 +123,8 @@
 
         <div class="form-row">
           <label>
-            <span>作者</span>
-            <input id="authorInput" type="text" maxlength="80" />
+            <span>作者（登录账号）</span>
+            <input id="authorInput" type="text" disabled />
           </label>
           <label>
             <span>分类</span>
@@ -149,6 +154,45 @@
           <div>
             <button id="cancelUploadBtn" class="ghost-btn" type="button">取消</button>
             <button class="primary-btn" type="submit">提交</button>
+          </div>
+        </div>
+      </form>
+    </div>
+
+    <div id="authModal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="authTitle">
+      <form id="authForm" class="modal compact-modal">
+        <div class="modal-header">
+          <h2 id="authTitle">登录</h2>
+          <button id="closeAuthBtn" class="icon-btn" type="button" aria-label="关闭">×</button>
+        </div>
+
+        <div class="segmented">
+          <button id="loginModeBtn" class="active" type="button">登录</button>
+          <button id="registerModeBtn" type="button">注册</button>
+        </div>
+
+        <label>
+          <span>用户名</span>
+          <input id="authUsername" type="text" autocomplete="username" />
+        </label>
+
+        <label id="displayNameLabel" class="hidden">
+          <span>展示名</span>
+          <input id="authDisplayName" type="text" maxlength="40" />
+        </label>
+
+        <label>
+          <span>密码</span>
+          <input id="authPassword" type="password" autocomplete="current-password" />
+        </label>
+
+        <p id="authMsg" class="form-message"></p>
+
+        <div class="modal-actions">
+          <span></span>
+          <div>
+            <button id="cancelAuthBtn" class="ghost-btn" type="button">取消</button>
+            <button id="submitAuthBtn" class="primary-btn" type="submit">登录</button>
           </div>
         </div>
       </form>
