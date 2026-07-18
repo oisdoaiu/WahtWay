@@ -155,10 +155,11 @@ jobs:
                 elements: [
                   {
                     tag: "div",
-                    fields: [
-                      { is_short: true, text: { tag: "lark_md", content: ("**客户端与嵌入式 API**\n" + $client) } },
-                      { is_short: true, text: { tag: "lark_md", content: ("**Skill Hub**\n" + $skillHub) } }
-                    ]
+                    text: { tag: "lark_md", content: ("**客户端与嵌入式 API**\n" + $client) }
+                  },
+                  {
+                    tag: "div",
+                    text: { tag: "lark_md", content: ("**Skill Hub**\n" + $skillHub) }
                   },
                   { tag: "hr" },
                   { tag: "div", text: { tag: "lark_md", content: ("**项目：** " + $repository + "\n" + $context) } },
