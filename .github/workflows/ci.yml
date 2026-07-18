@@ -124,10 +124,10 @@ jobs:
 
           case "$EVENT_NAME" in
             pull_request)
-              CONTEXT="**关联 PR：** [#${PR_NUMBER} ${PR_TITLE}](${PR_URL})\n**PR 发起人：** [${PR_AUTHOR}](${PR_AUTHOR_URL})"
+              CONTEXT=$(printf '**关联 PR：** [#%s %s](%s)\n**PR 发起人：** [%s](%s)' "$PR_NUMBER" "$PR_TITLE" "$PR_URL" "$PR_AUTHOR" "$PR_AUTHOR_URL")
               ;;
             workflow_dispatch)
-              CONTEXT="**触发方式：** 手动运行\n**触发人：** ${ACTOR}"
+              CONTEXT=$(printf '**触发方式：** 手动运行\n**触发人：** %s' "$ACTOR")
               ;;
             schedule)
               CONTEXT="**触发方式：** 每日定时巡检（北京时间 21:00）"
@@ -156,12 +156,12 @@ jobs:
                   {
                     tag: "div",
                     fields: [
-                      { is_short: true, text: { tag: "lark_md", content: ("**客户端与嵌入式 API**\\n" + $client) } },
-                      { is_short: true, text: { tag: "lark_md", content: ("**Skill Hub**\\n" + $skillHub) } }
+                      { is_short: true, text: { tag: "lark_md", content: ("**客户端与嵌入式 API**\n" + $client) } },
+                      { is_short: true, text: { tag: "lark_md", content: ("**Skill Hub**\n" + $skillHub) } }
                     ]
                   },
                   { tag: "hr" },
-                  { tag: "div", text: { tag: "lark_md", content: ("**项目：** " + $repository + "\\n" + $context) } },
+                  { tag: "div", text: { tag: "lark_md", content: ("**项目：** " + $repository + "\n" + $context) } },
                   {
                     tag: "action",
                     actions: [
