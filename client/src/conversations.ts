@@ -79,6 +79,8 @@ export function patchMessage(id: string, messageId: string, patch: Partial<ConvM
   if (index === -1) return;
   state.messages[index] = { ...state.messages[index], ...patch };
   flushAndNotify();
+}
+
 export function updateLastMessage(id: string, updater: (msg: ConvMessage) => ConvMessage) {
   if (flushTimer) { clearTimeout(flushTimer); flushTimer = null; flushDeltas(); }
   const s = getOrCreate(id);
