@@ -63,6 +63,24 @@ interface SkillMeta {
   };
 }
 
+interface ExternalToolConfig {
+  id: string;
+  name: string;
+  description: string;
+  method: "GET" | "POST" | "PUT" | "PATCH";
+  url: string;
+  headers: Record<string, string>;
+  parameters: Record<string, unknown>;
+  query: Record<string, string>;
+  body: unknown;
+  responseDataPath: string;
+  permission: "read" | "write";
+  enabled: boolean;
+  timeoutMs: number;
+  maxResponseBytes: number;
+  secretNames: string[];
+}
+
 // ---- 对话面板 ----
 
 function ChatPanel({ conversationId, onTitleChange, onCreateSkill }: { showModal: boolean; conversationId: string; onTitleChange: (title: string) => void; onCreateSkill: (prefill?: string) => void }) {
@@ -79,7 +97,7 @@ function ChatPanel({ conversationId, onTitleChange, onCreateSkill }: { showModal
   const [showSkillPicker, setShowSkillPicker] = useState(false);
   const [skillSearch, setSkillSearch] = useState("");
   const [allSkills, setAllSkills] = useState<SkillMeta[]>([]);
-  const [permDialog, setPermDialog] = useState<{ reason: string; path: string; isCommand?: boolean; command?: string; cwd?: string } | null>(null);
+  const [permDialog, setPermDialog] = useState<{ reason: string; path: string; isCommand?: boolean; command?: string; cwd?: string; externalToken?: string; externalToolId?: string } | null>(null);
   const [permBusy, setPermBusy] = useState(false);
   const [showPulse, setShowPulse] = useState(false);
   const [attachedFiles, setAttachedFiles] = useState<string[]>([]);
@@ -242,9 +260,10 @@ function ChatPanel({ conversationId, onTitleChange, onCreateSkill }: { showModal
                 });
                 if (items.length > 0) setTodoItems(conversationId, items);
               }
-              // 检测权限拦截// 检测权限拦截// 检测权限拦截// 检测权限拦截// 检测权限拦截
-const res2 = (event.data as any)?.result; // was here
-              if (typeof res === "string" && res.startsWith("PERMISSION_REQUIRED::")) {
+              if (typeof res === "string" && res.startsWith("EXTERNAL_PERMISSION_REQUIRED::")) {
+                const parts = res.split("::");
+                setPermDialog({ reason: "外部工具将修改远端数据", path: `external-${parts[1] || "unknown"}`, externalToolId: parts[1], externalToken: parts[2] });
+              } else if (typeof res === "string" && res.startsWith("PERMISSION_REQUIRED::")) {
                 const parts = res.split("::");
                 const reason = parts[1] || "未知";
                 const path = parts[2] || "";
@@ -500,7 +519,7 @@ const res2 = (event.data as any)?.result; // was here
           <div className="modal" style={{ maxWidth: 480 }} onClick={e => e.stopPropagation()}>
             <div className="modal-header"><h2>🔐 确认操作</h2></div>
             <div className="modal-body">
-              <p>{permDialog.isCommand ? "即将执行命令：" : "即将操作路径："}</p>
+              <p>{permDialog.externalToken ? "即将调用写入型外部工具：" : permDialog.isCommand ? "即将执行命令：" : "即将操作路径："}</p>
               <p className="perm-path">{permDialog.isCommand && permDialog.command ? permDialog.command : (permDialog.path || "未知路径")}</p>
               {permDialog.cwd && <p className="perm-cwd">📂 {permDialog.cwd}</p>}
               <p className="perm-reason">原因：{permDialog.reason}</p>
@@ -513,9 +532,15 @@ const res2 = (event.data as any)?.result; // was here
                   const isCmd = permDialog.isCommand;
                   const cmd = permDialog.command;
                   const cwd = permDialog.cwd;
+                  const externalToken = permDialog.externalToken;
                   setPermDialog(null); // 立即关闭弹窗
                   try {
-                    if (isCmd) {
+                    if (externalToken) {
+                      const r = await fetch("/api/external-tools/approve/execute", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token: externalToken }) });
+                      const d = await r.json();
+                      if (!r.ok) throw new Error(d.error || "外部工具执行失败");
+                      appendToLast(conversationId, `\n\n> 外部工具结果\n\n\`\`\`\n${String(d.output || "").slice(0, 4000)}\n\`\`\``);
+                    } else if (isCmd) {
                       const r = await fetch("/api/tools/approve-command", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ command: cmd, cwd }) });
                       const d = await r.json();
                       if (d.result) {
@@ -524,8 +549,8 @@ const res2 = (event.data as any)?.result; // was here
                     } else {
                       await fetch("/api/tools/approve", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path: permDialog.path }) });
                     }
-                    setTimeout(() => sendMessage(), 300);
-                  } catch (e) { /* ignore */ }
+                    if (!externalToken) setTimeout(() => sendMessage(), 300);
+                  } catch (e: any) { toast(e.message || "执行失败", "error"); }
                   finally { setPermBusy(false); }
                 }}>{permBusy ? "执行中…" : "批准执行"}</button>
               </div>
@@ -929,10 +954,172 @@ function CreateSkillModal({ show, onClose, onSaved, prefill, skillToEdit }: { sh
   );
 }
 
+const EMPTY_EXTERNAL_TOOL = {
+  id: "",
+  name: "",
+  description: "",
+  method: "GET" as const,
+  url: "https://",
+  headersText: "{}",
+  parametersText: JSON.stringify({ type: "object", properties: {}, required: [] }, null, 2),
+  queryText: "{}",
+  bodyText: "null",
+  responseDataPath: "",
+  permission: "read" as const,
+  enabled: true,
+  timeoutMs: 10000,
+  maxResponseBytes: 65536,
+};
+
+function ExternalToolsPanel() {
+  const [tools, setTools] = useState<ExternalToolConfig[]>([]);
+  const [editing, setEditing] = useState<typeof EMPTY_EXTERNAL_TOOL | null>(null);
+  const [originalId, setOriginalId] = useState<string | null>(null);
+  const [testArgs, setTestArgs] = useState("{}");
+  const [testOutput, setTestOutput] = useState("");
+  const [secretName, setSecretName] = useState("");
+  const [secretValue, setSecretValue] = useState("");
+
+  const load = () => fetch("/api/external-tools").then(r => r.json()).then(d => setTools(d.tools || []));
+  useEffect(() => { load().catch(() => setTools([])); }, []);
+
+  const openEditor = (tool?: ExternalToolConfig) => {
+    setOriginalId(tool?.id || null);
+    setEditing(tool ? {
+      id: tool.id,
+      name: tool.name,
+      description: tool.description,
+      method: tool.method,
+      url: tool.url,
+      headersText: JSON.stringify(tool.headers, null, 2),
+      parametersText: JSON.stringify(tool.parameters, null, 2),
+      queryText: JSON.stringify(tool.query, null, 2),
+      bodyText: JSON.stringify(tool.body, null, 2),
+      responseDataPath: tool.responseDataPath,
+      permission: tool.permission,
+      enabled: tool.enabled,
+      timeoutMs: tool.timeoutMs,
+      maxResponseBytes: tool.maxResponseBytes,
+    } : { ...EMPTY_EXTERNAL_TOOL });
+    setTestArgs("{}");
+    setTestOutput("");
+    setSecretName("");
+    setSecretValue("");
+  };
+
+  const payload = () => {
+    if (!editing) throw new Error("没有待保存的工具");
+    return {
+      id: editing.id,
+      name: editing.name,
+      description: editing.description,
+      method: editing.method,
+      url: editing.url,
+      headers: JSON.parse(editing.headersText),
+      parameters: JSON.parse(editing.parametersText),
+      query: JSON.parse(editing.queryText),
+      body: JSON.parse(editing.bodyText),
+      responseDataPath: editing.responseDataPath,
+      permission: editing.permission,
+      enabled: editing.enabled,
+      timeoutMs: editing.timeoutMs,
+      maxResponseBytes: editing.maxResponseBytes,
+    };
+  };
+
+  const save = async () => {
+    try {
+      const response = await fetch(originalId ? `/api/external-tools/${originalId}` : "/api/external-tools", {
+        method: originalId ? "PATCH" : "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload()),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "保存失败");
+      setEditing(null);
+      await load();
+      toast("外部工具已保存");
+    } catch (error: any) { toast(error.message || "JSON 配置无效", "error"); }
+  };
+
+  const test = async () => {
+    if (!originalId) { toast("请先保存工具，再测试连接", "error"); return; }
+    try {
+      setTestOutput("测试中...");
+      const response = await fetch(`/api/external-tools/${originalId}/test`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ args: JSON.parse(testArgs) }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "测试失败");
+      setTestOutput(String(data.output || "(空响应)"));
+    } catch (error: any) { setTestOutput(`错误: ${error.message}`); }
+  };
+
+  const addSecret = async () => {
+    if (!originalId) { toast("请先保存工具", "error"); return; }
+    const response = await fetch(`/api/external-tools/${originalId}/secrets/${encodeURIComponent(secretName.trim())}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ value: secretValue }),
+    });
+    const data = await response.json();
+    if (!response.ok) { toast(data.error || "Secret 保存失败", "error"); return; }
+    setSecretName(""); setSecretValue(""); await load(); toast("Secret 已保存");
+  };
+
+  return (
+    <section className="external-tools-panel">
+      <header className="header"><h1>外部工具</h1><span className="subtitle">受控 HTTPS API 连接器</span><button className="create-btn" onClick={() => openEditor()}>新建工具</button></header>
+      <div className="external-tools-list">
+        {tools.length === 0 && <div className="external-empty">还没有外部工具</div>}
+        {tools.map(tool => (
+          <div key={tool.id} className={`external-tool-row ${tool.enabled ? "" : "disabled"}`}>
+            <div className="external-tool-state"><span className={`external-status ${tool.enabled ? "on" : ""}`} /></div>
+            <div className="external-tool-info"><strong>{tool.name}</strong><code>external-{tool.id}</code><p>{tool.description}</p><small>{tool.method} · {new URL(tool.url).hostname} · {tool.permission === "read" ? "只读" : "写入需确认"}</small></div>
+            <div className="external-tool-actions">
+              <button onClick={() => openEditor(tool)}>编辑</button>
+              <button onClick={async () => { await fetch(`/api/external-tools/${tool.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ enabled: !tool.enabled }) }); await load(); }}>{tool.enabled ? "禁用" : "启用"}</button>
+              <button className="danger" onClick={async () => { await fetch(`/api/external-tools/${tool.id}`, { method: "DELETE" }); await load(); }}>删除</button>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {editing && (
+        <div className="modal-overlay" onClick={() => setEditing(null)}>
+          <div className="modal external-tool-modal" onClick={e => e.stopPropagation()}>
+            <div className="modal-header"><h2>{originalId ? "编辑外部工具" : "新建外部工具"}</h2><button className="modal-close" onClick={() => setEditing(null)}>×</button></div>
+            <div className="external-form">
+              <label>工具 ID<input value={editing.id} disabled={!!originalId} onChange={e => setEditing({ ...editing, id: e.target.value })} placeholder="weather-query" /></label>
+              <label>名称<input value={editing.name} onChange={e => setEditing({ ...editing, name: e.target.value })} /></label>
+              <label className="wide">描述<input value={editing.description} onChange={e => setEditing({ ...editing, description: e.target.value })} /></label>
+              <label>方法<select value={editing.method} onChange={e => setEditing({ ...editing, method: e.target.value as any })}><option>GET</option><option>POST</option><option>PUT</option><option>PATCH</option></select></label>
+              <label>权限<select value={editing.permission} onChange={e => setEditing({ ...editing, permission: e.target.value as any })}><option value="read">只读自动执行</option><option value="write">写入需要确认</option></select></label>
+              <label className="wide">HTTPS URL<input value={editing.url} onChange={e => setEditing({ ...editing, url: e.target.value })} /></label>
+              <label className="wide">参数 Schema<textarea rows={7} value={editing.parametersText} onChange={e => setEditing({ ...editing, parametersText: e.target.value })} /></label>
+              <label>Query 模板<textarea rows={5} value={editing.queryText} onChange={e => setEditing({ ...editing, queryText: e.target.value })} /></label>
+              <label>Headers<textarea rows={5} value={editing.headersText} onChange={e => setEditing({ ...editing, headersText: e.target.value })} /></label>
+              <label className="wide">Body 模板<textarea rows={5} value={editing.bodyText} onChange={e => setEditing({ ...editing, bodyText: e.target.value })} /></label>
+              <label>响应字段路径<input value={editing.responseDataPath} onChange={e => setEditing({ ...editing, responseDataPath: e.target.value })} placeholder="data.items" /></label>
+              <label>超时（毫秒）<input type="number" value={editing.timeoutMs} onChange={e => setEditing({ ...editing, timeoutMs: Number(e.target.value) })} /></label>
+              <label className="external-check"><input type="checkbox" checked={editing.enabled} onChange={e => setEditing({ ...editing, enabled: e.target.checked })} /> 启用</label>
+              {originalId && <div className="external-secret-box wide"><strong>Secret</strong><div><input value={secretName} onChange={e => setSecretName(e.target.value.toUpperCase())} placeholder="API_KEY" /><input type="password" value={secretValue} onChange={e => setSecretValue(e.target.value)} placeholder="不会回显" /><button onClick={addSecret}>保存 Secret</button></div><small>在 Header、Query 或 Body 中使用 ${"${API_KEY}"}</small><div className="external-secret-list">{(tools.find(tool => tool.id === originalId)?.secretNames || []).map(name => <span key={name}>{name}<button title="删除 Secret" onClick={async () => { await fetch(`/api/external-tools/${originalId}/secrets/${name}`, { method: "DELETE" }); await load(); }}>×</button></span>)}</div></div>}
+              {originalId && <div className="external-test-box wide"><strong>测试参数</strong><textarea rows={4} value={testArgs} onChange={e => setTestArgs(e.target.value)} /><button onClick={test}>测试连接</button>{testOutput && <pre>{testOutput}</pre>}</div>}
+            </div>
+            <div className="modal-actions"><button onClick={() => setEditing(null)}>取消</button><button className="primary" onClick={save}>保存工具</button></div>
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}
+
 // ---- App 主入口 ----
 
 export default function App() {
-  const [view, setView] = useState<"chat" | "skills">("chat");
+  const [view, setView] = useState<"chat" | "skills" | "external-tools">("chat");
   const [showModal, setShowModal] = useState(false);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [showCmdPalette, setShowCmdPalette] = useState(false);
@@ -1025,6 +1212,7 @@ export default function App() {
         <div className="sidebar-nav">
           <button className={`nav-item ${view === "chat" ? "active" : ""}`} onClick={() => setView("chat")}><span className="nav-icon">💬</span><span>对话</span></button>
           <button className={`nav-item ${view === "skills" ? "active" : ""}`} onClick={() => setView("skills")}><span className="nav-icon">🧠</span><span>Skill 库</span></button>
+          <button className={`nav-item ${view === "external-tools" ? "active" : ""}`} onClick={() => setView("external-tools")}><span className="nav-icon">🔌</span><span>外部工具</span></button>
         </div>
         {view === "chat" && (
           <div className="conv-list">
@@ -1059,8 +1247,10 @@ export default function App() {
       <div className="main-content">
         {view === "chat" ? (
           conversationId ? <ChatPanel showModal={showModal} conversationId={conversationId} onTitleChange={handleTitleChange} onCreateSkill={(prefill) => { setPrefillSkillDesc(prefill || ""); setShowModal(true); }} /> : <div className="welcome"><h2>🤔 Waht?</h2></div>
-        ) : (
+        ) : view === "skills" ? (
           <SkillsPanel onCreateSkill={() => setShowModal(true)} onEditSkill={(s) => { setSkillToEdit(s); setShowModal(true); }} skillsVersion={skillsVersion} />
+        ) : (
+          <ExternalToolsPanel />
         )}
       </div>
       <CommandPalette show={showCmdPalette} onClose={() => setShowCmdPalette(false)} skills={appSkills}

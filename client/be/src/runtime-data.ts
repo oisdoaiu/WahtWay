@@ -30,6 +30,10 @@ export function getLogsDir(): string {
   return path.join(dataDir, "logs");
 }
 
+export function getExternalToolsDir(): string {
+  return path.join(dataDir, "external-tools");
+}
+
 export function getSkillLearningDir(): string {
   return path.join(dataDir, "skill-learning");
 }

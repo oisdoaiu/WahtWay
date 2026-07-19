@@ -1134,6 +1134,43 @@ body {
 .app.dark .sidebar-item { color: #a6adc8; }
 .app.dark .sidebar-item:hover { background: #313244; }
 
+/* === External Tools === */
+.external-tools-panel { height: 100vh; display: flex; flex-direction: column; }
+.external-tools-list { flex: 1; overflow-y: auto; padding: 8px 24px 24px; }
+.external-empty { padding: 70px 0; color: #999; text-align: center; }
+.external-tool-row { display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 16px 4px; border-bottom: 1px solid #eee; }
+.external-tool-row.disabled { opacity: 0.55; }
+.external-status { display: block; width: 9px; height: 9px; border-radius: 50%; background: #bbb; }
+.external-status.on { background: #2e7d32; }
+.external-tool-info { min-width: 0; }
+.external-tool-info strong { margin-right: 8px; font-size: 15px; }
+.external-tool-info code { color: #777; font-size: 11px; }
+.external-tool-info p { margin: 5px 0; color: #555; font-size: 13px; line-height: 1.45; }
+.external-tool-info small { color: #999; }
+.external-tool-actions { display: flex; gap: 6px; }
+.external-tool-actions button { padding: 6px 10px; border: 1px solid #ddd; border-radius: 6px; background: #fff; cursor: pointer; }
+.external-tool-actions button.danger { color: #c62828; }
+.external-tool-modal { width: min(820px, calc(100vw - 32px)); max-height: calc(100vh - 40px); overflow-y: auto; }
+.external-form { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; padding: 18px 24px 0; }
+.external-form label { display: flex; flex-direction: column; gap: 5px; color: #666; font-size: 12px; }
+.external-form label.wide, .external-secret-box.wide, .external-test-box.wide { grid-column: 1 / -1; }
+.external-form input, .external-form select, .external-form textarea { width: 100%; border: 1px solid #ddd; border-radius: 6px; padding: 8px 10px; background: #fff; color: #333; font: inherit; }
+.external-form textarea { resize: vertical; font-family: Consolas, monospace; font-size: 12px; }
+.external-form .external-check { flex-direction: row; align-items: center; }
+.external-form .external-check input { width: auto; }
+.external-secret-box, .external-test-box { padding-top: 12px; border-top: 1px solid #eee; }
+.external-secret-box > div { display: grid; grid-template-columns: 160px 1fr auto; gap: 8px; margin: 8px 0 4px; }
+.external-secret-box button, .external-test-box button { border: 0; border-radius: 6px; background: #1a73e8; color: #fff; padding: 8px 12px; cursor: pointer; }
+.external-secret-list { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+.external-secret-list span { display: inline-flex; align-items: center; gap: 5px; padding: 3px 7px; border: 1px solid #ddd; border-radius: 4px; font: 11px Consolas, monospace; }
+.external-secret-list span button { padding: 0; background: transparent; color: #c62828; font-size: 14px; }
+.external-test-box textarea { margin: 8px 0; }
+.external-test-box pre { max-height: 180px; overflow: auto; margin-top: 8px; padding: 10px; background: #f5f5f5; border-radius: 6px; white-space: pre-wrap; font-size: 11px; }
+.app.dark .external-tool-row, .app.dark .external-secret-box, .app.dark .external-test-box { border-color: #313244; }
+.app.dark .external-tool-info p { color: #bac2de; }
+.app.dark .external-tool-actions button, .app.dark .external-form input, .app.dark .external-form select, .app.dark .external-form textarea { background: #313244; color: #cdd6f4; border-color: #45475a; }
+.app.dark .external-test-box pre { background: #181825; color: #cdd6f4; }
+
 .conv-edit-btn { opacity: 0; font-size: 10px; padding: 2px 4px; border: none; background: none; cursor: pointer; color: #999; margin-left: 4px; }
 .conv-item:hover .conv-edit-btn { opacity: 1; }
 .conv-title-input { width: 100%; padding: 2px 6px; border: 1px solid #1a73e8; border-radius: 4px; font-size: 13px; outline: none; }
@@ -1159,6 +1196,12 @@ body {
     border-right: none;
     border-bottom: 1px solid #eee;
   }
+
+  .external-form { grid-template-columns: 1fr; padding: 14px; }
+  .external-form label.wide, .external-secret-box.wide, .external-test-box.wide { grid-column: 1; }
+  .external-tool-row { grid-template-columns: 14px minmax(0, 1fr); }
+  .external-tool-actions { grid-column: 2; flex-wrap: wrap; }
+  .external-secret-box > div { grid-template-columns: 1fr; }
 
   .sidebar-brand {
     padding: 8px 12px;
