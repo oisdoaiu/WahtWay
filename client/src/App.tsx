@@ -506,7 +506,7 @@ const res2 = (event.data as any)?.result; // was here
 
 // ---- Skill 库面板 ----
 
-function SkillsPanel({ onCreateSkill, onEditSkill, skillsVersion }: { onCreateSkill: () => void; onEditSkill: (skill: SkillMeta) => void; skillsVersion: number }) {
+function SkillsPanel({ onCreateSkill, onEditSkill, onLearnFromHistory, skillsVersion }: { onCreateSkill: () => void; onEditSkill: (skill: SkillMeta) => void; onLearnFromHistory: (skill: SkillMeta) => void; skillsVersion: number }) {
   const [skills, setSkills] = useState<SkillMeta[]>([]);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<"local" | "hub">("local");
@@ -531,6 +531,8 @@ function SkillsPanel({ onCreateSkill, onEditSkill, skillsVersion }: { onCreateSk
   const [hubSort, setHubSort] = useState("latest");
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
   const [downloading, setDownloading] = useState<Set<string>>(new Set());
+  const [learning, setLearning] = useState(false);
+  const [historyPreview, setHistoryPreview] = useState<{ token: string; operations: string[]; sampleCount: number } | null>(null);
 
   const fetchHub = (q?: string, sort?: string) => {
     setHubLoading(true);
@@ -566,12 +568,43 @@ function SkillsPanel({ onCreateSkill, onEditSkill, skillsVersion }: { onCreateSk
 
   const localIds = new Set(skills.map(s => s.id));
 
+  const learnFromHistory = async () => {
+    if (learning) return;
+    setLearning(true);
+    try {
+      const res = await fetch("/api/skills/learn-from-history/preview", { method: "POST" });
+      const data = await res.json();
+      if (!res.ok || !data.token || !Array.isArray(data.operations)) throw new Error(data.error || "无法创建历史预览");
+      setHistoryPreview(data);
+    } catch (err: any) {
+      toast(err.message || "归纳失败", "error");
+    } finally {
+      setLearning(false);
+    }
+  };
+
+  const confirmLearnFromHistory = async () => {
+    if (!historyPreview || learning) return;
+    setLearning(true);
+    try {
+      const res = await fetch("/api/skills/learn-from-history", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token: historyPreview.token }) });
+      const data = await res.json();
+      if (!res.ok || !data.skill) throw new Error(data.error || "未找到可复用的常用操作");
+      toast(data.reason || `已分析 ${data.sampleCount} 条历史操作`);
+      onLearnFromHistory(data.skill);
+    } catch (err: any) {
+      toast(err.message || "归纳失败", "error");
+    } finally {
+      setLearning(false);
+    }
+  };
+
   return (
     <div className="skills-panel">
       <header className="header">
         <h1>Skill 库</h1>
         <span className="subtitle">{tab === "local" ? `${skills.length} 个本地技能` : "在线 Skill Hub"}</span>
-        {tab === "local" && <button className="create-btn" onClick={onCreateSkill}>+ 创建 Skill</button>}
+        {tab === "local" && <div className="skill-header-actions"><button className="history-skill-btn" onClick={learnFromHistory} disabled={learning}>{learning ? "归纳中..." : "从历史习惯生成"}</button><button className="create-btn" onClick={onCreateSkill}>+ 创建 Skill</button></div>}
       </header>
 
       <div className="skills-tabs">
@@ -657,6 +690,18 @@ function SkillsPanel({ onCreateSkill, onEditSkill, skillsVersion }: { onCreateSk
                 <button onClick={() => setDeleteConfirm(null)}>取消</button>
                 <button className="primary" style={{ background: "#c62828", color: "#fff" }} onClick={() => { deleteSkill(deleteConfirm); setDeleteConfirm(null); }}>确认删除</button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+      {historyPreview && (
+        <div className="modal-overlay" onClick={() => setHistoryPreview(null)}>
+          <div className="modal history-preview-modal" onClick={e => e.stopPropagation()}>
+            <div className="modal-header"><h2>确认发送历史摘要</h2><button className="modal-close" onClick={() => setHistoryPreview(null)}>×</button></div>
+            <div className="modal-body">
+              <p className="modal-hint">以下 {historyPreview.sampleCount} 条已脱敏内容将发送给当前模型服务，用于生成候选 Skill。确认后才会发送。</p>
+              <ol className="history-preview-list">{historyPreview.operations.map((operation, index) => <li key={index}>{operation}</li>)}</ol>
+              <div className="modal-actions"><button onClick={() => setHistoryPreview(null)} disabled={learning}>取消</button><button className="primary" onClick={confirmLearnFromHistory} disabled={learning}>{learning ? "归纳中..." : "确认发送"}</button></div>
             </div>
           </div>
         </div>
@@ -873,7 +918,7 @@ export default function App() {
         {view === "chat" ? (
           conversationId ? <ChatPanel showModal={showModal} conversationId={conversationId} onTitleChange={handleTitleChange} onCreateSkill={(prefill) => { setPrefillSkillDesc(prefill || ""); setShowModal(true); }} /> : <div className="welcome"><h2>🤔 Waht?</h2></div>
         ) : (
-          <SkillsPanel onCreateSkill={() => setShowModal(true)} onEditSkill={(s) => { setSkillToEdit(s); setShowModal(true); }} skillsVersion={skillsVersion} />
+          <SkillsPanel onCreateSkill={() => setShowModal(true)} onEditSkill={(s) => { setSkillToEdit(s); setShowModal(true); }} onLearnFromHistory={(s) => { setSkillToEdit(s); setShowModal(true); }} skillsVersion={skillsVersion} />
         )}
       </div>
       <CommandPalette show={showCmdPalette} onClose={() => setShowCmdPalette(false)} skills={appSkills}
