@@ -7,6 +7,7 @@ import {
   appendToLast, patchMessage, setStreaming, subscribe,
   getTodoItems, setTodoItems, updateLastMessage,
 } from "./conversations";
+import { McpPanel } from "./McpPanel";
 import "./App.css";
 
 const DEFAULT_MODEL = "deepseek-v4-flash";
@@ -97,7 +98,7 @@ function ChatPanel({ conversationId, onTitleChange, onCreateSkill }: { showModal
   const [showSkillPicker, setShowSkillPicker] = useState(false);
   const [skillSearch, setSkillSearch] = useState("");
   const [allSkills, setAllSkills] = useState<SkillMeta[]>([]);
-  const [permDialog, setPermDialog] = useState<{ reason: string; path: string; isCommand?: boolean; command?: string; cwd?: string; externalToken?: string; externalToolId?: string } | null>(null);
+  const [permDialog, setPermDialog] = useState<{ reason: string; path: string; isCommand?: boolean; command?: string; cwd?: string; externalToken?: string; externalToolId?: string; mcpToken?: string; mcpServerId?: string; mcpToolName?: string } | null>(null);
   const [permBusy, setPermBusy] = useState(false);
   const [showPulse, setShowPulse] = useState(false);
   const [attachedFiles, setAttachedFiles] = useState<string[]>([]);
@@ -260,7 +261,10 @@ function ChatPanel({ conversationId, onTitleChange, onCreateSkill }: { showModal
                 });
                 if (items.length > 0) setTodoItems(conversationId, items);
               }
-              if (typeof res === "string" && res.startsWith("EXTERNAL_PERMISSION_REQUIRED::")) {
+              if (typeof res === "string" && res.startsWith("MCP_PERMISSION_REQUIRED::")) {
+                const parts = res.split("::");
+                setPermDialog({ reason: "MCP Server 工具调用需要确认", path: `mcp-${parts[1] || "unknown"}-${parts[2] || "tool"}`, mcpServerId: parts[1], mcpToolName: parts[2], mcpToken: parts[3] });
+              } else if (typeof res === "string" && res.startsWith("EXTERNAL_PERMISSION_REQUIRED::")) {
                 const parts = res.split("::");
                 setPermDialog({ reason: "外部工具将修改远端数据", path: `external-${parts[1] || "unknown"}`, externalToolId: parts[1], externalToken: parts[2] });
               } else if (typeof res === "string" && res.startsWith("PERMISSION_REQUIRED::")) {
@@ -519,7 +523,7 @@ function ChatPanel({ conversationId, onTitleChange, onCreateSkill }: { showModal
           <div className="modal" style={{ maxWidth: 480 }} onClick={e => e.stopPropagation()}>
             <div className="modal-header"><h2>🔐 确认操作</h2></div>
             <div className="modal-body">
-              <p>{permDialog.externalToken ? "即将调用写入型外部工具：" : permDialog.isCommand ? "即将执行命令：" : "即将操作路径："}</p>
+              <p>{permDialog.mcpToken ? "即将调用 MCP 工具：" : permDialog.externalToken ? "即将调用写入型外部工具：" : permDialog.isCommand ? "即将执行命令：" : "即将操作路径："}</p>
               <p className="perm-path">{permDialog.isCommand && permDialog.command ? permDialog.command : (permDialog.path || "未知路径")}</p>
               {permDialog.cwd && <p className="perm-cwd">📂 {permDialog.cwd}</p>}
               <p className="perm-reason">原因：{permDialog.reason}</p>
@@ -533,9 +537,15 @@ function ChatPanel({ conversationId, onTitleChange, onCreateSkill }: { showModal
                   const cmd = permDialog.command;
                   const cwd = permDialog.cwd;
                   const externalToken = permDialog.externalToken;
+                  const mcpToken = permDialog.mcpToken;
                   setPermDialog(null); // 立即关闭弹窗
                   try {
-                    if (externalToken) {
+                    if (mcpToken) {
+                      const r = await fetch("/api/mcp/approve/execute", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token: mcpToken }) });
+                      const d = await r.json();
+                      if (!r.ok) throw new Error(d.error || "MCP 工具执行失败");
+                      appendToLast(conversationId, `\n\n> MCP 工具结果\n\n\`\`\`\n${String(d.output || "").slice(0, 4000)}\n\`\`\``);
+                    } else if (externalToken) {
                       const r = await fetch("/api/external-tools/approve/execute", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token: externalToken }) });
                       const d = await r.json();
                       if (!r.ok) throw new Error(d.error || "外部工具执行失败");
@@ -549,7 +559,7 @@ function ChatPanel({ conversationId, onTitleChange, onCreateSkill }: { showModal
                     } else {
                       await fetch("/api/tools/approve", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path: permDialog.path }) });
                     }
-                    if (!externalToken) setTimeout(() => sendMessage(), 300);
+                    if (!externalToken && !mcpToken) setTimeout(() => sendMessage(), 300);
                   } catch (e: any) { toast(e.message || "执行失败", "error"); }
                   finally { setPermBusy(false); }
                 }}>{permBusy ? "执行中…" : "批准执行"}</button>
@@ -1119,7 +1129,7 @@ function ExternalToolsPanel() {
 // ---- App 主入口 ----
 
 export default function App() {
-  const [view, setView] = useState<"chat" | "skills" | "external-tools">("chat");
+  const [view, setView] = useState<"chat" | "skills" | "external-tools" | "mcp">("chat");
   const [showModal, setShowModal] = useState(false);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [showCmdPalette, setShowCmdPalette] = useState(false);
@@ -1213,6 +1223,7 @@ export default function App() {
           <button className={`nav-item ${view === "chat" ? "active" : ""}`} onClick={() => setView("chat")}><span className="nav-icon">💬</span><span>对话</span></button>
           <button className={`nav-item ${view === "skills" ? "active" : ""}`} onClick={() => setView("skills")}><span className="nav-icon">🧠</span><span>Skill 库</span></button>
           <button className={`nav-item ${view === "external-tools" ? "active" : ""}`} onClick={() => setView("external-tools")}><span className="nav-icon">🔌</span><span>外部工具</span></button>
+          <button className={`nav-item ${view === "mcp" ? "active" : ""}`} onClick={() => setView("mcp")}><span className="nav-icon">◫</span><span>MCP</span></button>
         </div>
         {view === "chat" && (
           <div className="conv-list">
@@ -1249,8 +1260,10 @@ export default function App() {
           conversationId ? <ChatPanel showModal={showModal} conversationId={conversationId} onTitleChange={handleTitleChange} onCreateSkill={(prefill) => { setPrefillSkillDesc(prefill || ""); setShowModal(true); }} /> : <div className="welcome"><h2>🤔 Waht?</h2></div>
         ) : view === "skills" ? (
           <SkillsPanel onCreateSkill={() => setShowModal(true)} onEditSkill={(s) => { setSkillToEdit(s); setShowModal(true); }} skillsVersion={skillsVersion} />
-        ) : (
+        ) : view === "external-tools" ? (
           <ExternalToolsPanel />
+        ) : (
+          <McpPanel onNotify={(message, type = "info") => toast(message, type)} />
         )}
       </div>
       <CommandPalette show={showCmdPalette} onClose={() => setShowCmdPalette(false)} skills={appSkills}
