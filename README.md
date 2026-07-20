@@ -8,6 +8,7 @@
 - 🔧 **Tool 调用**：9 个文件操作 Tool，Agentic Loop 自动编排，实时可见，支持 input_examples 精准调用
 - 📊 **用量统计**：每轮对话显示 Token 消耗、耗时、工具调用次数，动态更新
 - 📁 **文件管理**：10个文件操作Tool + AI文件总结/翻译/格式化
+- ◫ **MCP 连接器**：连接本地 stdio MCP Server，自动发现工具并注册到 Agent，默认逐次确认调用
 - 🧠 **Agent认知**：Todo任务规划 + 跨对话文件记忆 + 工作区目录
 - 🛡️ **安全护栏**：写操作需确认，系统目录拦截，敏感文件保护，临时授权机制
 - 🧠 **Skill 系统**：内置多个 Skill + AI 自动生成 + 搜索推荐 + 一键创建
@@ -97,7 +98,11 @@ WahtWay/
 │   │       ├── routes/
 │   │       │   ├── chat.ts       #   POST /api/chat（SSE 流式）
 │   │       │   ├── skills.ts     #   Skill API + Hub 代理
-│   │       │   └── conversations.ts
+│   │       │   ├── conversations.ts
+│   │       │   └── mcp.ts         # MCP Server CRUD + 生命周期
+│   │       ├── mcp/
+│   │       │   ├── repository.ts  # 配置与 Secret 存储
+│   │       │   └── runtime.ts     # stdio 进程 + 工具注册
 │   │       ├── skills/
 │   │       │   ├── loader.ts     #   JSON 文件加载 + 保存
 │   │       │   └── matcher.ts    #   LLM 语义匹配器
@@ -107,6 +112,7 @@ WahtWay/
 │   ├── src/                      #   前端 (React)
 │   │   ├── App.tsx               #   对话界面 + Skill 库 + Hub
 │   │   ├── conversations.ts      #   全局消息 store
+│   │   ├── McpPanel.tsx           #   MCP Server 管理
 │   │   └── debug.ts              #   调试工具
 │   └── electron/                 #   Electron 壳
 │
@@ -160,6 +166,28 @@ WahtWay/
 - `systemPrompt` → 告诉 LLM 扮演什么角色，输出什么格式
 - 不需要写任何代码，重启即生效
 
+---
+
+## 连接 MCP Server
+
+打开侧栏的「MCP」，点击「添加 Server」。填写：
+
+- 启动命令，例如 `node`、`npx` 或一个可执行文件的绝对路径
+- 参数列表，必须是 JSON 数组，每个参数独立填写
+- 可选工作目录
+- 可选环境变量；敏感值使用 `${SECRET_NAME}` 引用，并通过 Secret 区域单独保存
+- 是否随应用启动，以及是否每次工具调用前确认
+
+保存后先点击「测试」。连接成功时，页面会显示 Server 提供的工具。启动 Server 后，工具以以下名称进入 Agent Tool Registry：
+
+```text
+mcp-<server-id>-<tool-name>
+```
+
+MCP Server 是本地可执行程序。WahtWay 不自动安装 Server，也不通过 shell 拼接命令。只应运行来源可信、已经检查过启动命令和参数的 MCP Server。
+
+MCP MVP 当前只支持本地 stdio transport；Streamable HTTP、OAuth、resources 和 prompts 留待后续版本。完整设计见 [`client/MCP_DESIGN.md`](client/MCP_DESIGN.md)。
+
 ### Skill 持续改进
 
 观察器按上下文信号触发，而不是每轮固定调用。新对话或没有历史引用的手动 Skill 调用直接使用当前消息，不增加前置模型请求；自动匹配时，匹配模型会在同一次调用中返回需求快照。回答完成后只用本地规则记录工具失败、空回答等确定性问题。下一条消息只有表现为重复请求、纠正或补充约束时，才会在后台调用观察模型；明确继续和无关话题都由本地规则处理。
@@ -189,6 +217,14 @@ WahtWay/
 | POST | `/api/skills/:id/optimize` | 使用现有证据尝试生成候选版本 |
 | POST | `/api/skills/:id/rollback` | 激活原始或已验证的历史版本 |
 | POST | `/api/tools/approve` | 临时授权文件操作路径 |
+| GET | `/api/mcp/servers` | 获取 MCP Server 配置和运行状态 |
+| POST | `/api/mcp/servers` | 创建 MCP Server 配置 |
+| PATCH | `/api/mcp/servers/:id` | 更新 MCP Server 配置 |
+| DELETE | `/api/mcp/servers/:id` | 停止并删除 MCP Server |
+| POST | `/api/mcp/servers/:id/start` | 启动并发现 MCP 工具 |
+| POST | `/api/mcp/servers/:id/stop` | 停止并注销 MCP 工具 |
+| POST | `/api/mcp/servers/:id/test` | 临时连接并测试工具发现 |
+| POST | `/api/mcp/approve/execute` | 执行已确认的一次性 MCP 工具调用 |
 | POST | `/api/reset` | 重置对话和自定义 Skill |
 | GET | `/api/health` | 健康检查 |
 
