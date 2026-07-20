@@ -8,6 +8,7 @@ export interface McpServerConfig {
   env: Record<string, string>;
   enabled: boolean;
   autoStart: boolean;
+  requireApproval: boolean;
   toolCallTimeoutMs: number;
   createdAt: string;
   updatedAt: string;
@@ -19,6 +20,14 @@ export interface McpToolSummary {
   registeredName: string;
   description: string;
   inputSchema: Record<string, unknown>;
+}
+
+export interface PendingMcpApproval {
+  token: string;
+  serverId: string;
+  toolName: string;
+  args: Record<string, unknown>;
+  expiresAt: number;
 }
 
 export type McpRuntimeState = "stopped" | "starting" | "running" | "error";

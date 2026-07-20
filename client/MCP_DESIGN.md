@@ -37,6 +37,7 @@ interface McpServerConfig {
   env: Record<string, string>;
   enabled: boolean;
   autoStart: boolean;
+  requireApproval: boolean;
   toolCallTimeoutMs: number;
   createdAt: string;
   updatedAt: string;
@@ -45,6 +46,8 @@ interface McpServerConfig {
 ```
 
 The environment map supports `${SECRET_NAME}` references. Secret values are stored separately and are never returned by APIs. Child processes receive a minimal inherited environment plus the explicitly configured values.
+
+MCP tool calls require per-call user approval by default. A user may explicitly disable this for a trusted server.
 
 Runtime status is not persisted:
 
@@ -150,4 +153,3 @@ The form uses an argument list rather than a command-line text parser. This keep
 - Process exit cleanup test.
 - API lifecycle smoke test.
 - Frontend and backend production builds.
-

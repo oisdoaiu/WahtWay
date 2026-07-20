@@ -72,6 +72,9 @@ function normalize(input: any, existing?: McpServerConfig): McpServerConfig {
     env: normalizeEnv(input?.env ?? existing?.env),
     enabled: typeof input?.enabled === "boolean" ? input.enabled : existing?.enabled ?? true,
     autoStart: typeof input?.autoStart === "boolean" ? input.autoStart : existing?.autoStart ?? false,
+    requireApproval: typeof input?.requireApproval === "boolean"
+      ? input.requireApproval
+      : existing?.requireApproval ?? true,
     toolCallTimeoutMs: Math.max(1000, Math.min(5 * 60 * 1000,
       Number(input?.toolCallTimeoutMs ?? existing?.toolCallTimeoutMs ?? 60000))),
     createdAt: existing?.createdAt || now,
