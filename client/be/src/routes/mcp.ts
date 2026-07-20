@@ -14,6 +14,7 @@ import {
   startMcpServer,
   stopMcpServer,
 } from "../mcp/runtime";
+import { McpServerConfig, McpToolPermission } from "../mcp/types";
 
 const router = Router();
 
@@ -35,12 +36,35 @@ function errorMessage(error: unknown): string {
     INVALID_SECRET_NAME: "Secret 名称必须使用大写字母、数字和下划线",
     INVALID_SECRET_VALUE: "Secret 内容为空或超出长度限制",
     SERVER_NOT_FOUND: "MCP Server 不存在",
+    INVALID_TOOL_PERMISSION: "工具权限必须是 auto、confirm 或 disabled",
+    TOO_MANY_TOOL_PERMISSIONS: "工具权限覆盖不能超过 500 项",
+    INVALID_TOOL_NAME: "MCP 工具名称格式无效",
   };
   return messages[code] || code;
 }
 
 function publicServer(id: string) {
   return listPublicMcpServers().find((server) => server.id === id) || null;
+}
+
+const TOOL_PERMISSIONS = new Set<McpToolPermission>(["auto", "confirm", "disabled"]);
+
+function requestPermission(value: unknown): McpToolPermission {
+  if (!TOOL_PERMISSIONS.has(value as McpToolPermission)) throw new Error("INVALID_TOOL_PERMISSION");
+  return value as McpToolPermission;
+}
+
+async function updatePermissions(
+  id: string,
+  update: (server: McpServerConfig) => Partial<McpServerConfig>
+) {
+  const current = getMcpServer(id);
+  if (!current) throw new Error("SERVER_NOT_FOUND");
+  const wasRunning = getMcpStatus(id).state === "running";
+  if (getMcpStatus(id).state !== "stopped") await stopMcpServer(id);
+  saveMcpServer({ ...current, ...update(current), id });
+  if (wasRunning) await startMcpServer(id);
+  return publicServer(id);
 }
 
 router.get("/servers", (_req: Request, res: Response) => {
@@ -81,6 +105,44 @@ router.patch("/servers/:id", async (req: Request, res: Response) => {
     res.json(publicServer(server.id));
   } catch (error) {
     res.status(400).json({ error: errorMessage(error) });
+  }
+});
+
+router.patch("/servers/:id/tool-permissions/default", async (req: Request, res: Response) => {
+  try {
+    const permission = requestPermission(req.body?.permission);
+    res.json(await updatePermissions(req.params.id, () => ({ defaultToolPermission: permission })));
+  } catch (error) {
+    const status = error instanceof Error && error.message === "SERVER_NOT_FOUND" ? 404 : 400;
+    res.status(status).json({ error: errorMessage(error), status: getMcpStatus(req.params.id) });
+  }
+});
+
+router.patch("/servers/:id/tool-permissions/:toolName", async (req: Request, res: Response) => {
+  try {
+    const permission = requestPermission(req.body?.permission);
+    const toolName = req.params.toolName;
+    if (!toolName || toolName.length > 256 || toolName.includes("\0")) throw new Error("INVALID_TOOL_NAME");
+    res.json(await updatePermissions(req.params.id, (server) => ({
+      toolPermissions: { ...server.toolPermissions, [toolName]: permission },
+    })));
+  } catch (error) {
+    const status = error instanceof Error && error.message === "SERVER_NOT_FOUND" ? 404 : 400;
+    res.status(status).json({ error: errorMessage(error), status: getMcpStatus(req.params.id) });
+  }
+});
+
+router.delete("/servers/:id/tool-permissions/:toolName", async (req: Request, res: Response) => {
+  try {
+    const toolName = req.params.toolName;
+    res.json(await updatePermissions(req.params.id, (server) => {
+      const toolPermissions = { ...server.toolPermissions };
+      delete toolPermissions[toolName];
+      return { toolPermissions };
+    }));
+  } catch (error) {
+    const status = error instanceof Error && error.message === "SERVER_NOT_FOUND" ? 404 : 400;
+    res.status(status).json({ error: errorMessage(error), status: getMcpStatus(req.params.id) });
   }
 });
 
