@@ -5,7 +5,7 @@ import { getDefaultEnvironment, StdioClientTransport } from "@modelcontextprotoc
 import { ToolDef } from "../types";
 import { getTool, registerTool, unregisterTool } from "../tools/registry";
 import { getMcpSecrets, getMcpServer, listMcpServers, listMcpSecretNames } from "./repository";
-import { McpServerConfig, McpServerStatus, McpToolSummary, PendingMcpApproval, PublicMcpServer } from "./types";
+import { McpServerConfig, McpServerStatus, McpToolPermission, McpToolSummary, PendingMcpApproval, PublicMcpServer } from "./types";
 
 interface ActiveMcpServer {
   client: Client;
@@ -64,6 +64,10 @@ function registeredToolName(serverId: string, toolName: string): string {
   return `mcp-${serverId}-${normalized}`.slice(0, 64);
 }
 
+export function resolveMcpToolPermission(config: McpServerConfig, toolName: string): McpToolPermission {
+  return config.toolPermissions[toolName] || config.defaultToolPermission;
+}
+
 function formatMcpResult(result: any): string {
   const sections: string[] = [];
   if (result?.structuredContent !== undefined) sections.push(JSON.stringify(result.structuredContent, null, 2));
@@ -118,34 +122,42 @@ async function discoverAndRegister(
     const page = await client.listTools(cursor ? { cursor } : undefined, { timeout: 15000 });
     for (const tool of page.tools) {
       const registeredName = registeredToolName(config.id, tool.name);
-      if (names.has(registeredName) || getTool(registeredName)) throw new Error(`MCP Tool 名称冲突: ${registeredName}`);
+      const permission = resolveMcpToolPermission(config, tool.name);
+      if (names.has(registeredName)) throw new Error(`MCP Tool 名称冲突: ${registeredName}`);
+      if (permission !== "disabled" && getTool(registeredName)) throw new Error(`MCP Tool 名称冲突: ${registeredName}`);
       names.add(registeredName);
       const summary: McpToolSummary = {
         name: tool.name,
         registeredName,
         description: tool.description || `MCP tool ${tool.name}`,
         inputSchema: tool.inputSchema as Record<string, unknown>,
+        permission,
+        overridden: Object.prototype.hasOwnProperty.call(config.toolPermissions, tool.name),
       };
-      const definition: ToolDef = {
-        name: registeredName,
-        description: `${summary.description}\nMCP Server: ${config.name}`,
-        parameters: summary.inputSchema as any,
-        execute: async (args) => {
-          try {
-            const current = getMcpServer(config.id);
-            if (!current) return "错误: MCP Server 配置不存在";
-            if (current.defaultToolPermission !== "auto") {
-              const token = createApproval(config.id, tool.name, args);
-              return `MCP_PERMISSION_REQUIRED::${config.id}::${tool.name}::${token}`;
+      if (permission !== "disabled") {
+        const definition: ToolDef = {
+          name: registeredName,
+          description: `${summary.description}\nMCP Server: ${config.name}\n权限: ${permission}`,
+          parameters: summary.inputSchema as any,
+          execute: async (args) => {
+            try {
+              const current = getMcpServer(config.id);
+              if (!current) return "错误: MCP Server 配置不存在";
+              const currentPermission = resolveMcpToolPermission(current, tool.name);
+              if (currentPermission === "disabled") return "错误: MCP 工具已禁用";
+              if (currentPermission === "confirm") {
+                const token = createApproval(config.id, tool.name, args);
+                return `MCP_PERMISSION_REQUIRED::${config.id}::${tool.name}::${token}`;
+              }
+              return await invoke(config.id, tool.name, args);
+            } catch (error) {
+              return `错误: ${error instanceof Error ? error.message : String(error)}`;
             }
-            return await invoke(config.id, tool.name, args);
-          } catch (error) {
-            return `错误: ${error instanceof Error ? error.message : String(error)}`;
-          }
-        },
-      };
-      registerTool(definition);
-      active.registeredNames.push(registeredName);
+          },
+        };
+        registerTool(definition);
+        active.registeredNames.push(registeredName);
+      }
       summaries.push(summary);
     }
     cursor = page.nextCursor;
@@ -208,6 +220,9 @@ async function stopInternal(id: string): Promise<McpServerStatus> {
     activeServers.delete(id);
     await active.client.close().catch(() => undefined);
   }
+  for (const [token, approval] of pendingApprovals) {
+    if (approval.serverId === id) pendingApprovals.delete(token);
+  }
   return updateStatus(id, { state: "stopped", tools: [], startedAt: null, lastError: null });
 }
 
@@ -230,6 +245,10 @@ export async function executeApprovedMcpTool(token: string): Promise<string> {
   const approval = pendingApprovals.get(token);
   pendingApprovals.delete(token);
   if (!approval || approval.expiresAt < Date.now()) throw new Error("MCP 工具审批已失效，请重新发起");
+  const config = getMcpServer(approval.serverId);
+  if (!config || resolveMcpToolPermission(config, approval.toolName) !== "confirm") {
+    throw new Error("MCP 工具权限已改变，请重新发起调用");
+  }
   return invoke(approval.serverId, approval.toolName, approval.args);
 }
 
