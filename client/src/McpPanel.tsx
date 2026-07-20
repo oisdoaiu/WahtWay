@@ -1,11 +1,14 @@
 import { useEffect, useState } from "react";
 
 type RuntimeState = "stopped" | "starting" | "running" | "error";
+type ToolPermission = "auto" | "confirm" | "disabled";
 
 interface McpToolSummary {
   name: string;
   registeredName: string;
   description: string;
+  permission: ToolPermission;
+  overridden: boolean;
 }
 
 interface McpServer {
@@ -18,7 +21,8 @@ interface McpServer {
   env: Record<string, string>;
   enabled: boolean;
   autoStart: boolean;
-  requireApproval: boolean;
+  defaultToolPermission: ToolPermission;
+  toolPermissions: Record<string, ToolPermission>;
   toolCallTimeoutMs: number;
   secretNames: string[];
   status: {
@@ -39,7 +43,7 @@ interface EditorState {
   envText: string;
   enabled: boolean;
   autoStart: boolean;
-  requireApproval: boolean;
+  defaultToolPermission: ToolPermission;
   toolCallTimeoutMs: number;
 }
 
@@ -53,7 +57,7 @@ const EMPTY_EDITOR: EditorState = {
   envText: "{}",
   enabled: true,
   autoStart: false,
-  requireApproval: true,
+  defaultToolPermission: "confirm",
   toolCallTimeoutMs: 60000,
 };
 
@@ -97,7 +101,7 @@ export function McpPanel({ onNotify }: { onNotify: (message: string, type?: "inf
       envText: JSON.stringify(server.env, null, 2),
       enabled: server.enabled,
       autoStart: server.autoStart,
-      requireApproval: server.requireApproval,
+      defaultToolPermission: server.defaultToolPermission,
       toolCallTimeoutMs: server.toolCallTimeoutMs,
     } : { ...EMPTY_EDITOR });
     setSecretName("");
@@ -131,7 +135,7 @@ export function McpPanel({ onNotify }: { onNotify: (message: string, type?: "inf
           env,
           enabled: editing.enabled,
           autoStart: editing.autoStart,
-          requireApproval: editing.requireApproval,
+          defaultToolPermission: editing.defaultToolPermission,
           toolCallTimeoutMs: editing.toolCallTimeoutMs,
         }),
       });
@@ -174,6 +178,43 @@ export function McpPanel({ onNotify }: { onNotify: (message: string, type?: "inf
     }
   };
 
+  const updateDefaultPermission = async (serverId: string, permission: ToolPermission) => {
+    setBusyId(serverId);
+    try {
+      await request(`/api/mcp/servers/${serverId}/tool-permissions/default`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ permission }),
+      });
+      await load();
+      onNotify("MCP 默认工具权限已更新");
+    } catch (error: any) {
+      await load().catch(() => undefined);
+      onNotify(error.message || "权限更新失败", "error");
+    } finally {
+      setBusyId("");
+    }
+  };
+
+  const updateToolPermission = async (serverId: string, toolName: string, value: string) => {
+    setBusyId(serverId);
+    try {
+      const inherited = value === "inherit";
+      await request(`/api/mcp/servers/${serverId}/tool-permissions/${encodeURIComponent(toolName)}`, {
+        method: inherited ? "DELETE" : "PATCH",
+        headers: inherited ? undefined : { "Content-Type": "application/json" },
+        body: inherited ? undefined : JSON.stringify({ permission: value }),
+      });
+      await load();
+      onNotify(inherited ? "工具已恢复继承默认权限" : "工具权限已更新");
+    } catch (error: any) {
+      await load().catch(() => undefined);
+      onNotify(error.message || "工具权限更新失败", "error");
+    } finally {
+      setBusyId("");
+    }
+  };
+
   const editingServer = originalId ? servers.find((server) => server.id === originalId) : undefined;
 
   return (
@@ -193,10 +234,21 @@ export function McpPanel({ onNotify }: { onNotify: (message: string, type?: "inf
               <div className="mcp-server-title"><strong>{server.name}</strong><code>{server.id}</code><span>{STATE_LABELS[server.status.state]}</span></div>
               <p>{server.description}</p>
               <div className="mcp-command"><code>{server.command}</code>{server.args.map((arg, index) => <code key={index}>{arg}</code>)}</div>
+              <label className="mcp-default-permission">默认工具权限
+                <select value={server.defaultToolPermission} disabled={busyId === server.id} onChange={(event) => updateDefaultPermission(server.id, event.target.value as ToolPermission)}>
+                  <option value="confirm">每次确认</option><option value="auto">自动调用</option><option value="disabled">全部禁用</option>
+                </select>
+              </label>
               {server.status.lastError && <div className="mcp-error">{server.status.lastError}</div>}
               {server.status.tools.length > 0 && (
                 <div className="mcp-tool-list">
-                  {server.status.tools.map((tool) => <span key={tool.registeredName} title={tool.description}>{tool.registeredName}</span>)}
+                  {server.status.tools.map((tool) => <div key={tool.registeredName} className={`mcp-tool-permission permission-${tool.permission}`} title={tool.description}>
+                    <span>{tool.registeredName}</span>
+                    <select value={tool.overridden ? tool.permission : "inherit"} disabled={busyId === server.id} onChange={(event) => updateToolPermission(server.id, tool.name, event.target.value)}>
+                      <option value="inherit">继承默认（{server.defaultToolPermission}）</option>
+                      <option value="auto">自动调用</option><option value="confirm">每次确认</option><option value="disabled">禁用</option>
+                    </select>
+                  </div>)}
                 </div>
               )}
             </div>
@@ -228,10 +280,10 @@ export function McpPanel({ onNotify }: { onNotify: (message: string, type?: "inf
               <label className="wide">工作目录<input value={editing.cwd} onChange={(event) => setEditing({ ...editing, cwd: event.target.value })} placeholder="可选，必须是已有目录" /></label>
               <label className="wide">环境变量<textarea rows={5} value={editing.envText} onChange={(event) => setEditing({ ...editing, envText: event.target.value })} /></label>
               <label>工具超时（毫秒）<input type="number" min={1000} max={300000} value={editing.toolCallTimeoutMs} onChange={(event) => setEditing({ ...editing, toolCallTimeoutMs: Number(event.target.value) })} /></label>
+              <label>默认工具权限<select value={editing.defaultToolPermission} onChange={(event) => setEditing({ ...editing, defaultToolPermission: event.target.value as ToolPermission })}><option value="confirm">每次确认</option><option value="auto">自动调用</option><option value="disabled">全部禁用</option></select></label>
               <div className="mcp-checks">
                 <label><input type="checkbox" checked={editing.enabled} onChange={(event) => setEditing({ ...editing, enabled: event.target.checked })} /> 启用</label>
                 <label><input type="checkbox" checked={editing.autoStart} onChange={(event) => setEditing({ ...editing, autoStart: event.target.checked })} /> 启动应用时连接</label>
-                <label><input type="checkbox" checked={editing.requireApproval} onChange={(event) => setEditing({ ...editing, requireApproval: event.target.checked })} /> 每次工具调用前确认</label>
               </div>
               {originalId && (
                 <div className="mcp-secret-box wide">
