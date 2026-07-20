@@ -11,6 +11,7 @@ import chatRouter from "./routes/chat";
 import skillsRouter from "./routes/skills";
 import conversationsRouter from "./routes/conversations";
 import externalToolsRouter from "./routes/external-tools";
+import mcpRouter from "./routes/mcp";
 import { initSkills, getSkillsDir } from "./skills/loader";
 import { setModel, getCurrentModel } from "./agent";
 import { registerTool } from "./tools/registry";
@@ -18,6 +19,7 @@ import { registerFileTools, approvePath } from "./tools/file-tools";
 import { todoUpdateTool, clearTodo } from "./tools/todo-tool";
 import { runCommandTool, approveAndExecute, clearApprovedCommands } from "./tools/command-tool";
 import { refreshExternalTools } from "./external-tools/registry";
+import { autoStartMcpServers, stopAllMcpServers } from "./mcp/runtime";
 import { resolveModel } from "./models";
 import { getConversationsDir, getSkillLearningDir, migrateLegacyConversations } from "./runtime-data";
 
@@ -28,6 +30,7 @@ registerFileTools(registerTool);
 registerTool(todoUpdateTool);
 registerTool(runCommandTool);
 refreshExternalTools();
+void autoStartMcpServers();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -47,6 +50,7 @@ app.use("/api/chat", chatRouter);
 app.use("/api/skills", skillsRouter);
 app.use("/api/conversations", conversationsRouter);
 app.use("/api/external-tools", externalToolsRouter);
+app.use("/api/mcp", mcpRouter);
 
 // 临时授权：批准某个路径的操作
 app.post("/api/tools/approve", (req, res) => {
@@ -185,6 +189,16 @@ function startServer(port: number, maxRetries = 10) {
   });
 }
 startServer(Number(PORT));
+
+let shuttingDown = false;
+async function shutdown(): Promise<void> {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  await stopAllMcpServers().catch(() => undefined);
+  process.exit(0);
+}
+process.once("SIGINT", () => { void shutdown(); });
+process.once("SIGTERM", () => { void shutdown(); });
 
 // V0.1 CLI 模式保留：无参数启动时进入命令行交互
 // 仅当没有其他参数时才启用（Express 启动后不再走 CLI）
