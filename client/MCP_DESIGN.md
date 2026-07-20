@@ -37,7 +37,8 @@ interface McpServerConfig {
   env: Record<string, string>;
   enabled: boolean;
   autoStart: boolean;
-  requireApproval: boolean;
+  defaultToolPermission: "auto" | "confirm" | "disabled";
+  toolPermissions: Record<string, "auto" | "confirm" | "disabled">;
   toolCallTimeoutMs: number;
   createdAt: string;
   updatedAt: string;
@@ -47,7 +48,7 @@ interface McpServerConfig {
 
 The environment map supports `${SECRET_NAME}` references. Secret values are stored separately and are never returned by APIs. Child processes receive a minimal inherited environment plus the explicitly configured values.
 
-MCP tool calls require per-call user approval by default. A user may explicitly disable this for a trusted server.
+MCP tools inherit a server default permission and may override it individually. The default is `confirm`; `auto` calls immediately, while `disabled` tools are not registered with the Agent. See `MCP_TOOL_PERMISSIONS.md` for the complete policy and schema migration rules.
 
 Runtime status is not persisted:
 

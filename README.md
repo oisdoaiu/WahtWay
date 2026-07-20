@@ -176,13 +176,24 @@ WahtWay/
 - 参数列表，必须是 JSON 数组，每个参数独立填写
 - 可选工作目录
 - 可选环境变量；敏感值使用 `${SECRET_NAME}` 引用，并通过 Secret 区域单独保存
-- 是否随应用启动，以及是否每次工具调用前确认
+- 是否随应用启动，以及默认工具权限（自动、每次确认或全部禁用）
 
 保存后先点击「测试」。连接成功时，页面会显示 Server 提供的工具。启动 Server 后，工具以以下名称进入 Agent Tool Registry：
 
 ```text
 mcp-<server-id>-<tool-name>
 ```
+
+每个已发现工具可单独设置：
+
+```text
+继承默认   使用 Server 默认策略
+自动调用   不弹出逐次确认
+每次确认   使用一次性审批 token
+禁用       不注册到 Agent Tool Registry
+```
+
+旧版 `requireApproval` 配置会在读取时兼容迁移，下一次保存后写为新的三态权限 schema。详细规则见 [`client/MCP_TOOL_PERMISSIONS.md`](client/MCP_TOOL_PERMISSIONS.md)。
 
 MCP Server 是本地可执行程序。WahtWay 不自动安装 Server，也不通过 shell 拼接命令。只应运行来源可信、已经检查过启动命令和参数的 MCP Server。
 
@@ -224,6 +235,9 @@ MCP MVP 当前只支持本地 stdio transport；Streamable HTTP、OAuth、resour
 | POST | `/api/mcp/servers/:id/start` | 启动并发现 MCP 工具 |
 | POST | `/api/mcp/servers/:id/stop` | 停止并注销 MCP 工具 |
 | POST | `/api/mcp/servers/:id/test` | 临时连接并测试工具发现 |
+| PATCH | `/api/mcp/servers/:id/tool-permissions/default` | 修改 Server 默认工具权限 |
+| PATCH | `/api/mcp/servers/:id/tool-permissions/:toolName` | 设置单个工具权限覆盖 |
+| DELETE | `/api/mcp/servers/:id/tool-permissions/:toolName` | 删除覆盖并恢复继承默认权限 |
 | POST | `/api/mcp/approve/execute` | 执行已确认的一次性 MCP 工具调用 |
 | POST | `/api/reset` | 重置对话和自定义 Skill |
 | GET | `/api/health` | 健康检查 |
