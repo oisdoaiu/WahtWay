@@ -34,6 +34,10 @@ export function getExternalToolsDir(): string {
   return path.join(dataDir, "external-tools");
 }
 
+export function getMcpServersDir(): string {
+  return path.join(dataDir, "mcp-servers");
+}
+
 export function getSkillLearningDir(): string {
   return path.join(dataDir, "skill-learning");
 }
