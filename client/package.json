@@ -8,7 +8,7 @@
     "dev": "vite",
     "electron": "electron .",
     "build:fe": "vite build",
-    "build:be": "cd be && esbuild src/index.ts --bundle --platform=node --outfile=dist/index.js --external:pdf-parse --external:pdfjs-dist --external:mammoth",
+    "build:be": "cd be && esbuild src/index.ts --bundle --platform=node --outfile=dist/index.js --external:pdf-parse --external:pdfjs-dist --external:mammoth --external:adm-zip --external:pptxgenjs",
     "build": "npm run build:fe && npm run build:be",
     "dist": "npm run build && electron-builder --win portable",
     "preview": "vite preview"

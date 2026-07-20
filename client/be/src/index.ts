@@ -22,6 +22,7 @@ import { refreshExternalTools } from "./external-tools/registry";
 import { autoStartMcpServers, stopAllMcpServers } from "./mcp/runtime";
 import { resolveModel } from "./models";
 import { getConversationsDir, getSkillLearningDir, migrateLegacyConversations } from "./runtime-data";
+import { readPptTool, createPptTool, fillTemplateTool } from "./tools/pptx-tools";
 
 // 启动时加载 Skill + 注册 Tool
 migrateLegacyConversations();
@@ -31,6 +32,9 @@ registerTool(todoUpdateTool);
 registerTool(runCommandTool);
 refreshExternalTools();
 void autoStartMcpServers();
+registerTool(readPptTool);
+registerTool(createPptTool);
+registerTool(fillTemplateTool);
 
 const app = express();
 const PORT = process.env.PORT || 3000;

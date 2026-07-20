@@ -44,6 +44,37 @@ ipcMain.handle("open-folder-dialog", async () => {
   return result.canceled ? "" : result.filePaths[0] || "";
 });
 
+// 全局函数：渲染 HTML 为图片（供 Express 后端调用）
+global.renderHTMLSlides = async (htmlSlides) => {
+  return await renderHTMLSlidesImpl(htmlSlides);
+};
+
+async function renderHTMLSlidesImpl(htmlSlides) {
+  if (!Array.isArray(htmlSlides) || htmlSlides.length === 0) return [];
+  const results = [];
+  for (let i = 0; i < htmlSlides.length; i++) {
+    try {
+      const win = new BrowserWindow({
+        width: 1280, height: 720, show: false,
+        webPreferences: { nodeIntegration: false, contextIsolation: true },
+      });
+      const html = "<!DOCTYPE html><html><head><meta charset='utf-8'><style>" +
+        "*{margin:0;padding:0;box-sizing:border-box}" +
+        "body{width:1280px;height:720px;overflow:hidden;font-family:'Microsoft YaHei','PingFang SC',sans-serif}" +
+        "</style></head><body>" + htmlSlides[i] + "</body></html>";
+      await win.loadURL("data:text/html;charset=utf-8," + encodeURIComponent(html));
+      await new Promise(r => setTimeout(r, 500)); // 等渲染完成
+      const image = await win.webContents.capturePage();
+      results.push(image.toDataURL());
+      win.close();
+    } catch (e) {
+      results.push("");
+    }
+  }
+  return results;
+}
+
+
 app.whenReady().then(async () => {
   loadEnv();
   process.env.WAHTWAY_DATA_DIR = path.join(app.getPath("userData"), "data");
