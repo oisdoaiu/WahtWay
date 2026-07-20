@@ -574,7 +574,7 @@ function ChatPanel({ conversationId, onTitleChange, onCreateSkill }: { showModal
 
 // ---- Skill 库面板 ----
 
-function SkillsPanel({ onCreateSkill, onEditSkill, skillsVersion }: { onCreateSkill: () => void; onEditSkill: (skill: SkillMeta) => void; skillsVersion: number }) {
+function SkillsPanel({ onCreateSkill, onEditSkill, skillsVersion }: { onCreateSkill: () => void; onEditSkill: (skillId: string) => void; skillsVersion: number }) {
   const [skills, setSkills] = useState<SkillMeta[]>([]);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<"local" | "hub">("local");
@@ -702,7 +702,7 @@ function SkillsPanel({ onCreateSkill, onEditSkill, skillsVersion }: { onCreateSk
                 <h3>🧠 {skill.name}</h3>
                 <code>{skill.id}</code>
                 <span className="skill-version-badge">v{skill.learning?.activeVersion || skill.version || 1}</span>
-                <button className="skill-edit-btn" title="编辑 Skill" onClick={() => onEditSkill(skill)}>✏️</button>
+                <button className="skill-edit-btn" title="编辑 Skill" onClick={() => onEditSkill(skill.id)}>✏️</button>
                 <button className="skill-delete-btn skill-delete-text" title="删除 Skill" onClick={(e) => { e.stopPropagation(); setDeleteConfirm(skill.id); }}>×</button>
               </div>
               <p className="skill-card-desc">{skill.description}</p>
@@ -1154,6 +1154,18 @@ export default function App() {
   const [conversations, setConversations] = useState<any[]>([]);
   const [convVersion, setConvVersion] = useState(0);
   const [needsSetup, setNeedsSetup] = useState<boolean | null>(null);
+  const openEditSkill = async (skillId: string) => {
+    try {
+      const response = await fetch(`/api/skills/${skillId}`);
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "读取 Skill 详情失败");
+      setSkillToEdit(data.skill || null);
+      setPrefillSkillDesc("");
+      setShowModal(true);
+    } catch (error: any) {
+      toast(error.message || "读取 Skill 详情失败", "error");
+    }
+  };
 
   // 启动时检查 API Key 是否配置
   useEffect(() => {
@@ -1259,7 +1271,7 @@ export default function App() {
         {view === "chat" ? (
           conversationId ? <ChatPanel showModal={showModal} conversationId={conversationId} onTitleChange={handleTitleChange} onCreateSkill={(prefill) => { setPrefillSkillDesc(prefill || ""); setShowModal(true); }} /> : <div className="welcome"><h2>🤔 Waht?</h2></div>
         ) : view === "skills" ? (
-          <SkillsPanel onCreateSkill={() => setShowModal(true)} onEditSkill={(s) => { setSkillToEdit(s); setShowModal(true); }} skillsVersion={skillsVersion} />
+          <SkillsPanel onCreateSkill={() => setShowModal(true)} onEditSkill={openEditSkill} skillsVersion={skillsVersion} />
         ) : view === "external-tools" ? (
           <ExternalToolsPanel />
         ) : (

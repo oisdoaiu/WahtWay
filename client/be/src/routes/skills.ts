@@ -37,6 +37,16 @@ router.get("/", (_req: Request, res: Response) => {
   res.json({ skills });
 });
 
+// GET /api/skills/:id — 单个 Skill 完整定义（编辑用）
+router.get("/:id", (req: Request, res: Response) => {
+  const skill = registeredSkills.find((s) => s.id === req.params.id);
+  if (!skill) {
+    res.status(404).json({ error: "Skill 不存在" });
+    return;
+  }
+  res.json({ skill });
+});
+
 // POST /api/skills/generate — LLM 自动生成 Skill JSON
 router.post("/generate", async (req: Request, res: Response) => {
   const { description } = req.body;
