@@ -10,12 +10,14 @@ import fs from "fs";
 import chatRouter from "./routes/chat";
 import skillsRouter from "./routes/skills";
 import conversationsRouter from "./routes/conversations";
+import externalToolsRouter from "./routes/external-tools";
 import { initSkills, getSkillsDir } from "./skills/loader";
 import { setModel, getCurrentModel } from "./agent";
 import { registerTool } from "./tools/registry";
 import { registerFileTools, approvePath } from "./tools/file-tools";
 import { todoUpdateTool, clearTodo } from "./tools/todo-tool";
 import { runCommandTool, approveAndExecute, clearApprovedCommands } from "./tools/command-tool";
+import { refreshExternalTools } from "./external-tools/registry";
 import { resolveModel } from "./models";
 import { getConversationsDir, getSkillLearningDir, migrateLegacyConversations } from "./runtime-data";
 
@@ -25,6 +27,7 @@ initSkills();
 registerFileTools(registerTool);
 registerTool(todoUpdateTool);
 registerTool(runCommandTool);
+refreshExternalTools();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -43,6 +46,7 @@ if (fs.existsSync(publicDir)) {
 app.use("/api/chat", chatRouter);
 app.use("/api/skills", skillsRouter);
 app.use("/api/conversations", conversationsRouter);
+app.use("/api/external-tools", externalToolsRouter);
 
 // 临时授权：批准某个路径的操作
 app.post("/api/tools/approve", (req, res) => {

@@ -210,7 +210,7 @@ async function* agenticLoopStream(
 
         messages.push({
           role: "tool",
-          tool_call_id: tc.id || `call_${Array.from(toolCallMap.keys()).indexOf(tc.name)}`,
+          tool_call_id: tc.id || `call_${toolCalls.indexOf(tc)}`,
           content: result,
         } as any);
       }

@@ -14,6 +14,7 @@ client/data/logs/
 client/data/skill-learning/
 client/be/data/conversations/
 client/be/data/skill-learning/
+client/be/data/external-tools/
 server/data/hub/
 
 # OS metadata
