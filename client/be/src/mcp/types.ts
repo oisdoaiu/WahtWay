@@ -1,3 +1,5 @@
+export type McpToolPermission = "auto" | "confirm" | "disabled";
+
 export interface McpServerConfig {
   id: string;
   name: string;
@@ -8,11 +10,14 @@ export interface McpServerConfig {
   env: Record<string, string>;
   enabled: boolean;
   autoStart: boolean;
-  requireApproval: boolean;
+  defaultToolPermission: McpToolPermission;
+  toolPermissions: Record<string, McpToolPermission>;
+  /** Read-only compatibility field for schema version 1 data. */
+  requireApproval?: boolean;
   toolCallTimeoutMs: number;
   createdAt: string;
   updatedAt: string;
-  schemaVersion: 1;
+  schemaVersion: 2;
 }
 
 export interface McpToolSummary {
@@ -20,6 +25,8 @@ export interface McpToolSummary {
   registeredName: string;
   description: string;
   inputSchema: Record<string, unknown>;
+  permission?: McpToolPermission;
+  overridden?: boolean;
 }
 
 export interface PendingMcpApproval {

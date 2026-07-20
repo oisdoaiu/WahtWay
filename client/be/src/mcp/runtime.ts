@@ -134,7 +134,7 @@ async function discoverAndRegister(
           try {
             const current = getMcpServer(config.id);
             if (!current) return "错误: MCP Server 配置不存在";
-            if (current.requireApproval) {
+            if (current.defaultToolPermission !== "auto") {
               const token = createApproval(config.id, tool.name, args);
               return `MCP_PERMISSION_REQUIRED::${config.id}::${tool.name}::${token}`;
             }

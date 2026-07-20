@@ -2,12 +2,13 @@ import { randomUUID } from "crypto";
 import * as fs from "fs";
 import * as path from "path";
 import { getMcpServersDir } from "../runtime-data";
-import { McpServerConfig } from "./types";
+import { McpServerConfig, McpToolPermission } from "./types";
 
 const CONFIG_PATH = path.join(getMcpServersDir(), "servers.json");
 const SECRETS_PATH = path.join(getMcpServersDir(), "secrets.json");
 const VALID_ID = /^[a-z][a-z0-9-]{1,62}$/;
 const VALID_ENV_NAME = /^[A-Za-z_][A-Za-z0-9_]{0,127}$/;
+const TOOL_PERMISSIONS = new Set<McpToolPermission>(["auto", "confirm", "disabled"]);
 
 function atomicWrite(filePath: string, value: unknown): void {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
@@ -54,6 +55,36 @@ function normalizeEnv(value: unknown): Record<string, string> {
   return env;
 }
 
+function normalizePermission(value: unknown, fallback: McpToolPermission): McpToolPermission {
+  if (value === undefined || value === null || value === "") return fallback;
+  if (!TOOL_PERMISSIONS.has(value as McpToolPermission)) throw new Error("INVALID_TOOL_PERMISSION");
+  return value as McpToolPermission;
+}
+
+function normalizeToolPermissions(value: unknown): Record<string, McpToolPermission> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  const entries = Object.entries(value as Record<string, unknown>);
+  if (entries.length > 500) throw new Error("TOO_MANY_TOOL_PERMISSIONS");
+  const permissions: Record<string, McpToolPermission> = {};
+  for (const [toolName, permission] of entries) {
+    if (!toolName || toolName.length > 256 || toolName.includes("\0")) throw new Error("INVALID_TOOL_NAME");
+    permissions[toolName] = normalizePermission(permission, "confirm");
+  }
+  return permissions;
+}
+
+function migrateStoredServer(raw: any): McpServerConfig {
+  const legacyDefault: McpToolPermission = raw?.requireApproval === false ? "auto" : "confirm";
+  return {
+    ...raw,
+    defaultToolPermission: TOOL_PERMISSIONS.has(raw?.defaultToolPermission)
+      ? raw.defaultToolPermission
+      : legacyDefault,
+    toolPermissions: normalizeToolPermissions(raw?.toolPermissions),
+    schemaVersion: 2,
+  } as McpServerConfig;
+}
+
 function normalize(input: any, existing?: McpServerConfig): McpServerConfig {
   const now = new Date().toISOString();
   const id = String(input?.id || existing?.id || "").trim();
@@ -72,20 +103,22 @@ function normalize(input: any, existing?: McpServerConfig): McpServerConfig {
     env: normalizeEnv(input?.env ?? existing?.env),
     enabled: typeof input?.enabled === "boolean" ? input.enabled : existing?.enabled ?? true,
     autoStart: typeof input?.autoStart === "boolean" ? input.autoStart : existing?.autoStart ?? false,
-    requireApproval: typeof input?.requireApproval === "boolean"
-      ? input.requireApproval
-      : existing?.requireApproval ?? true,
+    defaultToolPermission: normalizePermission(
+      input?.defaultToolPermission,
+      existing?.defaultToolPermission || (input?.requireApproval === false ? "auto" : "confirm")
+    ),
+    toolPermissions: normalizeToolPermissions(input?.toolPermissions ?? existing?.toolPermissions),
     toolCallTimeoutMs: Math.max(1000, Math.min(5 * 60 * 1000,
       Number(input?.toolCallTimeoutMs ?? existing?.toolCallTimeoutMs ?? 60000))),
     createdAt: existing?.createdAt || now,
     updatedAt: now,
-    schemaVersion: 1,
+    schemaVersion: 2,
   };
 }
 
 export function listMcpServers(): McpServerConfig[] {
   const data = readJson(CONFIG_PATH, { servers: [] });
-  return Array.isArray(data.servers) ? data.servers : [];
+  return Array.isArray(data.servers) ? data.servers.map(migrateStoredServer) : [];
 }
 
 export function getMcpServer(id: string): McpServerConfig | null {
