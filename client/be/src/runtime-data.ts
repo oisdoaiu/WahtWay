@@ -42,6 +42,10 @@ export function getSkillLearningDir(): string {
   return path.join(dataDir, "skill-learning");
 }
 
+export function getAgentRunsDir(): string {
+  return path.join(dataDir, "agent-runs");
+}
+
 export function getSkillRunsDir(): string {
   return path.join(getSkillLearningDir(), "runs");
 }

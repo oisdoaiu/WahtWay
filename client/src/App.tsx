@@ -98,7 +98,7 @@ function ChatPanel({ conversationId, onTitleChange, onCreateSkill }: { showModal
   const [showSkillPicker, setShowSkillPicker] = useState(false);
   const [skillSearch, setSkillSearch] = useState("");
   const [allSkills, setAllSkills] = useState<SkillMeta[]>([]);
-  const [permDialog, setPermDialog] = useState<{ reason: string; path: string; isCommand?: boolean; command?: string; cwd?: string; externalToken?: string; externalToolId?: string; mcpToken?: string; mcpServerId?: string; mcpToolName?: string } | null>(null);
+  const [permDialog, setPermDialog] = useState<{ reason: string; path: string; runId?: string; kind?: string; isCommand?: boolean; command?: string; cwd?: string; externalToken?: string; externalToolId?: string; mcpToken?: string; mcpServerId?: string; mcpToolName?: string } | null>(null);
   const [permBusy, setPermBusy] = useState(false);
   const [showPulse, setShowPulse] = useState(false);
   const [attachedFiles, setAttachedFiles] = useState<string[]>([]);
@@ -128,6 +128,14 @@ function ChatPanel({ conversationId, onTitleChange, onCreateSkill }: { showModal
         .catch(() => setMessages(conversationId, []));
     }
     setSkillName(null);
+    setPermDialog(null);
+    fetch(`/api/agent-runs/pending?conversationId=${encodeURIComponent(conversationId)}`)
+      .then((response) => response.ok ? response.json() : Promise.reject())
+      .then((data) => {
+        const run = data.runs?.[0];
+        if (run) setPermDialog({ runId: run.runId, kind: run.kind, reason: run.reason, path: run.target || run.toolName });
+      })
+      .catch(() => {});
   }, [conversationId]);
 
   // 保存函数
@@ -246,6 +254,16 @@ function ChatPanel({ conversationId, onTitleChange, onCreateSkill }: { showModal
               addDebugEvent("skill", event.data.skillName);
             }
             else if (event.type === "tool_call") { lastEventRef.current = Date.now(); const tn = event.data.toolName; toolTimersRef.current.set(tn, Date.now()); setThinkingStatus(`正在${toolLabel(tn)}…`); setToolCalls(prev => [...prev, {name: tn, startTime: Date.now()}]); addDebugEvent("tool_call", tn); }
+            else if (event.type === "approval_required") {
+              lastEventRef.current = Date.now();
+              setThinkingStatus("");
+              setPermDialog({
+                runId: event.data.runId,
+                kind: event.data.kind,
+                reason: event.data.reason,
+                path: event.data.target || event.data.toolName,
+              });
+            }
             else if (event.type === "tool_result") {
               lastEventRef.current = Date.now();
               const tn = (event.data as any).toolName as string;
@@ -298,6 +316,69 @@ function ChatPanel({ conversationId, onTitleChange, onCreateSkill }: { showModal
       setStreaming(conversationId, false);
     }
   }, [input, streaming, conversationId, onTitleChange, attachedFiles, model, skillId, workspace]);
+
+  const continueApproval = async (runId: string, action: "approve" | "reject") => {
+    setPermBusy(true);
+    setStreaming(conversationId, true);
+    setThinkingStatus(action === "approve" ? "正在执行已批准的工具…" : "正在处理拒绝结果…");
+    try {
+      const response = await fetch(`/api/agent-runs/${encodeURIComponent(runId)}/${action}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ conversationId }),
+      });
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.error || `请求失败 (${response.status})`);
+      }
+      const reader = response.body?.getReader();
+      if (!reader) throw new Error("无法读取响应流");
+      const decoder = new TextDecoder();
+      let buffer = "";
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          const event = JSON.parse(line.slice(6));
+          lastEventRef.current = Date.now();
+          if (event.type === "delta") appendToLast(conversationId, event.data);
+          else if (event.type === "tool_call") {
+            const name = event.data.toolName;
+            toolTimersRef.current.set(name, Date.now());
+            setToolCalls((previous) => [...previous, { name, startTime: Date.now() }]);
+            setThinkingStatus(`正在${toolLabel(name)}…`);
+          } else if (event.type === "tool_result") {
+            setThinkingStatus("正在整理结果…");
+          } else if (event.type === "stats") {
+            updateLastMessage(conversationId, (message) => ({ ...message, stats: event.data as any }));
+          } else if (event.type === "approval_required") {
+            setPermDialog({
+              runId: event.data.runId,
+              kind: event.data.kind,
+              reason: event.data.reason,
+              path: event.data.target || event.data.toolName,
+            });
+          } else if (event.type === "error") {
+            toast(String(event.data), "error");
+            appendToLast(conversationId, `\n\n❌ ${event.data}`);
+          } else if (event.type === "done") {
+            setThinkingStatus("");
+            if (event.data?.stats) updateLastMessage(conversationId, (message) => ({ ...message, stats: event.data.stats }));
+          }
+        }
+      }
+    } catch (error: any) {
+      toast(error.message || "审批续跑失败", "error");
+    } finally {
+      setThinkingStatus("");
+      setStreaming(conversationId, false);
+      setPermBusy(false);
+    }
+  };
 
   const stopStreaming = () => {
     if (abortRef.current) {
@@ -533,15 +614,27 @@ function ChatPanel({ conversationId, onTitleChange, onCreateSkill }: { showModal
           <div className="modal" style={{ maxWidth: 480 }} onClick={e => e.stopPropagation()}>
             <div className="modal-header"><h2>🔐 确认操作</h2></div>
             <div className="modal-body">
-              <p>{permDialog.mcpToken ? "即将调用 MCP 工具：" : permDialog.externalToken ? "即将调用写入型外部工具：" : permDialog.isCommand ? "即将执行命令：" : "即将操作路径："}</p>
+              <p>{permDialog.kind === "mcp" || permDialog.mcpToken ? "即将调用 MCP 工具：" : permDialog.kind === "external" || permDialog.externalToken ? "即将调用写入型外部工具：" : permDialog.kind === "command" || permDialog.isCommand ? "即将执行命令：" : "即将操作路径："}</p>
               <p className="perm-path">{permDialog.isCommand && permDialog.command ? permDialog.command : (permDialog.path || "未知路径")}</p>
               {permDialog.cwd && <p className="perm-cwd">📂 {permDialog.cwd}</p>}
               <p className="perm-reason">原因：{permDialog.reason}</p>
               <div className="modal-actions">
-                <button onClick={() => setPermDialog(null)} disabled={permBusy}>取消</button>
+                <button onClick={() => {
+                  if (permDialog.runId) {
+                    const runId = permDialog.runId;
+                    setPermDialog(null);
+                    void continueApproval(runId, "reject");
+                  } else setPermDialog(null);
+                }} disabled={permBusy}>{permDialog.runId ? "拒绝" : "取消"}</button>
                 <button className="primary" disabled={permBusy}
                   style={permDialog.reason.includes("危险") ? { background: "#c62828" } : {}}
                   onClick={async () => {
+                  if (permDialog.runId) {
+                    const runId = permDialog.runId;
+                    setPermDialog(null);
+                    await continueApproval(runId, "approve");
+                    return;
+                  }
                   setPermBusy(true);
                   const isCmd = permDialog.isCommand;
                   const cmd = permDialog.command;

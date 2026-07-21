@@ -105,6 +105,18 @@ async function invoke(serverId: string, toolName: string, args: Record<string, u
   return formatMcpResult(result);
 }
 
+export async function executeConfirmedMcpTool(
+  serverId: string,
+  toolName: string,
+  args: Record<string, unknown>
+): Promise<string> {
+  const config = getMcpServer(serverId);
+  if (!config || resolveMcpToolPermission(config, toolName) !== "confirm") {
+    throw new Error("MCP tool permission changed; start a new request");
+  }
+  return invoke(serverId, toolName, args);
+}
+
 function unregisterServerTools(serverId: string): void {
   const active = activeServers.get(serverId);
   for (const name of active?.registeredNames || []) unregisterTool(name);
