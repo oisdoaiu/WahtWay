@@ -13,6 +13,9 @@ import {
 import { getTool, formatToolsForLLM } from "./tools/registry";
 import { logger } from "./logger";
 import { resolveModel } from "./models";
+import { createAgentRunCheckpoint, saveAgentRunCheckpoint } from "./agent-runs/repository";
+import { AgentRunCheckpoint, SerializedToolCall } from "./agent-runs/types";
+import { executeApprovedTool, parsePendingApproval } from "./agent-runs/approval";
 
 let _client: OpenAI | null = null;
 function getClient(): OpenAI {
@@ -39,7 +42,7 @@ async function matchSkill(userMessage: string): Promise<Skill | null> {
 // ---- 流式 Agentic Loop ----
 
 export interface StreamEvent {
-  type: "skill_matched" | "tool_call" | "tool_result" | "delta" | "thinking" | "stats" | "done";
+  type: "skill_matched" | "tool_call" | "tool_result" | "approval_required" | "delta" | "thinking" | "stats" | "done";
   data: unknown;
 }
 
@@ -86,18 +89,23 @@ async function* agenticLoopStream(
   history?: { role: string; content: string }[],
   traceId?: string,
   allowedTools?: string[],
-  workspace?: string
+  workspace?: string,
+  metadata?: AgentRunMetadata,
+  checkpoint?: AgentRunCheckpoint,
+  approved?: boolean
 ): AsyncGenerator<StreamEvent> {
   const log = logger(traceId || "no-trace", "agent");
-  const startTime = Date.now();
-  let totalRoundTokens = 0;
-  let toolCallCount = 0;
+  const startTime = checkpoint ? Date.parse(checkpoint.startedAt) : Date.now();
+  let totalRoundTokens = checkpoint?.totalRoundTokens || 0;
+  let toolCallCount = checkpoint?.toolCallCount || 0;
 
-  const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
+  const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = checkpoint
+    ? checkpoint.messages as OpenAI.Chat.Completions.ChatCompletionMessageParam[]
+    : [
     { role: "system", content: systemPrompt + "\n\n" + toolPolicy() },
   ];
 
-  if (history) {
+  if (!checkpoint && history) {
     for (const h of history) {
       if (h.role === "user" || h.role === "assistant") {
         messages.push(h as any);
@@ -105,7 +113,7 @@ async function* agenticLoopStream(
     }
   }
 
-  messages.push({ role: "user", content: userMessage });
+  if (!checkpoint) messages.push({ role: "user", content: userMessage });
 
   const tools = formatToolsForLLM(allowedTools);
 
@@ -119,7 +127,79 @@ async function* agenticLoopStream(
     };
   }
 
-  for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
+  async function persistApproval(
+    pending: NonNullable<ReturnType<typeof parsePendingApproval>>,
+    calls: SerializedToolCall[],
+    nextIndex: number,
+    round: number
+  ): Promise<AgentRunCheckpoint> {
+    const state = {
+      conversationId: metadata?.conversationId,
+      userMessageId: metadata?.userMessageId,
+      assistantMessageId: metadata?.assistantMessageId,
+      traceId: traceId || "no-trace",
+      model: getModel(),
+      systemPrompt,
+      messages: messages as unknown[],
+      allowedTools,
+      workspace,
+      round,
+      totalRoundTokens,
+      toolCallCount,
+      startedAt: new Date(startTime).toISOString(),
+      currentBatch: { calls, nextIndex },
+      pendingApproval: pending,
+    };
+    if (!checkpoint) return createAgentRunCheckpoint(state);
+    return saveAgentRunCheckpoint({
+      ...checkpoint,
+      ...state,
+      status: "waiting_approval",
+      expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+    });
+  }
+
+  function approvalEvent(state: AgentRunCheckpoint): StreamEvent {
+    return {
+      type: "approval_required",
+      data: {
+        runId: state.id,
+        conversationId: state.conversationId,
+        kind: state.pendingApproval.kind,
+        toolName: state.pendingApproval.toolName,
+        reason: state.pendingApproval.reason,
+        target: state.pendingApproval.target,
+        expiresAt: state.expiresAt,
+      },
+    };
+  }
+
+  let initialRound = checkpoint?.round || 0;
+  if (checkpoint) {
+    const calls = checkpoint.currentBatch.calls;
+    for (let index = checkpoint.currentBatch.nextIndex; index < calls.length; index++) {
+      const tc = calls[index];
+      let args: Record<string, unknown> = {};
+      try { args = JSON.parse(tc.argumentsJson); } catch {}
+      yield { type: "tool_call", data: { toolName: tc.name, args } };
+      const result = index === checkpoint.currentBatch.nextIndex
+        ? approved
+          ? await executeApprovedTool(checkpoint.pendingApproval)
+          : "The user rejected this tool call. Do not retry the same operation; explain the impact and offer a safe alternative."
+        : await (getTool(tc.name)?.execute(args) ?? Promise.resolve(`Error: unknown Tool "${tc.name}"`));
+      const pending = parsePendingApproval(result, tc.id, tc.name, args);
+      if (pending) {
+        yield approvalEvent(await persistApproval(pending, calls, index, initialRound));
+        return;
+      }
+      yield { type: "tool_result", data: { toolName: tc.name, result: result.slice(0, 500) } };
+      messages.push({ role: "tool", tool_call_id: tc.id, content: result } as any);
+    }
+    yield { type: "stats", data: buildStats(initialRound) };
+    initialRound += 1;
+  }
+
+  for (let round = initialRound; round < MAX_TOOL_ROUNDS; round++) {
     log.info("llm_call_stream", { round, toolsAvailable: tools.length });
 
     const stream = await getClient().chat.completions.create({
@@ -178,22 +258,27 @@ async function* agenticLoopStream(
     totalRoundTokens += roundTokens;
 
     if (hasToolCalls && toolCallMap.size > 0) {
-      const toolCalls = Array.from(toolCallMap.values());
+      const toolCalls: SerializedToolCall[] = Array.from(toolCallMap.values()).map((tc, index) => ({
+        id: tc.id || `call_${index}`,
+        name: tc.name,
+        argumentsJson: tc.args,
+      }));
       toolCallCount += toolCalls.length;
 
       messages.push({
         role: "assistant",
         content: content || null,
-        tool_calls: toolCalls.map((tc, i) => ({
-          id: tc.id || `call_${i}`,
+        tool_calls: toolCalls.map((tc) => ({
+          id: tc.id,
           type: "function" as const,
-          function: { name: tc.name, arguments: tc.args },
+          function: { name: tc.name, arguments: tc.argumentsJson },
         })),
       } as any);
 
-      for (const tc of toolCalls) {
+      for (let index = 0; index < toolCalls.length; index++) {
+        const tc = toolCalls[index];
         let args: Record<string, unknown> = {};
-        try { args = JSON.parse(tc.args); } catch {}
+        try { args = JSON.parse(tc.argumentsJson); } catch {}
 
         log.info("tool_call", { tool: tc.name, argKeys: Object.keys(args) });
         yield { type: "tool_call", data: { toolName: tc.name, args } };
@@ -203,6 +288,12 @@ async function* agenticLoopStream(
           ? await tool.execute(args)
           : `错误: 未知 Tool "${tc.name}"`;
 
+        const pending = parsePendingApproval(result, tc.id, tc.name, args);
+        if (pending) {
+          yield approvalEvent(await persistApproval(pending, toolCalls, index, round));
+          return;
+        }
+
         yield {
           type: "tool_result",
           data: { toolName: tc.name, result: result.slice(0, 500) },
@@ -210,7 +301,7 @@ async function* agenticLoopStream(
 
         messages.push({
           role: "tool",
-          tool_call_id: tc.id || `call_${toolCalls.indexOf(tc)}`,
+          tool_call_id: tc.id,
           content: result,
         } as any);
       }
@@ -228,6 +319,27 @@ async function* agenticLoopStream(
 
   const finalStats = buildStats(MAX_TOOL_ROUNDS);
   yield { type: "done", data: { fullContent: "已达到最大工具调用轮数", stats: finalStats } };
+}
+
+export function resumeAgentRun(
+  checkpoint: AgentRunCheckpoint,
+  approved: boolean
+): AsyncGenerator<StreamEvent> {
+  return agenticLoopStream(
+    checkpoint.systemPrompt,
+    "",
+    undefined,
+    checkpoint.traceId,
+    checkpoint.allowedTools,
+    checkpoint.workspace,
+    {
+      conversationId: checkpoint.conversationId,
+      userMessageId: checkpoint.userMessageId,
+      assistantMessageId: checkpoint.assistantMessageId,
+    },
+    checkpoint,
+    approved
+  );
 }
 
 // ---- 流式执行 Skill ----
@@ -286,7 +398,8 @@ export async function* executeSkillStream(
       history,
       traceId,
       skill.allowedTools,
-      workspace
+      workspace,
+      metadata
     )) {
       if (event.type === "delta") output += event.data as string;
       if (event.type === "stats") stats = event.data as AgentStatsSnapshot;
