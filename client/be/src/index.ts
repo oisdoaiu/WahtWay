@@ -12,6 +12,7 @@ import skillsRouter from "./routes/skills";
 import conversationsRouter from "./routes/conversations";
 import externalToolsRouter from "./routes/external-tools";
 import mcpRouter from "./routes/mcp";
+import agentRunsRouter from "./routes/agent-runs";
 import { initSkills, getSkillsDir } from "./skills/loader";
 import { setModel, getCurrentModel } from "./agent";
 import { registerTool } from "./tools/registry";
@@ -55,6 +56,7 @@ app.use("/api/skills", skillsRouter);
 app.use("/api/conversations", conversationsRouter);
 app.use("/api/external-tools", externalToolsRouter);
 app.use("/api/mcp", mcpRouter);
+app.use("/api/agent-runs", agentRunsRouter);
 
 // 临时授权：批准某个路径的操作
 app.post("/api/tools/approve", (req, res) => {
