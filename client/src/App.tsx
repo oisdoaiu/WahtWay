@@ -297,7 +297,7 @@ function ChatPanel({ conversationId, onTitleChange, onCreateSkill }: { showModal
       abortRef.current = null;
       setStreaming(conversationId, false);
     }
-  }, [input, streaming, conversationId, onTitleChange]);
+  }, [input, streaming, conversationId, onTitleChange, attachedFiles, model, skillId, workspace]);
 
   const stopStreaming = () => {
     if (abortRef.current) {
@@ -362,6 +362,13 @@ function ChatPanel({ conversationId, onTitleChange, onCreateSkill }: { showModal
     }
   };
 
+  const clearWorkspace = (event: React.MouseEvent) => {
+    event.stopPropagation();
+    setWorkspace("");
+    localStorage.removeItem("wahtway-workspace");
+    toast("已清空工作区");
+  };
+
   const openFilePicker = async () => {
     setShowFileMenu(false);
     const api = (window as any).electronAPI;
@@ -398,7 +405,10 @@ function ChatPanel({ conversationId, onTitleChange, onCreateSkill }: { showModal
         <h1>WahtWay</h1>
         <span className="subtitle">何以委</span>
         {skillName && <span className="skill-badge">已激活: {skillName}</span>}
-        <span className="workspace-badge" onClick={openFolderPicker} title="切换工作目录">{workspace ? `📂 ${workspace.split(/[\/]/).pop()}` : "📂 未设置工作区"}</span>
+        <span className="workspace-control">
+          <span className="workspace-badge" onClick={openFolderPicker} title="切换工作目录">{workspace ? `📂 ${workspace.split(/[\/]/).pop()}` : "📂 未设置工作区"}</span>
+          {workspace && <button className="workspace-clear" onClick={clearWorkspace} title="清空工作区">×</button>}
+        </span>
         <select className="model-select" value={model} onChange={(e) => { const m = e.target.value; setModel(m); localStorage.setItem("wahtway-model", m); }}>
           <option value="deepseek-v4-flash">DeepSeek V4 Flash (快)</option>
           <option value="deepseek-v4-pro">DeepSeek V4 Pro (深)</option>

@@ -1052,8 +1052,11 @@ body {
 .stop-btn { padding: 0 16px; border: none; border-radius: 12px; background: #e74c3c; color: #fff; font-size: 14px; font-weight: 600; cursor: pointer; }
 .stop-btn:hover { background: #c0392b; }
 
-.workspace-badge { margin-left: 8px; padding: 4px 10px; background: #f5f0ff; color: #7c4dff; border-radius: 10px; font-size: 12px; cursor: pointer; transition: background 0.2s; }
+.workspace-control { display: inline-flex; align-items: center; gap: 4px; margin-left: 8px; }
+.workspace-badge { padding: 4px 10px; background: #f5f0ff; color: #7c4dff; border-radius: 10px; font-size: 12px; cursor: pointer; transition: background 0.2s; }
 .workspace-badge:hover { background: #ede0ff; }
+.workspace-clear { width: 20px; height: 20px; border: none; border-radius: 999px; background: #f2e8ff; color: #7c4dff; cursor: pointer; font-size: 14px; line-height: 20px; padding: 0; }
+.workspace-clear:hover { background: #e6d5ff; }
 
 /* === 深色主题 === */
 .app.dark { background: #1e1e2e; color: #cdd6f4; }
@@ -1361,6 +1364,8 @@ body {
 }
 .app.dark .header h1 { color: #cdd6f4; }
 .app.dark .mode-badge { background: #45475a; color: #cdd6f4; }
+.app.dark .workspace-badge, .app.dark .workspace-clear { background: #45475a; color: #cdd6f4; }
+.app.dark .workspace-badge:hover, .app.dark .workspace-clear:hover { background: #585b70; }
 .app.dark .mode-selector { background: #313244; }
 .app.dark .conv-list-header { color: #a6adc8; }
 .app.dark .conv-title { color: #bac2de; }
