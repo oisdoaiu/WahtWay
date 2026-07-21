@@ -50,8 +50,13 @@ export async function executeApprovedTool(approval: PendingApproval): Promise<st
     return executeConfirmedMcpTool(String(approval.target || ""), approval.reason, approval.arguments);
   }
 
-  const target = approval.target || inferredTarget(approval.arguments);
-  if (target) approvePath(target);
+  const targets = new Set<string>();
+  if (approval.target) targets.add(approval.target);
+  for (const key of ["path", "directory", "source", "destination"]) {
+    const value = approval.arguments[key];
+    if (typeof value === "string" && value) targets.add(value);
+  }
+  for (const target of targets) approvePath(target);
   const tool = getTool(approval.toolName);
   if (!tool) throw new Error(`Unknown tool: ${approval.toolName}`);
   const result = await tool.execute(approval.arguments);
