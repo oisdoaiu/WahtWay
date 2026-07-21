@@ -94,6 +94,7 @@ async function* agenticLoopStream(
   checkpoint?: AgentRunCheckpoint,
   approved?: boolean
 ): AsyncGenerator<StreamEvent> {
+  if (checkpoint?.model) setModel(checkpoint.model);
   const log = logger(traceId || "no-trace", "agent");
   const startTime = checkpoint ? Date.parse(checkpoint.startedAt) : Date.now();
   let totalRoundTokens = checkpoint?.totalRoundTokens || 0;
