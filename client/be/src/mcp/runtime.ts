@@ -34,6 +34,7 @@ function defaultStatus(): McpServerStatus {
     state: "stopped", tools: [], startedAt: null, lastError: null,
     lastHealthCheckAt: null, lastDisconnectedAt: null,
     consecutiveFailures: 0, reconnectAttempt: 0, nextReconnectAt: null,
+    toolListRevision: 0, lastToolListChangedAt: null, lastToolListError: null,
   };
 }
 
@@ -274,6 +275,78 @@ async function discoverAndRegister(
   return summaries;
 }
 
+async function replaceToolsFromNotification(
+  id: string,
+  active: ActiveMcpServer,
+  error: Error | null,
+  tools: any[] | null
+): Promise<void> {
+  if (activeServers.get(id) !== active || active.closing) return;
+  if (error || !tools) {
+    updateStatus(id, { lastToolListError: error?.message || "MCP tool list refresh returned no tools" });
+    return;
+  }
+  const config = getMcpServer(id);
+  if (!config) return;
+
+  const summaries: McpToolSummary[] = [];
+  const definitions: ToolDef[] = [];
+  const names = new Set<string>();
+  for (const tool of tools) {
+    const registeredName = registeredToolName(config.id, tool.name);
+    const permission = resolveMcpToolPermission(config, tool.name);
+    if (names.has(registeredName)) throw new Error(`MCP tool name collision: ${registeredName}`);
+    const existing = getTool(registeredName);
+    if (permission !== "disabled" && existing && !active.registeredNames.includes(registeredName)) {
+      throw new Error(`MCP tool name collision: ${registeredName}`);
+    }
+    names.add(registeredName);
+    const summary: McpToolSummary = {
+      name: tool.name,
+      registeredName,
+      description: tool.description || `MCP tool ${tool.name}`,
+      inputSchema: tool.inputSchema as Record<string, unknown>,
+      permission,
+      overridden: Object.prototype.hasOwnProperty.call(config.toolPermissions, tool.name),
+    };
+    summaries.push(summary);
+    if (permission === "disabled") continue;
+    definitions.push({
+      name: registeredName,
+      description: `${summary.description}\nMCP Server: ${config.name}\nPermission: ${permission}`,
+      parameters: summary.inputSchema as any,
+      execute: async (args) => {
+        try {
+          const current = getMcpServer(config.id);
+          if (!current) return "Error: MCP Server configuration no longer exists";
+          const currentPermission = resolveMcpToolPermission(current, tool.name);
+          if (currentPermission === "disabled") return "Error: MCP tool is disabled";
+          if (currentPermission === "confirm") {
+            const token = createApproval(config.id, tool.name, args);
+            return `MCP_PERMISSION_REQUIRED::${config.id}::${tool.name}::${token}`;
+          }
+          return await invoke(config.id, tool.name, args);
+        } catch (invokeError) {
+          return `Error: ${invokeError instanceof Error ? invokeError.message : String(invokeError)}`;
+        }
+      },
+    });
+  }
+
+  for (const name of active.registeredNames) unregisterTool(name);
+  active.registeredNames = [];
+  for (const definition of definitions) {
+    registerTool(definition);
+    active.registeredNames.push(definition.name);
+  }
+  updateStatus(id, {
+    tools: summaries,
+    toolListRevision: statusFor(id).toolListRevision + 1,
+    lastToolListChangedAt: new Date().toISOString(),
+    lastToolListError: null,
+  });
+}
+
 async function startInternal(id: string, reconnecting = false): Promise<McpServerStatus> {
   const config = getMcpServer(id);
   if (!config) throw new Error("MCP Server 不存在");
@@ -291,8 +364,30 @@ async function startInternal(id: string, reconnecting = false): Promise<McpServe
     env: childEnvironment(config),
     stderr: "pipe",
   });
-  const client = new Client({ name: "wahtway", version: "0.1.0" });
-  const active: ActiveMcpServer = { client, transport, registeredNames: [], closing: false, healthFailures: 0 };
+  let active: ActiveMcpServer;
+  const client = new Client(
+    { name: "wahtway", version: "0.1.0" },
+    {
+      listChanged: {
+        tools: {
+          autoRefresh: true,
+          debounceMs: 300,
+          onChanged: (error, tools) => {
+            void serialize(id, async () => {
+              try {
+                await replaceToolsFromNotification(id, active, error, tools);
+              } catch (refreshError) {
+                updateStatus(id, {
+                  lastToolListError: refreshError instanceof Error ? refreshError.message : String(refreshError),
+                });
+              }
+            });
+          },
+        },
+      },
+    }
+  );
+  active = { client, transport, registeredNames: [], closing: false, healthFailures: 0 };
   activeServers.set(id, active);
 
   let stderr = "";
@@ -320,6 +415,7 @@ async function startInternal(id: string, reconnecting = false): Promise<McpServe
       state: "running", tools, startedAt: new Date().toISOString(), lastError: null,
       lastHealthCheckAt: new Date().toISOString(), consecutiveFailures: 0,
       reconnectAttempt: 0, nextReconnectAt: null,
+      toolListRevision: 1, lastToolListChangedAt: new Date().toISOString(), lastToolListError: null,
     });
   } catch (error) {
     active.closing = true;
