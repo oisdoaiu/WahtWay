@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const fixturePath = fileURLToPath(new URL("./fixtures/echo-server.cjs", import.meta.url));
 const crashFixturePath = fileURLToPath(new URL("./fixtures/crash-server.cjs", import.meta.url));
+const dynamicToolsFixturePath = fileURLToPath(new URL("./fixtures/dynamic-tools-server.cjs", import.meta.url));
 let dataDir = "";
 
 beforeEach(() => {
@@ -158,6 +159,41 @@ describe("MCP stdio runtime", () => {
     expect(observedReconnect).toBe(true);
     expect(runtime.getMcpStatus(server.id).state).toBe("running");
     expect(registry.getTool("mcp-crash-fixture-crash")).not.toBeNull();
+  }, 10000);
+
+  it("refreshes registered tools after a list changed notification", async () => {
+    const repository = await import("./repository");
+    const runtime = await import("./runtime");
+    const registry = await import("../tools/registry");
+    const server = repository.saveMcpServer({
+      id: "dynamic-tools-fixture",
+      name: "Dynamic Tools Fixture",
+      description: "Tool list notification fixture",
+      command: process.execPath,
+      args: [dynamicToolsFixturePath],
+      cwd: path.dirname(dynamicToolsFixturePath),
+      env: {}, enabled: true, autoStart: false,
+      defaultToolPermission: "auto", toolPermissions: {}, toolCallTimeoutMs: 5000,
+    });
+    await runtime.startMcpServer(server.id);
+    const toggleName = "mcp-dynamic-tools-fixture-toggle-tools";
+    const dynamicName = "mcp-dynamic-tools-fixture-dynamic-echo";
+
+    await registry.getTool(toggleName)!.execute({});
+    const addedDeadline = Date.now() + 3000;
+    while (!registry.getTool(dynamicName) && Date.now() < addedDeadline) {
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+    expect(runtime.getMcpStatus(server.id).toolListRevision).toBe(2);
+    await expect(registry.getTool(dynamicName)!.execute({ text: "hello" })).resolves.toBe("dynamic:hello");
+
+    await registry.getTool(toggleName)!.execute({});
+    const removedDeadline = Date.now() + 3000;
+    while (registry.getTool(dynamicName) && Date.now() < removedDeadline) {
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+    expect(runtime.getMcpStatus(server.id).toolListRevision).toBe(3);
+    expect(registry.getTool(dynamicName)).toBeNull();
   }, 10000);
 });
 
