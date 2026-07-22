@@ -37,13 +37,18 @@ export interface PendingMcpApproval {
   expiresAt: number;
 }
 
-export type McpRuntimeState = "stopped" | "starting" | "running" | "error";
+export type McpRuntimeState = "stopped" | "starting" | "running" | "reconnecting" | "error";
 
 export interface McpServerStatus {
   state: McpRuntimeState;
   tools: McpToolSummary[];
   startedAt: string | null;
   lastError: string | null;
+  lastHealthCheckAt: string | null;
+  lastDisconnectedAt: string | null;
+  consecutiveFailures: number;
+  reconnectAttempt: number;
+  nextReconnectAt: string | null;
 }
 
 export interface PublicMcpServer extends McpServerConfig {
