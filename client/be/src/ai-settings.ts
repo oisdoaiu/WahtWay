@@ -1,9 +1,17 @@
 import fs from "fs";
 import path from "path";
+import os from "os";
 import OpenAI from "openai";
 import { getRuntimeDataDir } from "./runtime-data";
 
-export type AiProviderKind = "deepseek" | "openai-compatible";
+export type AiProviderKind =
+  | "deepseek"
+  | "openai"
+  | "qwen"
+  | "zhipu"
+  | "moonshot"
+  | "siliconflow"
+  | "openai-compatible";
 
 export interface AiSettings {
   provider: AiProviderKind;
@@ -29,12 +37,52 @@ const DEFAULT_SETTINGS: Record<AiProviderKind, AiSettings> = {
     modelOptions: ["deepseek-v4-flash", "deepseek-v4-pro", "deepseek-chat"],
     balancePath: "/user/balance",
   },
+  openai: {
+    provider: "openai",
+    apiKey: "",
+    baseURL: "https://api.openai.com/v1",
+    model: "gpt-5.5",
+    modelOptions: ["gpt-5.5", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"],
+    balancePath: "",
+  },
+  qwen: {
+    provider: "qwen",
+    apiKey: "",
+    baseURL: "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    model: "qwen-plus",
+    modelOptions: ["qwen-plus", "qwen-max", "qwen-turbo", "qwen-long"],
+    balancePath: "",
+  },
+  zhipu: {
+    provider: "zhipu",
+    apiKey: "",
+    baseURL: "https://open.bigmodel.cn/api/paas/v4",
+    model: "glm-4-flash",
+    modelOptions: ["glm-4-flash", "glm-4-plus", "glm-4-air", "glm-4-long"],
+    balancePath: "",
+  },
+  moonshot: {
+    provider: "moonshot",
+    apiKey: "",
+    baseURL: "https://api.moonshot.cn/v1",
+    model: "moonshot-v1-8k",
+    modelOptions: ["moonshot-v1-8k", "moonshot-v1-32k", "moonshot-v1-128k"],
+    balancePath: "",
+  },
+  siliconflow: {
+    provider: "siliconflow",
+    apiKey: "",
+    baseURL: "https://api.siliconflow.cn/v1",
+    model: "Qwen/Qwen2.5-7B-Instruct",
+    modelOptions: ["Qwen/Qwen2.5-7B-Instruct", "deepseek-ai/DeepSeek-V3", "deepseek-ai/DeepSeek-R1"],
+    balancePath: "",
+  },
   "openai-compatible": {
     provider: "openai-compatible",
     apiKey: "",
     baseURL: "https://api.openai.com/v1",
-    model: "gpt-4o-mini",
-    modelOptions: ["gpt-4o-mini", "gpt-4.1-mini", "gpt-4.1"],
+    model: "gpt-5.5",
+    modelOptions: ["gpt-5.5", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"],
     balancePath: "",
   },
 };
@@ -56,6 +104,12 @@ function cloneDefault(provider: AiProviderKind): AiSettings {
   return { ...DEFAULT_SETTINGS[provider], modelOptions: [...DEFAULT_SETTINGS[provider].modelOptions] };
 }
 
+function normalizeProvider(value: unknown): AiProviderKind {
+  return typeof value === "string" && value in DEFAULT_SETTINGS
+    ? value as AiProviderKind
+    : "deepseek";
+}
+
 function normalizeModelOptions(value: unknown, provider: AiProviderKind): string[] {
   if (!Array.isArray(value)) return cloneDefault(provider).modelOptions;
   const options = value
@@ -66,11 +120,17 @@ function normalizeModelOptions(value: unknown, provider: AiProviderKind): string
 }
 
 function inferProvider(baseURL: string): AiProviderKind {
-  return /deepseek/i.test(baseURL) ? "deepseek" : "openai-compatible";
+  if (/deepseek/i.test(baseURL)) return "deepseek";
+  if (/dashscope|aliyuncs|qwen/i.test(baseURL)) return "qwen";
+  if (/bigmodel|zhipu/i.test(baseURL)) return "zhipu";
+  if (/moonshot/i.test(baseURL)) return "moonshot";
+  if (/siliconflow/i.test(baseURL)) return "siliconflow";
+  if (/api\.openai\.com/i.test(baseURL)) return "openai";
+  return "openai-compatible";
 }
 
 function normalizeSettings(input: Partial<AiSettings> & { provider?: AiProviderKind }): AiSettings {
-  const currentProvider = input.provider || "deepseek";
+  const currentProvider = normalizeProvider(input.provider);
   const defaults = cloneDefault(currentProvider);
   const provider = currentProvider;
   const baseURL = typeof input.baseURL === "string" && input.baseURL.trim()
@@ -107,12 +167,31 @@ function envToSettings(): AiSettings {
 }
 
 function readFromDisk(): AiSettings | null {
-  if (!fs.existsSync(SETTINGS_PATH)) return null;
-  try {
-    const raw = JSON.parse(fs.readFileSync(SETTINGS_PATH, "utf-8")) as Partial<AiSettings> & { provider?: AiProviderKind };
-    return normalizeSettings(raw);
-  } catch {
-    return null;
+  if (fs.existsSync(SETTINGS_PATH)) {
+    try {
+      const raw = JSON.parse(fs.readFileSync(SETTINGS_PATH, "utf-8")) as Partial<AiSettings> & { provider?: AiProviderKind };
+      return normalizeSettings(raw);
+    } catch {
+      return null;
+    }
+  }
+
+  if (process.env.PORTABLE_EXECUTABLE_DIR?.trim()) {
+    const legacyPath = path.join(
+      process.env.APPDATA || path.join(os.homedir(), "AppData", "Roaming"),
+      "WahtWay",
+      "data",
+      "ai-settings.json"
+    );
+    if (!fs.existsSync(legacyPath)) return null;
+    try {
+      const raw = JSON.parse(fs.readFileSync(legacyPath, "utf-8")) as Partial<AiSettings> & { provider?: AiProviderKind };
+      const normalized = normalizeSettings(raw);
+      atomicWriteJson(SETTINGS_PATH, { version: 1, ...normalized });
+      return normalized;
+    } catch {
+      return null;
+    }
   }
 }
 

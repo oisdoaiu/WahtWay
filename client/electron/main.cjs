@@ -4,6 +4,19 @@ const path = require("path");
 const fs = require("fs");
 let mainWindow = null;
 
+function resolveDataDir() {
+  if (process.env.WAHTWAY_DATA_DIR && process.env.WAHTWAY_DATA_DIR.trim()) {
+    return path.resolve(process.env.WAHTWAY_DATA_DIR.trim());
+  }
+
+  const portableDir = process.env.PORTABLE_EXECUTABLE_DIR?.trim();
+  if (portableDir) {
+    return path.join(path.resolve(portableDir), "WahtWay-data");
+  }
+
+  return path.join(app.getPath("userData"), "data");
+}
+
 // 加载 .env
 function loadEnv() {
   const envPath = app.isPackaged
@@ -24,6 +37,42 @@ function loadEnv() {
     return;
   }
   console.warn("⚠️ 未找到 .env，请配置 API Key");
+}
+
+function writePortFile(port) {
+  try {
+    const beDir = path.join(__dirname, "..", "be");
+    fs.writeFileSync(path.join(beDir, ".port"), String(port), "utf-8");
+  } catch {}
+}
+
+function waitForPortFile(timeoutMs = 15000) {
+  const beDir = path.join(__dirname, "..", "be");
+  const portFile = path.join(beDir, ".port");
+  const start = Date.now();
+
+  return new Promise((resolve) => {
+    const poll = () => {
+      try {
+        if (fs.existsSync(portFile)) {
+          const port = parseInt(fs.readFileSync(portFile, "utf-8").trim(), 10);
+          if (Number.isFinite(port) && port > 0) {
+            resolve(port);
+            return;
+          }
+        }
+      } catch {}
+
+      if (Date.now() - start >= timeoutMs) {
+        resolve(3000);
+        return;
+      }
+
+      setTimeout(poll, 100);
+    };
+
+    poll();
+  });
 }
 
 // IPC: 打开文件选择对话框
@@ -77,11 +126,14 @@ async function renderHTMLSlidesImpl(htmlSlides) {
 
 app.whenReady().then(async () => {
   loadEnv();
-  process.env.WAHTWAY_DATA_DIR = path.join(app.getPath("userData"), "data");
+  process.env.WAHTWAY_DATA_DIR = resolveDataDir();
 
   // require 后端（asar: false 直接文件访问）
   const beDir = path.join(__dirname, "..", "be");
   const distPath = path.join(beDir, "dist", "index.js");
+  try {
+    fs.unlinkSync(path.join(beDir, ".port"));
+  } catch {}
 
   if (fs.existsSync(distPath)) {
     try {
@@ -100,7 +152,7 @@ app.whenReady().then(async () => {
       const pub = path.join(__dirname, "..", "dist");
       srv.use(express.static(pub));
       srv.get("*", (_r, res) => res.sendFile(path.join(pub, "index.html")));
-      srv.listen(3000);
+      srv.listen(3000, () => writePortFile(3000));
     }
   }
 
@@ -115,16 +167,8 @@ app.whenReady().then(async () => {
   });
 
   // 等 Express 就绪，读取实际端口
-  let port = 3000;
-  setTimeout(() => {
-    try {
-      const portFile = require("path").join(__dirname, "..", "be", ".port");
-      if (require("fs").existsSync(portFile)) {
-        port = parseInt(require("fs").readFileSync(portFile, "utf-8").trim()) || 3000;
-      }
-    } catch {}
-    mainWindow.loadURL(`http://localhost:${port}`);
-  }, 1500);
+  const port = await waitForPortFile();
+  mainWindow.loadURL(`http://localhost:${port}`);
   mainWindow.setMenuBarVisibility(false);
 
   // 修复焦点丢失：页面加载完成后强制聚焦

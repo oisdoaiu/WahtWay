@@ -3,6 +3,11 @@ import * as os from "os";
 import * as path from "path";
 
 function getDefaultDataDir(): string {
+  const portableDir = process.env.PORTABLE_EXECUTABLE_DIR?.trim();
+  if (portableDir) {
+    return path.join(path.resolve(portableDir), "WahtWay-data");
+  }
+
   if (process.platform === "win32") {
     const appData = process.env.APPDATA || path.join(os.homedir(), "AppData", "Roaming");
     return path.join(appData, "WahtWay", "data");

@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from "react";
+﻿import { useState, useRef, useEffect, useCallback } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { DEBUG, addDebugEvent, getDebugEvents, onDebugEvents, clearDebugEvents } from "./debug";
@@ -10,7 +10,14 @@ import {
 import { McpPanel } from "./McpPanel";
 import "./App.css";
 
-type AiProviderKind = "deepseek" | "openai-compatible";
+type AiProviderKind =
+  | "deepseek"
+  | "openai"
+  | "qwen"
+  | "zhipu"
+  | "moonshot"
+  | "siliconflow"
+  | "openai-compatible";
 
 interface AiSettingsView {
   provider: AiProviderKind;
@@ -29,11 +36,46 @@ const AI_PROVIDER_PRESETS: Record<AiProviderKind, { label: string; defaultBaseUR
     modelOptions: ["deepseek-v4-flash", "deepseek-v4-pro", "deepseek-chat"],
     balancePath: "/user/balance",
   },
-  "openai-compatible": {
-    label: "OpenAI 兼容",
+  openai: {
+    label: "OpenAI",
     defaultBaseURL: "https://api.openai.com/v1",
-    defaultModel: "gpt-4o-mini",
-    modelOptions: ["gpt-4o-mini", "gpt-4.1-mini", "gpt-4.1"],
+    defaultModel: "gpt-5.5",
+    modelOptions: ["gpt-5.5", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"],
+    balancePath: "",
+  },
+  qwen: {
+    label: "通义千问",
+    defaultBaseURL: "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    defaultModel: "qwen-plus",
+    modelOptions: ["qwen-plus", "qwen-max", "qwen-turbo", "qwen-long"],
+    balancePath: "",
+  },
+  zhipu: {
+    label: "智谱 GLM",
+    defaultBaseURL: "https://open.bigmodel.cn/api/paas/v4",
+    defaultModel: "glm-4-flash",
+    modelOptions: ["glm-4-flash", "glm-4-plus", "glm-4-air", "glm-4-long"],
+    balancePath: "",
+  },
+  moonshot: {
+    label: "Moonshot",
+    defaultBaseURL: "https://api.moonshot.cn/v1",
+    defaultModel: "moonshot-v1-8k",
+    modelOptions: ["moonshot-v1-8k", "moonshot-v1-32k", "moonshot-v1-128k"],
+    balancePath: "",
+  },
+  siliconflow: {
+    label: "SiliconFlow",
+    defaultBaseURL: "https://api.siliconflow.cn/v1",
+    defaultModel: "Qwen/Qwen2.5-7B-Instruct",
+    modelOptions: ["Qwen/Qwen2.5-7B-Instruct", "deepseek-ai/DeepSeek-V3", "deepseek-ai/DeepSeek-R1"],
+    balancePath: "",
+  },
+  "openai-compatible": {
+    label: "自定义兼容",
+    defaultBaseURL: "https://api.openai.com/v1",
+    defaultModel: "gpt-5.5",
+    modelOptions: ["gpt-5.5", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"],
     balancePath: "",
   },
 };
@@ -533,7 +575,12 @@ function ChatPanel({ conversationId, onTitleChange, onCreateSkill, aiSettings, o
               }}
             >
               <option value="deepseek">DeepSeek</option>
-              <option value="openai-compatible">OpenAI 兼容</option>
+              <option value="openai">OpenAI</option>
+              <option value="qwen">通义千问</option>
+              <option value="zhipu">智谱 GLM</option>
+              <option value="moonshot">Moonshot</option>
+              <option value="siliconflow">SiliconFlow</option>
+              <option value="openai-compatible">自定义兼容</option>
             </select>
           </label>
           <label className="ai-inline-field">
@@ -1336,19 +1383,36 @@ export default function App() {
   };
 
   useEffect(() => {
-    fetch("/api/ai-config")
-      .then((response) => response.json())
-      .then((data) => {
-        const settings = data.settings || getFallbackAiSettings();
-        setAiSettings(settings);
-        setNeedsSetup(!data.configured);
-        if (!data.configured) setShowAiSettings(true);
-      })
-      .catch(() => {
-        setAiSettings(getFallbackAiSettings());
-        setNeedsSetup(true);
-        setShowAiSettings(true);
-      });
+    let cancelled = false;
+    const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+    const loadAiConfig = async () => {
+      for (let attempt = 0; attempt < 6; attempt++) {
+        try {
+          const response = await fetch("/api/ai-config");
+          if (!response.ok) throw new Error(`HTTP ${response.status}`);
+          const data = await response.json();
+          if (cancelled) return;
+          const settings = data.settings || getFallbackAiSettings();
+          setAiSettings(settings);
+          setNeedsSetup(!data.configured);
+          if (!data.configured) setShowAiSettings(true);
+          return;
+        } catch {
+          if (attempt < 5) {
+            await sleep(300);
+            continue;
+          }
+          if (cancelled) return;
+          setAiSettings(getFallbackAiSettings());
+          setNeedsSetup(true);
+          setShowAiSettings(true);
+        }
+      }
+    };
+    void loadAiConfig();
+    return () => {
+      cancelled = true;
+    };
   }, []);
   const openEditSkill = async (skillId: string) => {
     try {
@@ -1629,7 +1693,7 @@ function AiSettingsModal({
 
   const modelOptions = modelOptionsText.split(/\r?\n/).map((item) => item.trim()).filter(Boolean);
   const activePreset = AI_PROVIDER_PRESETS[provider];
-  const showBalance = provider === "deepseek" || !!balancePath;
+  const showBalance = !!balancePath.trim();
 
   return (
     <div className="setup-overlay" onClick={() => { if (!required) onClose(); }}>
@@ -1650,9 +1714,14 @@ function AiSettingsModal({
               setModel(preset.defaultModel);
               setModelOptionsText(preset.modelOptions.join("\n"));
               setBalancePath(preset.balancePath);
-            }}>
+              }}>
               <option value="deepseek">DeepSeek</option>
-              <option value="openai-compatible">OpenAI 兼容</option>
+              <option value="openai">OpenAI</option>
+              <option value="qwen">通义千问</option>
+              <option value="zhipu">智谱 GLM</option>
+              <option value="moonshot">Moonshot</option>
+              <option value="siliconflow">SiliconFlow</option>
+              <option value="openai-compatible">自定义兼容</option>
             </select>
           </label>
           <label>
@@ -1682,7 +1751,7 @@ function AiSettingsModal({
             <textarea className="setup-textarea" rows={4} value={modelOptionsText} onChange={e => setModelOptionsText(e.target.value)} />
           </label>
           <label className="wide">
-            <span>余额路径</span>
+            <span>余额查询路径（可选）</span>
             <input className="setup-input" type="text" value={balancePath} onChange={e => setBalancePath(e.target.value)} placeholder={activePreset.balancePath || "可留空"} />
           </label>
           {showBalance && config?.apiKeyConfigured && (
@@ -1692,7 +1761,7 @@ function AiSettingsModal({
           )}
         </div>
         <p className="setup-hint">
-          DeepSeek 余额查询会放在这里；如果是 OpenAI 兼容接口，通常可以留空。
+          余额查询不是统一标准：只有服务商提供兼容的余额接口时才填写，否则留空即可。
         </p>
         {err && <p className="setup-error">{err}</p>}
         <button className="setup-btn" onClick={submit} disabled={busy}>
@@ -1752,3 +1821,4 @@ function DebugPanel() {
     </div>
   );
 }
+
