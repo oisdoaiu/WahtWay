@@ -10,12 +10,46 @@ import {
 import { McpPanel } from "./McpPanel";
 import "./App.css";
 
-const DEFAULT_MODEL = "deepseek-v4-flash";
-const SUPPORTED_MODELS = new Set([DEFAULT_MODEL, "deepseek-v4-pro"]);
+type AiProviderKind = "deepseek" | "openai-compatible";
 
-function getInitialModel(): string {
-  const savedModel = localStorage.getItem("wahtway-model");
-  return savedModel && SUPPORTED_MODELS.has(savedModel) ? savedModel : DEFAULT_MODEL;
+interface AiSettingsView {
+  provider: AiProviderKind;
+  baseURL: string;
+  model: string;
+  modelOptions: string[];
+  balancePath: string;
+  apiKeyConfigured: boolean;
+}
+
+const AI_PROVIDER_PRESETS: Record<AiProviderKind, { label: string; defaultBaseURL: string; defaultModel: string; modelOptions: string[]; balancePath: string; }> = {
+  deepseek: {
+    label: "DeepSeek",
+    defaultBaseURL: "https://api.deepseek.com",
+    defaultModel: "deepseek-v4-flash",
+    modelOptions: ["deepseek-v4-flash", "deepseek-v4-pro", "deepseek-chat"],
+    balancePath: "/user/balance",
+  },
+  "openai-compatible": {
+    label: "OpenAI 兼容",
+    defaultBaseURL: "https://api.openai.com/v1",
+    defaultModel: "gpt-4o-mini",
+    modelOptions: ["gpt-4o-mini", "gpt-4.1-mini", "gpt-4.1"],
+    balancePath: "",
+  },
+};
+
+const DEFAULT_MODEL = AI_PROVIDER_PRESETS.deepseek.defaultModel;
+
+function getFallbackAiSettings(provider: AiProviderKind = "deepseek"): AiSettingsView {
+  const preset = AI_PROVIDER_PRESETS[provider];
+  return {
+    provider,
+    baseURL: preset.defaultBaseURL,
+    model: preset.defaultModel,
+    modelOptions: [...preset.modelOptions],
+    balancePath: preset.balancePath,
+    apiKeyConfigured: false,
+  };
 }
 
 // ---- 全局 Toast（替代 alert，解决 Electron 焦点丢失） ----
@@ -84,7 +118,7 @@ interface ExternalToolConfig {
 
 // ---- 对话面板 ----
 
-function ChatPanel({ conversationId, onTitleChange, onCreateSkill }: { showModal: boolean; conversationId: string; onTitleChange: (title: string) => void; onCreateSkill: (prefill?: string) => void }) {
+function ChatPanel({ conversationId, onTitleChange, onCreateSkill, aiSettings, onAiSettingsChange, onOpenAiSettings }: { showModal: boolean; conversationId: string; onTitleChange: (title: string) => void; onCreateSkill: (prefill?: string) => void; aiSettings: AiSettingsView | null; onAiSettingsChange: (patch: Partial<AiSettingsView> & { apiKey?: string }) => void; onOpenAiSettings: () => void; }) {
   const [, setTick] = useState(0);
   const messages = getMessages(conversationId);
   const streaming = isStreaming(conversationId);
@@ -93,7 +127,6 @@ function ChatPanel({ conversationId, onTitleChange, onCreateSkill }: { showModal
   const [thinkingStatus, setThinkingStatus] = useState("");
   const [toolCalls, setToolCalls] = useState<{name: string; startTime: number}[]>([]);
   const toolTimersRef = useRef<Map<string, number>>(new Map());
-  const [model, setModel] = useState(getInitialModel);
   const [skillId, setSkillId] = useState<string>("");
   const [showSkillPicker, setShowSkillPicker] = useState(false);
   const [skillSearch, setSkillSearch] = useState("");
@@ -109,6 +142,9 @@ function ChatPanel({ conversationId, onTitleChange, onCreateSkill }: { showModal
   const historyIdx = useRef(-1);
   const lastEventRef = useRef(Date.now());
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const provider = aiSettings?.provider || "deepseek";
+  const model = aiSettings?.model || DEFAULT_MODEL;
+  const modelOptions = aiSettings?.modelOptions?.length ? aiSettings.modelOptions : AI_PROVIDER_PRESETS[provider].modelOptions;
 
   // 加载 Skill 列表（下拉用）
   const loadSkills = () => fetch("/api/skills").then(r => r.json()).then(d => setAllSkills(d.skills || []));
@@ -486,14 +522,36 @@ function ChatPanel({ conversationId, onTitleChange, onCreateSkill }: { showModal
         <h1>WahtWay</h1>
         <span className="subtitle">何以委</span>
         {skillName && <span className="skill-badge">已激活: {skillName}</span>}
+        <div className="ai-top-controls">
+          <label className="ai-inline-field">
+            <span>API</span>
+            <select
+              value={provider}
+              onChange={(e) => {
+                const nextProvider = e.target.value as AiProviderKind;
+                onAiSettingsChange({ provider: nextProvider, baseURL: AI_PROVIDER_PRESETS[nextProvider].defaultBaseURL, model: AI_PROVIDER_PRESETS[nextProvider].defaultModel, modelOptions: AI_PROVIDER_PRESETS[nextProvider].modelOptions, balancePath: AI_PROVIDER_PRESETS[nextProvider].balancePath });
+              }}
+            >
+              <option value="deepseek">DeepSeek</option>
+              <option value="openai-compatible">OpenAI 兼容</option>
+            </select>
+          </label>
+          <label className="ai-inline-field">
+            <span>模型</span>
+            <select
+              value={model}
+              onChange={(e) => onAiSettingsChange({ model: e.target.value })}
+            >
+              {modelOptions.map((item) => <option key={item} value={item}>{item}</option>)}
+              {!modelOptions.includes(model) && <option value={model}>{model}</option>}
+            </select>
+          </label>
+          <button className="ai-settings-btn" onClick={onOpenAiSettings}>AI 配置</button>
+        </div>
         <span className="workspace-control">
           <span className="workspace-badge" onClick={openFolderPicker} title="切换工作目录">{workspace ? `📂 ${workspace.split(/[\/]/).pop()}` : "📂 未设置工作区"}</span>
           {workspace && <button className="workspace-clear" onClick={clearWorkspace} title="清空工作区">×</button>}
         </span>
-        <select className="model-select" value={model} onChange={(e) => { const m = e.target.value; setModel(m); localStorage.setItem("wahtway-model", m); }}>
-          <option value="deepseek-v4-flash">DeepSeek V4 Flash (快)</option>
-          <option value="deepseek-v4-pro">DeepSeek V4 Pro (深)</option>
-        </select>
       </header>
       <main className="chat-area">
         {messages.length === 0 && (
@@ -1236,11 +1294,14 @@ export default function App() {
   const [showModal, setShowModal] = useState(false);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [showCmdPalette, setShowCmdPalette] = useState(false);
+  const [showAiSettings, setShowAiSettings] = useState(false);
   const [skillsVersion, setSkillsVersion] = useState(0);
   const [prefillSkillDesc, setPrefillSkillDesc] = useState("");
   const [appSkills, setAppSkills] = useState<SkillMeta[]>([]);
   const [editingConvId, setEditingConvId] = useState("");
   const [editTitle, setEditTitle] = useState("");
+  const [aiSettings, setAiSettings] = useState<AiSettingsView | null>(null);
+  const [needsSetup, setNeedsSetup] = useState<boolean | null>(null);
 
   // Load skills for command palette
   useEffect(() => { fetch("/api/skills").then(r => r.json()).then(d => setAppSkills(d.skills || [])); }, [showCmdPalette]);
@@ -1256,7 +1317,39 @@ export default function App() {
   const [conversationId, setConversationId] = useState<string>("");
   const [conversations, setConversations] = useState<any[]>([]);
   const [convVersion, setConvVersion] = useState(0);
-  const [needsSetup, setNeedsSetup] = useState<boolean | null>(null);
+
+  const saveAiSettings = async (patch: Partial<AiSettingsView> & { apiKey?: string }) => {
+    const response = await fetch("/api/ai-config", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(patch),
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || "保存 AI 配置失败");
+    const settings = data.settings || null;
+    setAiSettings(settings);
+    setNeedsSetup(!data.configured);
+    if (settings) {
+      localStorage.setItem("wahtway-model", settings.model);
+    }
+    return settings as AiSettingsView | null;
+  };
+
+  useEffect(() => {
+    fetch("/api/ai-config")
+      .then((response) => response.json())
+      .then((data) => {
+        const settings = data.settings || getFallbackAiSettings();
+        setAiSettings(settings);
+        setNeedsSetup(!data.configured);
+        if (!data.configured) setShowAiSettings(true);
+      })
+      .catch(() => {
+        setAiSettings(getFallbackAiSettings());
+        setNeedsSetup(true);
+        setShowAiSettings(true);
+      });
+  }, []);
   const openEditSkill = async (skillId: string) => {
     try {
       const response = await fetch(`/api/skills/${skillId}`);
@@ -1269,14 +1362,6 @@ export default function App() {
       toast(error.message || "读取 Skill 详情失败", "error");
     }
   };
-
-  // 启动时检查 API Key 是否配置
-  useEffect(() => {
-    fetch("/api/health")
-      .then(r => r.json())
-      .then(d => setNeedsSetup(d.needsSetup || false))
-      .catch(() => setNeedsSetup(false));
-  }, []);
 
   const refreshConvs = async () => {
     const r = await fetch("/api/conversations");
@@ -1364,7 +1449,6 @@ export default function App() {
         <div className="sidebar-footer">
           <button id="sidebar-create-skill" className="nav-item" onClick={() => setShowModal(true)}><span className="nav-icon">✨</span><span>创建 Skill</span></button>
           <div className="sidebar-reset" onClick={() => setShowResetConfirm(true)}>🔄 重置</div>
-          <BalanceWidget />
           <div className="sidebar-item" onClick={() => { const t = theme === "light" ? "dark" : "light"; setTheme(t); localStorage.setItem("wahtway-theme", t); }}>{theme === "light" ? "🌙 深色模式" : "☀️ 浅色模式"}</div>
         <div className="sidebar-reset" onClick={() => { DEBUG.on = !DEBUG.on; setConvVersion(v => v + 1); }}>{DEBUG.on ? "🟢 调试中" : "⚫ 调试关"}</div>
         <div className="sidebar-reset" onClick={() => setShowCmdPalette(true)}>⌨ 命令面板 (Ctrl+K)</div>
@@ -1372,7 +1456,7 @@ export default function App() {
       </nav>
       <div className="main-content">
         {view === "chat" ? (
-          conversationId ? <ChatPanel showModal={showModal} conversationId={conversationId} onTitleChange={handleTitleChange} onCreateSkill={(prefill) => { setPrefillSkillDesc(prefill || ""); setShowModal(true); }} /> : <div className="welcome"><h2>🤔 Waht?</h2></div>
+          conversationId ? <ChatPanel showModal={showModal} conversationId={conversationId} onTitleChange={handleTitleChange} onCreateSkill={(prefill) => { setPrefillSkillDesc(prefill || ""); setShowModal(true); }} aiSettings={aiSettings} onAiSettingsChange={(patch) => { void saveAiSettings(patch).catch((error: any) => toast(error.message || "保存 AI 配置失败", "error")); }} onOpenAiSettings={() => setShowAiSettings(true)} /> : <div className="welcome"><h2>🤔 Waht?</h2></div>
         ) : view === "skills" ? (
           <SkillsPanel onCreateSkill={() => setShowModal(true)} onEditSkill={openEditSkill} skillsVersion={skillsVersion} />
         ) : view === "external-tools" ? (
@@ -1388,8 +1472,16 @@ export default function App() {
         onToggleTheme={() => { const t = theme === "light" ? "dark" : "light"; setTheme(t); localStorage.setItem("wahtway-theme", t); }}
         theme={theme} />
       <CreateSkillModal show={showModal} onClose={() => { setShowModal(false); setPrefillSkillDesc(""); setSkillToEdit(null); }} onSaved={() => { setSkillsVersion(v => v + 1); setSkillToEdit(null); }} prefill={prefillSkillDesc} skillToEdit={skillToEdit} />
-
-      <SetupScreen show={needsSetup === true} onDone={() => setNeedsSetup(false)} />
+      <AiSettingsModal
+        show={showAiSettings || needsSetup === true}
+        required={needsSetup === true}
+        config={aiSettings}
+        onClose={() => { if (needsSetup !== true) setShowAiSettings(false); }}
+        onSave={async (patch) => {
+          await saveAiSettings(patch);
+          setShowAiSettings(false);
+        }}
+      />
 
       {showResetConfirm && (
         <div className="modal-overlay" onClick={() => setShowResetConfirm(false)}>
@@ -1463,7 +1555,7 @@ function BalanceWidget() {
 
   return (
     <div className="balance-widget">
-      <button className="balance-button" onClick={queryBalance} disabled={loading} title="手动查询 DeepSeek 账户余额">
+      <button className="balance-button" onClick={queryBalance} disabled={loading} title="手动查询当前 API 余额">
         <span>💰</span><span>{loading ? "查询中…" : "查询余额"}</span>
       </button>
       {balance && <div className="balance-value">{balance}</div>}
@@ -1472,38 +1564,139 @@ function BalanceWidget() {
   );
 }
 
-function SetupScreen({ show, onDone }: { show: boolean; onDone: () => void }) {
+function AiSettingsModal({
+  show,
+  required,
+  config,
+  onClose,
+  onSave,
+}: {
+  show: boolean;
+  required: boolean;
+  config: AiSettingsView | null;
+  onClose: () => void;
+  onSave: (patch: Partial<AiSettingsView> & { apiKey?: string }) => Promise<void> | void;
+}) {
+  const [provider, setProvider] = useState<AiProviderKind>("deepseek");
   const [key, setKey] = useState("");
+  const [baseURL, setBaseURL] = useState(AI_PROVIDER_PRESETS.deepseek.defaultBaseURL);
+  const [model, setModel] = useState(AI_PROVIDER_PRESETS.deepseek.defaultModel);
+  const [modelOptionsText, setModelOptionsText] = useState(AI_PROVIDER_PRESETS.deepseek.modelOptions.join("\n"));
+  const [balancePath, setBalancePath] = useState(AI_PROVIDER_PRESETS.deepseek.balancePath);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
 
-  if (!show) return null;
+  useEffect(() => {
+    if (!show) return;
+    const current = config || getFallbackAiSettings();
+    setProvider(current.provider);
+    setKey("");
+    setBaseURL(current.baseURL);
+    setModel(current.model);
+    setModelOptionsText(current.modelOptions.join("\n"));
+    setBalancePath(current.balancePath);
+    setErr("");
+  }, [show, config?.provider, config?.baseURL, config?.model, config?.balancePath, config?.apiKeyConfigured]);
 
   const submit = async () => {
-    if (!key.trim() || busy) return;
+    if (!key.trim() && !config?.apiKeyConfigured) {
+      setErr("请先输入 API Key");
+      return;
+    }
+    if (busy) return;
     setBusy(true); setErr("");
     try {
-      const r = await fetch("/api/setup", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ apiKey: key.trim() }) });
-      const d = await r.json();
-      if (d.success) onDone();
-      else setErr(d.error || "保存失败");
-    } catch { setErr("网络错误，请检查后端是否启动"); }
+      const modelOptions = modelOptionsText
+        .split(/\r?\n/)
+        .map((item) => item.trim())
+        .filter(Boolean);
+      await onSave({
+        provider,
+        apiKey: key.trim() || undefined,
+        baseURL,
+        model,
+        modelOptions,
+        balancePath,
+      });
+      onClose();
+    } catch (error: any) {
+      setErr(error.message || "保存失败");
+    }
     finally { setBusy(false); }
   };
 
+  if (!show) return null;
+
+  const modelOptions = modelOptionsText.split(/\r?\n/).map((item) => item.trim()).filter(Boolean);
+  const activePreset = AI_PROVIDER_PRESETS[provider];
+  const showBalance = provider === "deepseek" || !!balancePath;
+
   return (
-    <div className="setup-overlay">
-      <div className="setup-card">
-        <h1>🚀 欢迎使用 WahtWay</h1>
-        <p>需要配置 DeepSeek API Key 才能使用。</p>
+    <div className="setup-overlay" onClick={() => { if (!required) onClose(); }}>
+      <div className="setup-card ai-settings-card" onClick={e => e.stopPropagation()}>
+        <div className="modal-header ai-settings-header">
+          <h1>⚙ AI 配置</h1>
+          {!required && <button className="modal-close" onClick={onClose}>×</button>}
+        </div>
+        <p>配置会保存到本机，不需要每次启动重新输入 key。</p>
+        <div className="ai-settings-form">
+          <label>
+            <span>API 类型</span>
+            <select value={provider} onChange={(e) => {
+              const next = e.target.value as AiProviderKind;
+              const preset = AI_PROVIDER_PRESETS[next];
+              setProvider(next);
+              setBaseURL(preset.defaultBaseURL);
+              setModel(preset.defaultModel);
+              setModelOptionsText(preset.modelOptions.join("\n"));
+              setBalancePath(preset.balancePath);
+            }}>
+              <option value="deepseek">DeepSeek</option>
+              <option value="openai-compatible">OpenAI 兼容</option>
+            </select>
+          </label>
+          <label>
+            <span>API Key</span>
+            <input
+              className="setup-input"
+              type="password"
+              placeholder={config?.apiKeyConfigured ? "留空则保持现有 Key" : "sk-xxxxxxxxxxxxxxxxxxxxxxxx"}
+              value={key}
+              onChange={e => setKey(e.target.value)}
+              onKeyDown={e => { if (e.key === "Enter") submit(); }}
+            />
+          </label>
+          <label>
+            <span>Base URL</span>
+            <input className="setup-input" type="text" value={baseURL} onChange={e => setBaseURL(e.target.value)} />
+          </label>
+          <label>
+            <span>模型</span>
+            <input className="setup-input" type="text" list="ai-model-options" value={model} onChange={e => setModel(e.target.value)} />
+            <datalist id="ai-model-options">
+              {modelOptions.map((item) => <option key={item} value={item} />)}
+            </datalist>
+          </label>
+          <label className="wide">
+            <span>可选模型列表（每行一个）</span>
+            <textarea className="setup-textarea" rows={4} value={modelOptionsText} onChange={e => setModelOptionsText(e.target.value)} />
+          </label>
+          <label className="wide">
+            <span>余额路径</span>
+            <input className="setup-input" type="text" value={balancePath} onChange={e => setBalancePath(e.target.value)} placeholder={activePreset.balancePath || "可留空"} />
+          </label>
+          {showBalance && config?.apiKeyConfigured && (
+            <div className="wide">
+              <BalanceWidget />
+            </div>
+          )}
+        </div>
         <p className="setup-hint">
-          前往 <a href="https://platform.deepseek.com/api_keys" target="_blank">platform.deepseek.com</a> 注册获取 API Key。
+          DeepSeek 余额查询会放在这里；如果是 OpenAI 兼容接口，通常可以留空。
         </p>
-        <input className="setup-input" type="password" placeholder="sk-xxxxxxxxxxxxxxxxxxxxxxxx" value={key}
-          onChange={e => setKey(e.target.value)} onKeyDown={e => { if (e.key === "Enter") submit(); }} autoFocus />
         {err && <p className="setup-error">{err}</p>}
-        <button className="setup-btn" onClick={submit} disabled={busy || !key.trim()}>
-          {busy ? "验证中…" : "开始使用"}
+        <button className="setup-btn" onClick={submit} disabled={busy}>
+          {busy ? "保存中…" : (config?.apiKeyConfigured ? "保存配置" : "开始使用")}
         </button>
       </div>
     </div>

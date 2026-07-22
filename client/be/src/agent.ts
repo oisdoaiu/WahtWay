@@ -13,23 +13,17 @@ import {
 import { getTool, formatToolsForLLM } from "./tools/registry";
 import { logger } from "./logger";
 import { resolveModel } from "./models";
+import { createAiClient, getCurrentModel as getConfiguredModel } from "./ai-settings";
 import { createAgentRunCheckpoint, saveAgentRunCheckpoint } from "./agent-runs/repository";
 import { AgentRunCheckpoint, SerializedToolCall } from "./agent-runs/types";
 import { executeApprovedTool, parsePendingApproval } from "./agent-runs/approval";
 
-let _client: OpenAI | null = null;
 function getClient(): OpenAI {
-  if (!_client) {
-    _client = new OpenAI({
-      apiKey: process.env.DEEPSEEK_API_KEY,
-      baseURL: process.env.DEEPSEEK_BASE_URL || "https://api.deepseek.com",
-    });
-  }
-  return _client;
+  return createAiClient();
 }
 let _model: string | null = null;
 function getModel(override?: string): string {
-  return resolveModel(override || _model || process.env.DEEPSEEK_MODEL);
+  return resolveModel(override || _model || getConfiguredModel());
 }
 export function setModel(m: string) { _model = resolveModel(m); }
 export function getCurrentModel(): string { return getModel(); }

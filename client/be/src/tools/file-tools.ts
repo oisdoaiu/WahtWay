@@ -4,9 +4,9 @@
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
-import OpenAI from "openai";
 import AdmZip from "adm-zip";
 import { resolveModel } from "../models";
+import { createAiClient, getCurrentModel } from "../ai-settings";
 import { ToolDef } from "../types";
 
 /** 列出目录下的文件和子目录 */
@@ -405,12 +405,9 @@ export const summarizeFileTool: ToolDef = {
       const content = fs.readFileSync(filePath, "utf-8").slice(0, maxLen);
       const truncated = stat.size > maxLen ? "（文件过大，仅读取前 30KB）\n" : "";
 
-      const client = new OpenAI({
-        apiKey: process.env.DEEPSEEK_API_KEY,
-        baseURL: process.env.DEEPSEEK_BASE_URL || "https://api.deepseek.com",
-      });
+      const client = createAiClient();
       const response = await client.chat.completions.create({
-        model: resolveModel(process.env.DEEPSEEK_MODEL),
+        model: resolveModel(getCurrentModel()),
         messages: [
           { role: "system", content: `你是文件处理助手。对用户提供的文件内容执行：${task}。简洁输出结果。` },
           { role: "user", content: `文件: ${path.basename(filePath)}\n\n${truncated}${content}` },

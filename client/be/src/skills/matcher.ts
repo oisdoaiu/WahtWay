@@ -6,16 +6,10 @@ import { formatLlmError } from "../llm-errors";
 import { resolveModel } from "../models";
 import { NeedSnapshot, Skill } from "../types";
 import { hasUsefulContext } from "./context-signals";
+import { createAiClient, getCurrentModel } from "../ai-settings";
 
-let _client: OpenAI | null = null;
 function getClient(): OpenAI {
-  if (!_client) {
-    _client = new OpenAI({
-      apiKey: process.env.DEEPSEEK_API_KEY,
-      baseURL: process.env.DEEPSEEK_BASE_URL || "https://api.deepseek.com",
-    });
-  }
-  return _client;
+  return createAiClient();
 }
 
 /** 通用闲聊 System Prompt — 不用任何 Skill */
@@ -106,7 +100,7 @@ ${context.length > 0 ? JSON.stringify(context) : "无。只根据当前消息判
 {"skillIndex":-1或Skill编号,"needSnapshot":{"primaryGoal":"...","constraints":[],"expectedDeliverables":[],"formatPreferences":[],"knownPreferences":[],"ambiguities":[],"confidence":0到1}}`;
 
   const response = await getClient().chat.completions.create({
-    model: resolveModel(process.env.DEEPSEEK_MODEL),
+    model: resolveModel(getCurrentModel()),
     messages: [{ role: "user", content: prompt }],
     temperature: 0,
     max_tokens: 600,

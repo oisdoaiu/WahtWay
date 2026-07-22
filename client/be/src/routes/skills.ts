@@ -7,21 +7,13 @@ import { Router, Request, Response } from "express";
 import OpenAI from "openai";
 import { registeredSkills, saveSkill, deleteSkill } from "../skills/loader";
 import { Skill } from "../types";
+import { createAiClient, getCurrentModel } from "../ai-settings";
 
 const router = Router();
 
-// DeepSeek 客户端（延迟初始化）
-let _client: OpenAI | null = null;
 function getClient(): OpenAI {
-  if (!_client) {
-    _client = new OpenAI({
-      apiKey: process.env.DEEPSEEK_API_KEY,
-      baseURL: process.env.DEEPSEEK_BASE_URL || "https://api.deepseek.com",
-    });
-  }
-  return _client;
+  return createAiClient();
 }
-const MODEL = process.env.DEEPSEEK_MODEL || "deepseek-chat";
 
 // GET /api/skills — 已注册 Skill 列表（脱敏）
 router.get("/", (_req: Request, res: Response) => {
@@ -94,7 +86,7 @@ router.post("/generate", async (req: Request, res: Response) => {
 
   try {
     const response = await getClient().chat.completions.create({
-      model: MODEL,
+      model: getCurrentModel(),
       messages: [
         { role: "system", content: "你只输出纯 JSON，不输出任何其他内容。" },
         { role: "user", content: META_PROMPT },

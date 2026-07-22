@@ -2,6 +2,7 @@ import { randomUUID } from "crypto";
 import OpenAI from "openai";
 import { logger } from "../logger";
 import { resolveModel } from "../models";
+import { createAiClient, getCurrentModel } from "../ai-settings";
 import {
   AgentStatsSnapshot,
   ConversationTurn,
@@ -55,26 +56,19 @@ const GAP_CATEGORIES = new Set<GapCategory>([
   "other",
 ]);
 
-let client: OpenAI | null = null;
 let taskQueue: Promise<void> = Promise.resolve();
 const optimizingSkills = new Set<string>();
 
 function getClient(): OpenAI {
-  if (!client) {
-    client = new OpenAI({
-      apiKey: process.env.DEEPSEEK_API_KEY,
-      baseURL: process.env.DEEPSEEK_BASE_URL || "https://api.deepseek.com",
-    });
-  }
-  return client;
+  return createAiClient();
 }
 
 function observerModel(): string {
-  return resolveModel(process.env.SKILL_OBSERVER_MODEL || "deepseek-v4-flash");
+  return resolveModel(process.env.SKILL_OBSERVER_MODEL || getCurrentModel());
 }
 
 function optimizerModel(): string {
-  return resolveModel(process.env.SKILL_OPTIMIZER_MODEL || "deepseek-v4-pro");
+  return resolveModel(process.env.SKILL_OPTIMIZER_MODEL || getCurrentModel());
 }
 
 function enqueue(task: () => Promise<void>): void {
