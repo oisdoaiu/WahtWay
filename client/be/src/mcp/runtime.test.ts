@@ -5,6 +5,7 @@ import { fileURLToPath } from "url";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const fixturePath = fileURLToPath(new URL("./fixtures/echo-server.cjs", import.meta.url));
+const crashFixturePath = fileURLToPath(new URL("./fixtures/crash-server.cjs", import.meta.url));
 let dataDir = "";
 
 beforeEach(() => {
@@ -114,6 +115,50 @@ describe("MCP stdio runtime", () => {
     const pending = await registry.getTool("mcp-echo-fixture-echo")!.execute({ text: "override" });
     expect(pending).toMatch(/^MCP_PERMISSION_REQUIRED::echo-fixture::echo::/);
   });
+
+  it("updates health metrics after a successful ping", async () => {
+    const repository = await import("./repository");
+    const runtime = await import("./runtime");
+    const server = await saveFixtureServer("auto");
+    repository.setMcpSecret(server.id, "FIXTURE_TOKEN", "hidden-value");
+    await runtime.startMcpServer(server.id);
+
+    const status = await runtime.checkMcpHealth(server.id);
+    expect(status.state).toBe("running");
+    expect(status.lastHealthCheckAt).not.toBeNull();
+    expect(status.consecutiveFailures).toBe(0);
+  });
+
+  it("reconnects an auto-start server after its process exits", async () => {
+    const repository = await import("./repository");
+    const runtime = await import("./runtime");
+    const registry = await import("../tools/registry");
+    const server = repository.saveMcpServer({
+      id: "crash-fixture",
+      name: "Crash Fixture",
+      description: "Reconnect fixture",
+      command: process.execPath,
+      args: [crashFixturePath],
+      cwd: path.dirname(crashFixturePath),
+      env: {}, enabled: true, autoStart: true,
+      defaultToolPermission: "auto", toolPermissions: {}, toolCallTimeoutMs: 5000,
+    });
+    await runtime.startMcpServer(server.id);
+    await registry.getTool("mcp-crash-fixture-crash")!.execute({});
+
+    const deadline = Date.now() + 6000;
+    let observedReconnect = false;
+    while (Date.now() < deadline) {
+      const status = runtime.getMcpStatus(server.id);
+      if (status.state === "reconnecting") observedReconnect = true;
+      if (observedReconnect && status.state === "running") break;
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+
+    expect(observedReconnect).toBe(true);
+    expect(runtime.getMcpStatus(server.id).state).toBe("running");
+    expect(registry.getTool("mcp-crash-fixture-crash")).not.toBeNull();
+  }, 10000);
 });
 
 describe("MCP permission config migration", () => {
