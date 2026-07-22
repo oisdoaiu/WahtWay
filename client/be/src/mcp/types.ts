@@ -49,6 +49,9 @@ export interface McpServerStatus {
   consecutiveFailures: number;
   reconnectAttempt: number;
   nextReconnectAt: string | null;
+  toolListRevision: number;
+  lastToolListChangedAt: string | null;
+  lastToolListError: string | null;
 }
 
 export interface PublicMcpServer extends McpServerConfig {
