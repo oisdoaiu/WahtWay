@@ -1293,6 +1293,7 @@ body {
 .mcp-state-dot { width: 9px; height: 9px; margin-top: 6px; border-radius: 50%; background: #aaa; }
 .mcp-server-row.state-running .mcp-state-dot { background: #2e7d32; }
 .mcp-server-row.state-starting .mcp-state-dot { background: #f9ab00; }
+.mcp-server-row.state-reconnecting .mcp-state-dot { background: #1a73e8; animation: pulse 1.2s ease-in-out infinite; }
 .mcp-server-row.state-error .mcp-state-dot { background: #c62828; }
 .mcp-server-info { min-width: 0; }
 .mcp-server-title { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; }
@@ -1304,6 +1305,8 @@ body {
 .mcp-command code { max-width: 100%; overflow: hidden; text-overflow: ellipsis; padding: 2px 5px; border-radius: 4px; background: #f5f5f5; color: #555; font-size: 11px; }
 .mcp-default-permission { display: inline-flex; align-items: center; gap: 7px; margin-top: 8px; color: #777; font-size: 11px; }
 .mcp-default-permission select { border: 1px solid #ddd; border-radius: 5px; padding: 3px 6px; background: #fff; color: #555; font-size: 11px; }
+.mcp-runtime-meta { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 7px; color: #777; font-size: 11px; }
+.mcp-runtime-meta .failure { color: #c62828; }
 .mcp-error { margin-top: 8px; color: #c62828; font-size: 11px; white-space: pre-wrap; overflow-wrap: anywhere; }
 .mcp-tool-list { display: flex; gap: 5px; flex-wrap: wrap; margin-top: 9px; }
 .mcp-tool-permission { display: inline-flex; align-items: center; gap: 5px; padding: 3px 5px 3px 7px; border: 1px solid #d7e4f5; border-radius: 5px; color: #1a73e8; font-size: 10px; }
