@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 type RuntimeState = "stopped" | "starting" | "running" | "reconnecting" | "error";
 type ToolPermission = "auto" | "confirm" | "disabled";
@@ -35,6 +35,9 @@ interface McpServer {
     consecutiveFailures: number;
     reconnectAttempt: number;
     nextReconnectAt: string | null;
+    toolListRevision: number;
+    lastToolListChangedAt: string | null;
+    lastToolListError: string | null;
   };
 }
 
@@ -81,12 +84,21 @@ export function McpPanel({ onNotify }: { onNotify: (message: string, type?: "inf
   const [busyId, setBusyId] = useState("");
   const [secretName, setSecretName] = useState("");
   const [secretValue, setSecretValue] = useState("");
+  const toolRevisions = useRef(new Map<string, number>());
 
   const load = async () => {
     const response = await fetch("/api/mcp/servers");
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || "MCP Server 加载失败");
-    setServers(data.servers || []);
+    const nextServers: McpServer[] = data.servers || [];
+    for (const server of nextServers) {
+      const previous = toolRevisions.current.get(server.id);
+      if (previous !== undefined && server.status.toolListRevision > previous) {
+        onNotify(`${server.name} 工具列表已更新，共 ${server.status.tools.length} 个工具`);
+      }
+      toolRevisions.current.set(server.id, server.status.toolListRevision);
+    }
+    setServers(nextServers);
   };
 
   useEffect(() => {
@@ -250,8 +262,10 @@ export function McpPanel({ onNotify }: { onNotify: (message: string, type?: "inf
                 {server.status.reconnectAttempt > 0 && <span>重连尝试：{server.status.reconnectAttempt}/6</span>}
                 {server.status.nextReconnectAt && <span>下次重连：{new Date(server.status.nextReconnectAt).toLocaleTimeString()}</span>}
                 {server.status.consecutiveFailures > 0 && <span className="failure">连续失败：{server.status.consecutiveFailures}</span>}
+                {server.status.lastToolListChangedAt && <span>工具更新：{new Date(server.status.lastToolListChangedAt).toLocaleTimeString()}</span>}
               </div>
               {server.status.lastError && <div className="mcp-error">{server.status.lastError}</div>}
+              {server.status.lastToolListError && <div className="mcp-error">工具列表刷新失败：{server.status.lastToolListError}</div>}
               {server.status.tools.length > 0 && (
                 <div className="mcp-tool-list">
                   {server.status.tools.map((tool) => <div key={tool.registeredName} className={`mcp-tool-permission permission-${tool.permission}`} title={tool.description}>
