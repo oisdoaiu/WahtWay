@@ -12,6 +12,8 @@ interface ActiveMcpServer {
   transport: StdioClientTransport;
   registeredNames: string[];
   closing: boolean;
+  healthTimer?: NodeJS.Timeout;
+  healthFailures: number;
 }
 
 const activeServers = new Map<string, ActiveMcpServer>();
@@ -19,9 +21,20 @@ const statuses = new Map<string, McpServerStatus>();
 const operations = new Map<string, Promise<unknown>>();
 const pendingApprovals = new Map<string, PendingMcpApproval>();
 const RESULT_LIMIT = 64 * 1024;
+const HEALTH_INTERVAL_MS = 30_000;
+const HEALTH_TIMEOUT_MS = 5_000;
+const MAX_HEALTH_FAILURES = 2;
+const MAX_RECONNECT_ATTEMPTS = 6;
+const reconnectTimers = new Map<string, NodeJS.Timeout>();
+const reconnectAttempts = new Map<string, number>();
+let shuttingDown = false;
 
 function defaultStatus(): McpServerStatus {
-  return { state: "stopped", tools: [], startedAt: null, lastError: null };
+  return {
+    state: "stopped", tools: [], startedAt: null, lastError: null,
+    lastHealthCheckAt: null, lastDisconnectedAt: null,
+    consecutiveFailures: 0, reconnectAttempt: 0, nextReconnectAt: null,
+  };
 }
 
 function statusFor(id: string): McpServerStatus {
@@ -42,6 +55,50 @@ function serialize<T>(id: string, task: () => Promise<T>): Promise<T> {
     if (operations.get(id) === next) operations.delete(id);
   }).catch(() => undefined);
   return next;
+}
+
+function clearReconnectTimer(id: string): void {
+  const timer = reconnectTimers.get(id);
+  if (timer) clearTimeout(timer);
+  reconnectTimers.delete(id);
+  updateStatus(id, { nextReconnectAt: null });
+}
+
+function clearHealthTimer(active: ActiveMcpServer): void {
+  if (active.healthTimer) clearInterval(active.healthTimer);
+  active.healthTimer = undefined;
+}
+
+function reconnectDelay(attempt: number): number {
+  const base = Math.min(30_000, 1000 * 2 ** Math.max(0, attempt - 1));
+  return base + Math.floor(Math.random() * Math.min(500, Math.floor(base / 4)));
+}
+
+function scheduleReconnect(id: string, message: string): void {
+  clearReconnectTimer(id);
+  const config = getMcpServer(id);
+  if (shuttingDown || !config?.enabled || !config.autoStart) {
+    updateStatus(id, { state: "error", lastError: message, nextReconnectAt: null });
+    return;
+  }
+  const attempt = (reconnectAttempts.get(id) || 0) + 1;
+  reconnectAttempts.set(id, attempt);
+  if (attempt > MAX_RECONNECT_ATTEMPTS) {
+    updateStatus(id, { state: "error", lastError: message, reconnectAttempt: attempt - 1, nextReconnectAt: null });
+    return;
+  }
+  const delay = reconnectDelay(attempt);
+  const nextReconnectAt = new Date(Date.now() + delay).toISOString();
+  updateStatus(id, {
+    state: "reconnecting", lastError: message, reconnectAttempt: attempt,
+    consecutiveFailures: statusFor(id).consecutiveFailures + 1, nextReconnectAt,
+  });
+  reconnectTimers.set(id, setTimeout(() => {
+    reconnectTimers.delete(id);
+    serialize(id, () => startInternal(id, true)).catch((error) => {
+      scheduleReconnect(id, error instanceof Error ? error.message : String(error));
+    });
+  }, delay));
 }
 
 function interpolate(value: string, secrets: Record<string, string>): string {
@@ -122,6 +179,46 @@ function unregisterServerTools(serverId: string): void {
   for (const name of active?.registeredNames || []) unregisterTool(name);
 }
 
+async function pingActiveServer(id: string, active: ActiveMcpServer): Promise<McpServerStatus> {
+  if (activeServers.get(id) !== active || statusFor(id).state !== "running") {
+    throw new Error("MCP Server is not running");
+  }
+  try {
+    await active.client.ping({ timeout: HEALTH_TIMEOUT_MS });
+    active.healthFailures = 0;
+    return updateStatus(id, { lastHealthCheckAt: new Date().toISOString(), consecutiveFailures: 0, lastError: null });
+  } catch (error) {
+    active.healthFailures += 1;
+    const message = error instanceof Error ? error.message : String(error);
+    updateStatus(id, { lastError: message, consecutiveFailures: active.healthFailures });
+    if (active.healthFailures >= MAX_HEALTH_FAILURES && activeServers.get(id) === active) {
+      active.closing = true;
+      clearHealthTimer(active);
+      unregisterServerTools(id);
+      activeServers.delete(id);
+      await active.client.close().catch(() => undefined);
+      scheduleReconnect(id, `MCP health check failed: ${message}`);
+    }
+    throw error;
+  }
+}
+
+function startHealthChecks(id: string, active: ActiveMcpServer): void {
+  clearHealthTimer(active);
+  active.healthTimer = setInterval(() => {
+    serialize(id, () => pingActiveServer(id, active)).catch(() => undefined);
+  }, HEALTH_INTERVAL_MS);
+  active.healthTimer.unref?.();
+}
+
+export function checkMcpHealth(id: string): Promise<McpServerStatus> {
+  return serialize(id, async () => {
+    const active = activeServers.get(id);
+    if (!active) throw new Error("MCP Server is not running");
+    return pingActiveServer(id, active);
+  });
+}
+
 async function discoverAndRegister(
   config: McpServerConfig,
   client: Client,
@@ -177,7 +274,7 @@ async function discoverAndRegister(
   return summaries;
 }
 
-async function startInternal(id: string): Promise<McpServerStatus> {
+async function startInternal(id: string, reconnecting = false): Promise<McpServerStatus> {
   const config = getMcpServer(id);
   if (!config) throw new Error("MCP Server 不存在");
   if (!config.enabled) throw new Error("MCP Server 已禁用");
@@ -186,7 +283,7 @@ async function startInternal(id: string): Promise<McpServerStatus> {
     throw new Error("MCP Server 工作目录不存在");
   }
 
-  updateStatus(id, { state: "starting", tools: [], startedAt: null, lastError: null });
+  updateStatus(id, { state: reconnecting ? "reconnecting" : "starting", tools: [], startedAt: null, lastError: null });
   const transport = new StdioClientTransport({
     command: config.command,
     args: config.args,
@@ -195,26 +292,38 @@ async function startInternal(id: string): Promise<McpServerStatus> {
     stderr: "pipe",
   });
   const client = new Client({ name: "wahtway", version: "0.1.0" });
-  const active: ActiveMcpServer = { client, transport, registeredNames: [], closing: false };
+  const active: ActiveMcpServer = { client, transport, registeredNames: [], closing: false, healthFailures: 0 };
   activeServers.set(id, active);
 
   let stderr = "";
   transport.stderr?.on("data", (chunk) => { stderr = (stderr + String(chunk)).slice(-4000); });
   client.onerror = (error) => updateStatus(id, { lastError: error.message });
   client.onclose = () => {
+    if (activeServers.get(id) !== active) return;
+    clearHealthTimer(active);
     unregisterServerTools(id);
     activeServers.delete(id);
     if (!active.closing) {
-      updateStatus(id, { state: "error", tools: [], lastError: stderr.trim() || "MCP Server 连接已关闭" });
+      const message = stderr.trim() || "MCP Server connection closed";
+      updateStatus(id, { tools: [], lastDisconnectedAt: new Date().toISOString(), lastError: message });
+      scheduleReconnect(id, message);
     }
   };
 
   try {
     await client.connect(transport, { timeout: 15000 });
     const tools = await discoverAndRegister(config, client, active);
-    return updateStatus(id, { state: "running", tools, startedAt: new Date().toISOString(), lastError: null });
+    clearReconnectTimer(id);
+    reconnectAttempts.delete(id);
+    startHealthChecks(id, active);
+    return updateStatus(id, {
+      state: "running", tools, startedAt: new Date().toISOString(), lastError: null,
+      lastHealthCheckAt: new Date().toISOString(), consecutiveFailures: 0,
+      reconnectAttempt: 0, nextReconnectAt: null,
+    });
   } catch (error) {
     active.closing = true;
+    clearHealthTimer(active);
     unregisterServerTools(id);
     activeServers.delete(id);
     await client.close().catch(() => undefined);
@@ -225,9 +334,12 @@ async function startInternal(id: string): Promise<McpServerStatus> {
 }
 
 async function stopInternal(id: string): Promise<McpServerStatus> {
+  clearReconnectTimer(id);
+  reconnectAttempts.delete(id);
   const active = activeServers.get(id);
   if (active) {
     active.closing = true;
+    clearHealthTimer(active);
     unregisterServerTools(id);
     activeServers.delete(id);
     await active.client.close().catch(() => undefined);
@@ -235,10 +347,15 @@ async function stopInternal(id: string): Promise<McpServerStatus> {
   for (const [token, approval] of pendingApprovals) {
     if (approval.serverId === id) pendingApprovals.delete(token);
   }
-  return updateStatus(id, { state: "stopped", tools: [], startedAt: null, lastError: null });
+  return updateStatus(id, {
+    state: "stopped", tools: [], startedAt: null, lastError: null,
+    consecutiveFailures: 0, reconnectAttempt: 0, nextReconnectAt: null,
+  });
 }
 
 export function startMcpServer(id: string): Promise<McpServerStatus> {
+  clearReconnectTimer(id);
+  reconnectAttempts.delete(id);
   return serialize(id, () => startInternal(id));
 }
 
@@ -277,6 +394,7 @@ export function listPublicMcpServers(): PublicMcpServer[] {
 }
 
 export async function autoStartMcpServers(): Promise<void> {
+  shuttingDown = false;
   for (const server of listMcpServers().filter((item) => item.enabled && item.autoStart)) {
     startMcpServer(server.id).catch((error) => {
       console.warn(`MCP Server ${server.id} auto-start failed:`, error instanceof Error ? error.message : error);
@@ -285,5 +403,7 @@ export async function autoStartMcpServers(): Promise<void> {
 }
 
 export async function stopAllMcpServers(): Promise<void> {
+  shuttingDown = true;
+  for (const id of reconnectTimers.keys()) clearReconnectTimer(id);
   await Promise.all(Array.from(activeServers.keys()).map((id) => stopMcpServer(id)));
 }

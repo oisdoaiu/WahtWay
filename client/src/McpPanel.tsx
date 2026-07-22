@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 
-type RuntimeState = "stopped" | "starting" | "running" | "error";
+type RuntimeState = "stopped" | "starting" | "running" | "reconnecting" | "error";
 type ToolPermission = "auto" | "confirm" | "disabled";
 
 interface McpToolSummary {
@@ -30,6 +30,11 @@ interface McpServer {
     tools: McpToolSummary[];
     startedAt: string | null;
     lastError: string | null;
+    lastHealthCheckAt: string | null;
+    lastDisconnectedAt: string | null;
+    consecutiveFailures: number;
+    reconnectAttempt: number;
+    nextReconnectAt: string | null;
   };
 }
 
@@ -65,6 +70,7 @@ const STATE_LABELS: Record<RuntimeState, string> = {
   stopped: "已停止",
   starting: "启动中",
   running: "运行中",
+  reconnecting: "重连中",
   error: "异常",
 };
 
@@ -147,12 +153,12 @@ export function McpPanel({ onNotify }: { onNotify: (message: string, type?: "inf
     }
   };
 
-  const lifecycle = async (id: string, action: "start" | "stop" | "restart" | "test") => {
+  const lifecycle = async (id: string, action: "start" | "stop" | "restart" | "test" | "health") => {
     setBusyId(id);
     try {
       const data = await request(`/api/mcp/servers/${id}/${action}`, { method: "POST" });
       await load();
-      onNotify(action === "test" ? `连接成功，发现 ${data.tools?.length || 0} 个工具` : "MCP 状态已更新");
+      onNotify(action === "test" ? `连接成功，发现 ${data.tools?.length || 0} 个工具` : action === "health" ? "MCP 健康检查通过" : "MCP 状态已更新");
     } catch (error: any) {
       await load().catch(() => undefined);
       onNotify(error.message || "MCP 操作失败", "error");
@@ -239,6 +245,12 @@ export function McpPanel({ onNotify }: { onNotify: (message: string, type?: "inf
                   <option value="confirm">每次确认</option><option value="auto">自动调用</option><option value="disabled">全部禁用</option>
                 </select>
               </label>
+              <div className="mcp-runtime-meta">
+                {server.status.lastHealthCheckAt && <span>最近健康检查：{new Date(server.status.lastHealthCheckAt).toLocaleTimeString()}</span>}
+                {server.status.reconnectAttempt > 0 && <span>重连尝试：{server.status.reconnectAttempt}/6</span>}
+                {server.status.nextReconnectAt && <span>下次重连：{new Date(server.status.nextReconnectAt).toLocaleTimeString()}</span>}
+                {server.status.consecutiveFailures > 0 && <span className="failure">连续失败：{server.status.consecutiveFailures}</span>}
+              </div>
               {server.status.lastError && <div className="mcp-error">{server.status.lastError}</div>}
               {server.status.tools.length > 0 && (
                 <div className="mcp-tool-list">
@@ -256,6 +268,7 @@ export function McpPanel({ onNotify }: { onNotify: (message: string, type?: "inf
               {server.status.state === "running"
                 ? <button disabled={busyId === server.id} onClick={() => lifecycle(server.id, "stop")}>停止</button>
                 : <button disabled={busyId === server.id || !server.enabled} onClick={() => lifecycle(server.id, "start")}>启动</button>}
+              {server.status.state === "running" && <button disabled={busyId === server.id} onClick={() => lifecycle(server.id, "health")}>健康检查</button>}
               <button disabled={busyId === server.id || !server.enabled} onClick={() => lifecycle(server.id, "test")}>测试</button>
               <button disabled={busyId === server.id} onClick={() => openEditor(server)}>编辑</button>
               <button className="danger" disabled={busyId === server.id} onClick={async () => {

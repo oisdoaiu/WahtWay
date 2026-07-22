@@ -7,6 +7,7 @@ import {
   setMcpSecret,
 } from "../mcp/repository";
 import {
+  checkMcpHealth,
   executeApprovedMcpTool,
   getMcpStatus,
   listPublicMcpServers,
@@ -178,6 +179,15 @@ router.post("/servers/:id/stop", async (req: Request, res: Response) => {
 router.post("/servers/:id/restart", async (req: Request, res: Response) => {
   try {
     const status = await restartMcpServer(req.params.id);
+    res.json({ success: true, status });
+  } catch (error) {
+    res.status(400).json({ error: errorMessage(error), status: getMcpStatus(req.params.id) });
+  }
+});
+
+router.post("/servers/:id/health", async (req: Request, res: Response) => {
+  try {
+    const status = await checkMcpHealth(req.params.id);
     res.json({ success: true, status });
   } catch (error) {
     res.status(400).json({ error: errorMessage(error), status: getMcpStatus(req.params.id) });
