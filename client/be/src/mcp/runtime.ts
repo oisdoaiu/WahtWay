@@ -6,7 +6,7 @@ import { ToolDef } from "../types";
 import { getTool, registerTool, unregisterTool } from "../tools/registry";
 import { getMcpSecrets, getMcpServer, listMcpServers, listMcpSecretNames } from "./repository";
 import { McpServerConfig, McpServerStatus, McpToolPermission, McpToolSummary, PendingMcpApproval, PublicMcpServer } from "./types";
-import { appendToolChangeAuditEvent, buildToolChangeAuditEvent } from "./tool-change-audit";
+import { appendToolChangeAuditEvent, buildToolChangeAuditEvent, nextToolChangeAuditRevision } from "./tool-change-audit";
 
 interface ActiveMcpServer {
   client: Client;
@@ -335,7 +335,7 @@ async function replaceToolsFromNotification(
   }
 
   const nextRevision = statusFor(id).toolListRevision + 1;
-  const auditEvent = buildToolChangeAuditEvent(id, nextRevision, statusFor(id).tools, summaries);
+  const auditEvent = buildToolChangeAuditEvent(id, nextToolChangeAuditRevision(id), statusFor(id).tools, summaries);
   if (!auditEvent) {
     updateStatus(id, { lastToolListError: null });
     return;

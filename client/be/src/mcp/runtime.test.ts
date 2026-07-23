@@ -197,8 +197,8 @@ describe("MCP stdio runtime", () => {
     const audit = await import("./tool-change-audit");
     const events = audit.listToolChangeAuditEvents(server.id);
     expect(events).toHaveLength(2);
-    expect(events[0]).toMatchObject({ revision: 3, removed: [{ name: "dynamic-echo" }] });
-    expect(events[1]).toMatchObject({ revision: 2, added: [{ name: "dynamic-echo" }] });
+    expect(events[0]).toMatchObject({ revision: 2, removed: [{ name: "dynamic-echo" }] });
+    expect(events[1]).toMatchObject({ revision: 1, added: [{ name: "dynamic-echo" }] });
   }, 10000);
 });
 

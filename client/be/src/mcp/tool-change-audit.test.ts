@@ -73,5 +73,7 @@ describe("MCP tool change audit", () => {
 
     expect(audit.listToolChangeAuditEvents("first")).toEqual([first]);
     expect(audit.listToolChangeAuditEvents("second")).toEqual([second]);
+    expect(audit.nextToolChangeAuditRevision("first")).toBe(3);
+    expect(audit.nextToolChangeAuditRevision("new-server")).toBe(1);
   });
 });

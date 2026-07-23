@@ -1358,6 +1358,7 @@ body {
 .mcp-audit-row { padding: 14px 0; border-bottom: 1px solid #eee; }
 .mcp-audit-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .mcp-audit-heading time { color: #888; font-size: 11px; }
+.mcp-audit-source { margin-left: auto; padding: 2px 5px; border-radius: 4px; background: #f0f0f0; color: #666; font-size: 10px; }
 .mcp-audit-counts { display: flex; gap: 10px; margin: 8px 0; font-size: 11px; }
 .mcp-audit-counts .added { color: #2e7d32; }
 .mcp-audit-counts .removed { color: #c62828; }
@@ -1383,6 +1384,7 @@ body {
 .app.dark .mcp-server-row, .app.dark .mcp-secret-box { border-color: #313244; }
 .app.dark .mcp-audit-row { border-color: #313244; }
 .app.dark .mcp-audit-detail code { background: #313244; color: #cdd6f4; }
+.app.dark .mcp-audit-source { background: #313244; color: #bac2de; }
 .app.dark .mcp-server-title > span, .app.dark .mcp-command code { background: #313244; color: #a6adc8; }
 .app.dark .mcp-server-info > p { color: #bac2de; }
 .app.dark .mcp-server-actions button, .app.dark .mcp-form input, .app.dark .mcp-form textarea, .app.dark .mcp-form select, .app.dark .mcp-default-permission select { background: #313244; color: #cdd6f4; border-color: #45475a; }

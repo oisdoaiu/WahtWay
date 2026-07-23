@@ -21,6 +21,7 @@ interface ToolAuditEvent {
   id: string;
   revision: number;
   createdAt: string;
+  source: "list_changed" | "permission_change";
   added: AuditedTool[];
   removed: AuditedTool[];
   modified: Array<{
@@ -341,6 +342,7 @@ export function McpPanel({ onNotify }: { onNotify: (message: string, type?: "inf
                 <div className="mcp-audit-row" key={event.id}>
                   <div className="mcp-audit-heading">
                     <strong>Revision {event.revision}</strong>
+                    <span className="mcp-audit-source">{event.source === "permission_change" ? "权限配置" : "Server 通知"}</span>
                     <time>{new Date(event.createdAt).toLocaleString()}</time>
                   </div>
                   <div className="mcp-audit-counts">

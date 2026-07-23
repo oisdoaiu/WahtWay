@@ -11,7 +11,7 @@ interface McpToolChangeAuditEvent {
   id: string;
   serverId: string;
   revision: number;
-  source: "list_changed";
+  source: "list_changed" | "permission_change";
   createdAt: string;
   added: McpAuditedTool[];
   removed: McpAuditedTool[];
@@ -39,7 +39,7 @@ interface McpToolChangeAuditEvent {
 
 ## 一致性
 
-通知刷新按 Server ID 串行执行：
+通知刷新按 Server ID 串行执行。管理 API 修改默认权限或单项覆盖时，也会比较修改前后的有效权限并写入 `permission_change` 事件：
 
 ```text
 获取完整新列表

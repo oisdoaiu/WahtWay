@@ -29,7 +29,7 @@ export interface McpToolChangeAuditEvent {
   id: string;
   serverId: string;
   revision: number;
-  source: "list_changed";
+  source: "list_changed" | "permission_change";
   createdAt: string;
   added: McpAuditedTool[];
   removed: McpAuditedTool[];
@@ -96,7 +96,8 @@ export function buildToolChangeAuditEvent(
   serverId: string,
   revision: number,
   before: McpToolSummary[],
-  after: McpToolSummary[]
+  after: McpToolSummary[],
+  source: McpToolChangeAuditEvent["source"] = "list_changed"
 ): McpToolChangeAuditEvent | null {
   const previous = new Map(before.map((tool) => [tool.name, auditedTool(tool)]));
   const next = new Map(after.map((tool) => [tool.name, auditedTool(tool)]));
@@ -126,7 +127,7 @@ export function buildToolChangeAuditEvent(
   removed.sort(byName);
   modified.sort((left, right) => left.name.localeCompare(right.name));
   return {
-    id: randomUUID(), serverId, revision, source: "list_changed",
+    id: randomUUID(), serverId, revision, source,
     createdAt: new Date().toISOString(), added, removed, modified,
   };
 }
@@ -145,4 +146,11 @@ export function listToolChangeAuditEvents(serverId: string, limit = 50): McpTool
     .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
     .slice(0, normalizedLimit)
     .map((event) => structuredClone(event));
+}
+
+export function nextToolChangeAuditRevision(serverId: string): number {
+  const revisions = readFile().events
+    .filter((event) => event.serverId === serverId)
+    .map((event) => event.revision);
+  return (revisions.length > 0 ? Math.max(...revisions) : 0) + 1;
 }
