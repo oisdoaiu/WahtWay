@@ -55,13 +55,17 @@ export interface AgentRunMetadata {
   needSnapshot?: NeedSnapshot;
 }
 
-function toolPolicy(): string {
+function toolPolicy(workspace?: string): string {
+  const workspaceInfo = workspace
+    ? `- 当前工作区: ${workspace}\n- 用户说“这里”“当前目录”或使用相对路径时，都以当前工作区为基准。命令未指定 cwd 时也在工作区执行。`
+    : "- 当前未设置工作区。文件操作需要使用明确的完整路径，命令默认在用户主目录执行。";
   return `
 ## 系统信息
 - 用户主目录: ${require("os").homedir()}
 - 桌面路径: ${require("os").homedir() + "\\Desktop"}
 - 文档路径: ${require("os").homedir() + "\\Documents"}
 - WahtWay 回收站: ${require("os").homedir() + "\\.wahtway-trash"}（被删除的文件移到这里，不是 Windows 系统回收站）
+${workspaceInfo}
 
 ## 你的基本能力（和说话一样自然，想到就用）
 - 你能看到用户电脑上的文件：list-files / read-file / search-files / file-info
@@ -97,7 +101,7 @@ async function* agenticLoopStream(
   const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = checkpoint
     ? checkpoint.messages as OpenAI.Chat.Completions.ChatCompletionMessageParam[]
     : [
-    { role: "system", content: systemPrompt + "\n\n" + toolPolicy() },
+    { role: "system", content: systemPrompt + "\n\n" + toolPolicy(workspace) },
   ];
 
   if (!checkpoint && history) {
@@ -179,9 +183,9 @@ async function* agenticLoopStream(
       yield { type: "tool_call", data: { toolName: tc.name, args } };
       const result = index === checkpoint.currentBatch.nextIndex
         ? approved
-          ? await executeApprovedTool(checkpoint.pendingApproval)
+          ? await executeApprovedTool(checkpoint.pendingApproval, { workspace })
           : "The user rejected this tool call. Do not retry the same operation; explain the impact and offer a safe alternative."
-        : await (getTool(tc.name)?.execute(args) ?? Promise.resolve(`Error: unknown Tool "${tc.name}"`));
+        : await (getTool(tc.name)?.execute(args, { workspace }) ?? Promise.resolve(`Error: unknown Tool "${tc.name}"`));
       const pending = parsePendingApproval(result, tc.id, tc.name, args);
       if (pending) {
         yield approvalEvent(await persistApproval(pending, calls, index, initialRound));
@@ -280,7 +284,7 @@ async function* agenticLoopStream(
 
         const tool = getTool(tc.name);
         const result = tool
-          ? await tool.execute(args)
+          ? await tool.execute(args, { workspace })
           : `错误: 未知 Tool "${tc.name}"`;
 
         const pending = parsePendingApproval(result, tc.id, tc.name, args);

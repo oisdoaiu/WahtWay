@@ -300,7 +300,12 @@ function ChatPanel({ conversationId, onTitleChange, onCreateSkill, aiSettings, o
       });
 
       if (!response.ok) {
-        const msg = response.status === 504 ? "请求超时，请重试" : response.status >= 500 ? "服务器异常，稍后重试" : `请求失败 (${response.status})`;
+        let detail = "";
+        try {
+          const body = await response.json();
+          detail = typeof body?.error === "string" ? body.error : "";
+        } catch {}
+        const msg = detail || (response.status === 504 ? "请求超时，请重试" : response.status >= 500 ? "服务器异常，稍后重试" : `请求失败 (${response.status})`);
         throw new Error(msg);
       }
 
@@ -518,6 +523,13 @@ function ChatPanel({ conversationId, onTitleChange, onCreateSkill, aiSettings, o
     if (api?.openFolderDialog) {
       const dir = await api.openFolderDialog();
       if (dir) { setWorkspace(dir); localStorage.setItem("wahtway-workspace", dir); }
+      return;
+    }
+    const dir = window.prompt("请输入工作区的完整路径", workspace);
+    if (dir?.trim()) {
+      const normalized = dir.trim();
+      setWorkspace(normalized);
+      localStorage.setItem("wahtway-workspace", normalized);
     }
   };
 

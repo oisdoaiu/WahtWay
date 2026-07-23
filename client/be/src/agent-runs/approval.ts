@@ -6,6 +6,8 @@ import { approveAndExecute } from "../tools/command-tool";
 import { approvePath } from "../tools/file-tools";
 import { getTool } from "../tools/registry";
 import { PendingApproval } from "./types";
+import { ToolExecutionContext } from "../types";
+import { resolveToolPath } from "../tools/workspace";
 
 function inferredTarget(args: Record<string, unknown>): string | undefined {
   for (const key of ["path", "directory", "source", "destination", "cwd"]) {
@@ -37,9 +39,15 @@ export function parsePendingApproval(
   };
 }
 
-export async function executeApprovedTool(approval: PendingApproval): Promise<string> {
+export async function executeApprovedTool(approval: PendingApproval, context?: ToolExecutionContext): Promise<string> {
   if (approval.kind === "command") {
-    return approveAndExecute(String(approval.arguments.command || ""), String(approval.arguments.cwd || os.homedir()));
+    const cwd = approval.arguments.cwd
+      ? resolveToolPath(approval.arguments.cwd, context)
+      : context?.workspace || os.homedir();
+    return approveAndExecute(
+      String(approval.arguments.command || ""),
+      cwd
+    );
   }
   if (approval.kind === "external") {
     const tool = getExternalTool(String(approval.target || ""));
@@ -59,7 +67,7 @@ export async function executeApprovedTool(approval: PendingApproval): Promise<st
   for (const target of targets) approvePath(target);
   const tool = getTool(approval.toolName);
   if (!tool) throw new Error(`Unknown tool: ${approval.toolName}`);
-  const result = await tool.execute(approval.arguments);
+  const result = await tool.execute(approval.arguments, context);
   if (parsePendingApproval(result, approval.toolCallId, approval.toolName, approval.arguments)) {
     throw new Error("The approved file operation still requires permission");
   }
