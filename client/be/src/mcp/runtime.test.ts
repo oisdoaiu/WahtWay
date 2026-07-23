@@ -194,6 +194,11 @@ describe("MCP stdio runtime", () => {
     }
     expect(runtime.getMcpStatus(server.id).toolListRevision).toBe(3);
     expect(registry.getTool(dynamicName)).toBeNull();
+    const audit = await import("./tool-change-audit");
+    const events = audit.listToolChangeAuditEvents(server.id);
+    expect(events).toHaveLength(2);
+    expect(events[0]).toMatchObject({ revision: 2, removed: [{ name: "dynamic-echo" }] });
+    expect(events[1]).toMatchObject({ revision: 1, added: [{ name: "dynamic-echo" }] });
   }, 10000);
 });
 

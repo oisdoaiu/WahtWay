@@ -6,6 +6,7 @@ import { ToolDef } from "../types";
 import { getTool, registerTool, unregisterTool } from "../tools/registry";
 import { getMcpSecrets, getMcpServer, listMcpServers, listMcpSecretNames } from "./repository";
 import { McpServerConfig, McpServerStatus, McpToolPermission, McpToolSummary, PendingMcpApproval, PublicMcpServer } from "./types";
+import { appendToolChangeAuditEvent, buildToolChangeAuditEvent, nextToolChangeAuditRevision } from "./tool-change-audit";
 
 interface ActiveMcpServer {
   client: Client;
@@ -333,6 +334,14 @@ async function replaceToolsFromNotification(
     });
   }
 
+  const nextRevision = statusFor(id).toolListRevision + 1;
+  const auditEvent = buildToolChangeAuditEvent(id, nextToolChangeAuditRevision(id), statusFor(id).tools, summaries);
+  if (!auditEvent) {
+    updateStatus(id, { lastToolListError: null });
+    return;
+  }
+  appendToolChangeAuditEvent(auditEvent);
+
   for (const name of active.registeredNames) unregisterTool(name);
   active.registeredNames = [];
   for (const definition of definitions) {
@@ -341,7 +350,7 @@ async function replaceToolsFromNotification(
   }
   updateStatus(id, {
     tools: summaries,
-    toolListRevision: statusFor(id).toolListRevision + 1,
+    toolListRevision: nextRevision,
     lastToolListChangedAt: new Date().toISOString(),
     lastToolListError: null,
   });

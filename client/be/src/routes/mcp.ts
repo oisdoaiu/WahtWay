@@ -11,11 +11,18 @@ import {
   executeApprovedMcpTool,
   getMcpStatus,
   listPublicMcpServers,
+  resolveMcpToolPermission,
   restartMcpServer,
   startMcpServer,
   stopMcpServer,
 } from "../mcp/runtime";
 import { McpServerConfig, McpToolPermission } from "../mcp/types";
+import {
+  appendToolChangeAuditEvent,
+  buildToolChangeAuditEvent,
+  listToolChangeAuditEvents,
+  nextToolChangeAuditRevision,
+} from "../mcp/tool-change-audit";
 
 const router = Router();
 
@@ -61,9 +68,25 @@ async function updatePermissions(
 ) {
   const current = getMcpServer(id);
   if (!current) throw new Error("SERVER_NOT_FOUND");
+  const changes = update(current);
+  const nextConfig = { ...current, ...changes };
+  const beforeTools = getMcpStatus(id).tools;
+  const afterTools = beforeTools.map((tool) => ({
+    ...tool,
+    permission: resolveMcpToolPermission(nextConfig, tool.name),
+    overridden: Object.prototype.hasOwnProperty.call(nextConfig.toolPermissions, tool.name),
+  }));
+  const auditEvent = buildToolChangeAuditEvent(
+    id,
+    nextToolChangeAuditRevision(id),
+    beforeTools,
+    afterTools,
+    "permission_change"
+  );
+  if (auditEvent) appendToolChangeAuditEvent(auditEvent);
   const wasRunning = getMcpStatus(id).state === "running";
   if (getMcpStatus(id).state !== "stopped") await stopMcpServer(id);
-  saveMcpServer({ ...current, ...update(current), id });
+  saveMcpServer({ ...current, ...changes, id });
   if (wasRunning) await startMcpServer(id);
   return publicServer(id);
 }
@@ -95,6 +118,12 @@ router.get("/servers/:id", (req: Request, res: Response) => {
   const server = publicServer(req.params.id);
   if (!server) return res.status(404).json({ error: "MCP Server 不存在" });
   res.json(server);
+});
+
+router.get("/servers/:id/tool-audit", (req: Request, res: Response) => {
+  if (!getMcpServer(req.params.id)) return res.status(404).json({ error: "MCP Server does not exist" });
+  const limit = Number(req.query.limit || 50);
+  res.json({ events: listToolChangeAuditEvents(req.params.id, limit) });
 });
 
 router.patch("/servers/:id", async (req: Request, res: Response) => {
