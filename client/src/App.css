@@ -1098,6 +1098,11 @@ body {
 .ai-settings-form .setup-textarea {
   margin-bottom: 0;
 }
+.ai-settings-form select.setup-input {
+  appearance: auto;
+  background: #fff;
+  color: #333;
+}
 .setup-textarea {
   width: 100%;
   padding: 12px 16px;
@@ -1147,6 +1152,11 @@ body {
   background: #313244;
   border-color: #45475a;
   color: #cdd6f4;
+}
+.app.dark .ai-settings-form select.setup-input {
+  background: #313244;
+  color: #cdd6f4;
+  border-color: #45475a;
 }
 
 /* === Todo 可视化面板 === */

@@ -49,32 +49,32 @@ const DEFAULT_SETTINGS: Record<AiProviderKind, AiSettings> = {
     provider: "qwen",
     apiKey: "",
     baseURL: "https://dashscope.aliyuncs.com/compatible-mode/v1",
-    model: "qwen-plus",
-    modelOptions: ["qwen-plus", "qwen-max", "qwen-turbo", "qwen-long"],
+    model: "qwen3.7-max",
+    modelOptions: ["qwen3.7-max", "qwen3.7-plus", "qwen3.6-flash", "qwen3.5-omni-plus"],
     balancePath: "",
   },
   zhipu: {
     provider: "zhipu",
     apiKey: "",
     baseURL: "https://open.bigmodel.cn/api/paas/v4",
-    model: "glm-4-flash",
-    modelOptions: ["glm-4-flash", "glm-4-plus", "glm-4-air", "glm-4-long"],
+    model: "glm-5.2",
+    modelOptions: ["glm-5.2", "glm-5-turbo", "glm-4.7", "glm-4.6"],
     balancePath: "",
   },
   moonshot: {
     provider: "moonshot",
     apiKey: "",
     baseURL: "https://api.moonshot.cn/v1",
-    model: "moonshot-v1-8k",
-    modelOptions: ["moonshot-v1-8k", "moonshot-v1-32k", "moonshot-v1-128k"],
+    model: "kimi-k3",
+    modelOptions: ["kimi-k3", "kimi-k2.7-code", "kimi-k2.6", "kimi-k2.5"],
     balancePath: "",
   },
   siliconflow: {
     provider: "siliconflow",
     apiKey: "",
     baseURL: "https://api.siliconflow.cn/v1",
-    model: "Qwen/Qwen2.5-7B-Instruct",
-    modelOptions: ["Qwen/Qwen2.5-7B-Instruct", "deepseek-ai/DeepSeek-V3", "deepseek-ai/DeepSeek-R1"],
+    model: "Qwen/Qwen3.5-397B-A17B",
+    modelOptions: ["Qwen/Qwen3.5-397B-A17B", "deepseek-ai/DeepSeek-V3.2", "deepseek-ai/DeepSeek-R1-0528", "zai-org/GLM-5"],
     balancePath: "",
   },
   "openai-compatible": {
@@ -116,7 +116,15 @@ function normalizeModelOptions(value: unknown, provider: AiProviderKind): string
     .filter((item): item is string => typeof item === "string")
     .map((item) => item.trim())
     .filter(Boolean);
-  return options.length > 0 ? Array.from(new Set(options)).slice(0, 20) : cloneDefault(provider).modelOptions;
+  if (options.length === 0) return cloneDefault(provider).modelOptions;
+  const legacyOptions = {
+    qwen: ["qwen-plus", "qwen-max", "qwen-turbo", "qwen-long"],
+    zhipu: ["glm-4-flash", "glm-4-plus", "glm-4-air", "glm-4-long"],
+    moonshot: ["moonshot-v1-8k", "moonshot-v1-32k", "moonshot-v1-128k"],
+    siliconflow: ["Qwen/Qwen2.5-7B-Instruct", "deepseek-ai/DeepSeek-V3", "deepseek-ai/DeepSeek-R1"],
+  } as Partial<Record<AiProviderKind, string[]>>;
+  if (JSON.stringify(options) === JSON.stringify(legacyOptions[provider])) return cloneDefault(provider).modelOptions;
+  return Array.from(new Set(options)).slice(0, 20);
 }
 
 function inferProvider(baseURL: string): AiProviderKind {
@@ -136,9 +144,14 @@ function normalizeSettings(input: Partial<AiSettings> & { provider?: AiProviderK
   const baseURL = typeof input.baseURL === "string" && input.baseURL.trim()
     ? input.baseURL.trim().replace(/\/+$/, "")
     : defaults.baseURL;
-  const model = typeof input.model === "string" && input.model.trim()
-    ? input.model.trim()
-    : defaults.model;
+  const legacyDefaults: Partial<Record<AiProviderKind, string>> = {
+    qwen: "qwen-plus",
+    zhipu: "glm-4-flash",
+    moonshot: "moonshot-v1-8k",
+    siliconflow: "Qwen/Qwen2.5-7B-Instruct",
+  };
+  const inputModel = typeof input.model === "string" ? input.model.trim() : "";
+  const model = inputModel && inputModel !== legacyDefaults[provider] ? inputModel : defaults.model;
   const balancePath = typeof input.balancePath === "string"
     ? input.balancePath.trim()
     : defaults.balancePath;

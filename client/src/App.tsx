@@ -46,29 +46,29 @@ const AI_PROVIDER_PRESETS: Record<AiProviderKind, { label: string; defaultBaseUR
   qwen: {
     label: "通义千问",
     defaultBaseURL: "https://dashscope.aliyuncs.com/compatible-mode/v1",
-    defaultModel: "qwen-plus",
-    modelOptions: ["qwen-plus", "qwen-max", "qwen-turbo", "qwen-long"],
+    defaultModel: "qwen3.7-max",
+    modelOptions: ["qwen3.7-max", "qwen3.7-plus", "qwen3.6-flash", "qwen3.5-omni-plus"],
     balancePath: "",
   },
   zhipu: {
     label: "智谱 GLM",
     defaultBaseURL: "https://open.bigmodel.cn/api/paas/v4",
-    defaultModel: "glm-4-flash",
-    modelOptions: ["glm-4-flash", "glm-4-plus", "glm-4-air", "glm-4-long"],
+    defaultModel: "glm-5.2",
+    modelOptions: ["glm-5.2", "glm-5-turbo", "glm-4.7", "glm-4.6"],
     balancePath: "",
   },
   moonshot: {
     label: "Moonshot",
     defaultBaseURL: "https://api.moonshot.cn/v1",
-    defaultModel: "moonshot-v1-8k",
-    modelOptions: ["moonshot-v1-8k", "moonshot-v1-32k", "moonshot-v1-128k"],
+    defaultModel: "kimi-k3",
+    modelOptions: ["kimi-k3", "kimi-k2.7-code", "kimi-k2.6", "kimi-k2.5"],
     balancePath: "",
   },
   siliconflow: {
     label: "SiliconFlow",
     defaultBaseURL: "https://api.siliconflow.cn/v1",
-    defaultModel: "Qwen/Qwen2.5-7B-Instruct",
-    modelOptions: ["Qwen/Qwen2.5-7B-Instruct", "deepseek-ai/DeepSeek-V3", "deepseek-ai/DeepSeek-R1"],
+    defaultModel: "Qwen/Qwen3.5-397B-A17B",
+    modelOptions: ["Qwen/Qwen3.5-397B-A17B", "deepseek-ai/DeepSeek-V3.2", "deepseek-ai/DeepSeek-R1-0528", "zai-org/GLM-5"],
     balancePath: "",
   },
   "openai-compatible": {
@@ -1706,7 +1706,7 @@ function AiSettingsModal({
         <div className="ai-settings-form">
           <label>
             <span>API 类型</span>
-            <select value={provider} onChange={(e) => {
+            <select className="setup-input" value={provider} onChange={(e) => {
               const next = e.target.value as AiProviderKind;
               const preset = AI_PROVIDER_PRESETS[next];
               setProvider(next);
