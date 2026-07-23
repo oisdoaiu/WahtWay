@@ -287,6 +287,8 @@ MCP MVP 当前只支持本地 stdio transport；Streamable HTTP、OAuth、resour
 
 > 在线 Skill Hub: [wahtway-production.up.railway.app](https://wahtway-production.up.railway.app)
 
+客户端默认通过上述地址加载和下载 Skill；本地联调其他 Hub 时，可以在启动客户端后端前设置 `SKILL_HUB_URL`。
+
 ---
 
 ## Commit 规范

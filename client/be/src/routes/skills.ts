@@ -10,6 +10,37 @@ import { Skill } from "../types";
 import { createAiClient, getCurrentModel } from "../ai-settings";
 
 const router = Router();
+const DEFAULT_SKILL_HUB_URL = "https://wahtway-production.up.railway.app";
+
+function getSkillHubUrl(): string {
+  return (process.env.SKILL_HUB_URL || DEFAULT_SKILL_HUB_URL).trim().replace(/\/+$/, "");
+}
+
+export function buildHubListUrl(query: Request["query"]): string {
+  const url = new URL("/api/skills", getSkillHubUrl());
+  for (const key of ["q", "sort", "category", "tag"] as const) {
+    const value = query[key];
+    if (typeof value === "string" && value.trim()) url.searchParams.set(key, value.trim());
+  }
+  return url.toString();
+}
+
+export function buildHubDownloadUrl(skillId: string): string {
+  return `${getSkillHubUrl()}/api/skills/${encodeURIComponent(skillId)}/download`;
+}
+
+async function fetchHubJson(url: string): Promise<any> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 15000);
+  try {
+    const response = await fetch(url, { signal: controller.signal });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.error || `Hub 返回 HTTP ${response.status}`);
+    return payload;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
 
 function getClient(): OpenAI {
   return createAiClient();
@@ -27,6 +58,15 @@ router.get("/", (_req: Request, res: Response) => {
     keywords: s.keywords,
   }));
   res.json({ skills });
+});
+
+router.get("/hub/list", async (req: Request, res: Response) => {
+  try {
+    const payload = await fetchHubJson(buildHubListUrl(req.query));
+    res.json({ skills: Array.isArray(payload.skills) ? payload.skills : [] });
+  } catch (error: any) {
+    res.status(502).json({ error: `Skill Hub 加载失败: ${error.message}` });
+  }
 });
 
 // GET /api/skills/:id — 单个 Skill 完整定义（编辑用）
@@ -128,17 +168,14 @@ router.post("/save", (req: Request, res: Response) => {
 
 // POST /api/skills/download — 从服务端下载 Skill
 router.post("/download", async (req: Request, res: Response) => {
-  const { serverUrl, skillId } = req.body;
-  if (!serverUrl || !skillId) {
-    res.status(400).json({ error: "请提供 serverUrl 和 skillId" });
+  const { skillId } = req.body;
+  if (!skillId || typeof skillId !== "string") {
+    res.status(400).json({ error: "请提供 skillId" });
     return;
   }
 
   try {
-    const url = `${serverUrl.replace(/\/$/, "")}/api/skills/${encodeURIComponent(skillId)}/download`;
-    const response = await fetch(url);
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    const payload = await response.json();
+    const payload = await fetchHubJson(buildHubDownloadUrl(skillId));
     const skill = payload.skill || payload;
     if (payload.skill) {
       skill.hub = {

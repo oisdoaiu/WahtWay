@@ -1094,6 +1094,22 @@ body {
 .ai-settings-form label.wide {
   grid-column: 1 / -1;
 }
+.model-options-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.model-refresh-btn {
+  border: 1px solid #d8d8e5;
+  border-radius: 6px;
+  padding: 4px 9px;
+  background: #fff;
+  color: #555;
+  font-size: 12px;
+  cursor: pointer;
+}
+.model-refresh-btn:disabled { opacity: 0.55; cursor: not-allowed; }
 .ai-settings-form .setup-input,
 .ai-settings-form .setup-textarea {
   margin-bottom: 0;
@@ -1154,6 +1170,11 @@ body {
   color: #cdd6f4;
 }
 .app.dark .ai-settings-form select.setup-input {
+  background: #313244;
+  color: #cdd6f4;
+  border-color: #45475a;
+}
+.app.dark .model-refresh-btn {
   background: #313244;
   color: #cdd6f4;
   border-color: #45475a;

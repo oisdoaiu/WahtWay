@@ -6,6 +6,7 @@ import {
   isAiConfigured,
   saveAiSettings,
 } from "../ai-settings";
+import { fetchAvailableModels } from "../ai-models";
 
 const router = Router();
 
@@ -18,6 +19,31 @@ router.get("/", (_req: Request, res: Response) => {
       "openai-compatible": getDefaultAiSettings("openai-compatible"),
     },
   });
+});
+
+router.post("/models", async (req: Request, res: Response) => {
+  const current = getAiSettings();
+  const baseURL = typeof req.body?.baseURL === "string" && req.body.baseURL.trim()
+    ? req.body.baseURL.trim()
+    : current.baseURL;
+  const apiKey = typeof req.body?.apiKey === "string" && req.body.apiKey.trim()
+    ? req.body.apiKey.trim()
+    : current.apiKey;
+  if (!apiKey) {
+    res.status(400).json({ error: "请先输入 API Key" });
+    return;
+  }
+
+  try {
+    const models = await fetchAvailableModels(baseURL, apiKey);
+    if (models.length === 0) {
+      res.status(502).json({ error: "服务商没有返回可用模型" });
+      return;
+    }
+    res.json({ models });
+  } catch (error: any) {
+    res.status(502).json({ error: `获取模型失败: ${error.message}` });
+  }
 });
 
 router.post("/", (req: Request, res: Response) => {

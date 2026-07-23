@@ -866,16 +866,22 @@ function SkillsPanel({ onCreateSkill, onEditSkill, skillsVersion }: { onCreateSk
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
   const [downloading, setDownloading] = useState<Set<string>>(new Set());
 
-  const fetchHub = (q?: string, sort?: string) => {
+  const fetchHub = async (q?: string, sort?: string) => {
     setHubLoading(true);
     setHubError("");
     const params = new URLSearchParams();
     if (q) params.set("q", q);
     params.set("sort", sort || hubSort);
-    fetch(`/api/skills/hub/list?${params.toString()}`)
-      .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
-      .then(d => { setHubSkills(d.skills || []); setHubLoading(false); })
-      .catch(err => { setHubError(err.message); setHubLoading(false); });
+    try {
+      const response = await fetch(`/api/skills/hub/list?${params.toString()}`);
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
+      setHubSkills(data.skills || []);
+    } catch (error: any) {
+      setHubError(error.message || "Skill Hub 加载失败");
+    } finally {
+      setHubLoading(false);
+    }
   };
   useEffect(() => { if (tab === "hub") fetchHub(); }, [tab, hubSort]);
 
@@ -1660,6 +1666,7 @@ function AiSettingsModal({
   const [modelOptionsText, setModelOptionsText] = useState(AI_PROVIDER_PRESETS.deepseek.modelOptions.join("\n"));
   const [balancePath, setBalancePath] = useState(AI_PROVIDER_PRESETS.deepseek.balancePath);
   const [busy, setBusy] = useState(false);
+  const [modelsBusy, setModelsBusy] = useState(false);
   const [err, setErr] = useState("");
 
   useEffect(() => {
@@ -1699,6 +1706,31 @@ function AiSettingsModal({
       setErr(error.message || "保存失败");
     }
     finally { setBusy(false); }
+  };
+
+  const refreshModels = async () => {
+    if (!key.trim() && !config?.apiKeyConfigured) {
+      setErr("请先输入 API Key");
+      return;
+    }
+    setModelsBusy(true);
+    setErr("");
+    try {
+      const response = await fetch("/api/ai-config/models", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ baseURL, apiKey: key.trim() || undefined }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || "获取模型失败");
+      const models = Array.isArray(data.models) ? data.models : [];
+      setModelOptionsText(models.join("\n"));
+      if (models.length > 0 && !models.includes(model)) setModel(models[0]);
+    } catch (error: any) {
+      setErr(error.message || "获取模型失败");
+    } finally {
+      setModelsBusy(false);
+    }
   };
 
   if (!show) return null;
@@ -1759,7 +1791,12 @@ function AiSettingsModal({
             </datalist>
           </label>
           <label className="wide">
-            <span>可选模型列表（每行一个）</span>
+            <span className="model-options-header">
+              <span>可选模型列表（每行一个）</span>
+              <button type="button" className="model-refresh-btn" onClick={refreshModels} disabled={modelsBusy || busy}>
+                {modelsBusy ? "获取中…" : "获取模型列表"}
+              </button>
+            </span>
             <textarea className="setup-textarea" rows={4} value={modelOptionsText} onChange={e => setModelOptionsText(e.target.value)} />
           </label>
           <label className="wide">
