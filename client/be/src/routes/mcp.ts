@@ -16,6 +16,7 @@ import {
   stopMcpServer,
 } from "../mcp/runtime";
 import { McpServerConfig, McpToolPermission } from "../mcp/types";
+import { listToolChangeAuditEvents } from "../mcp/tool-change-audit";
 
 const router = Router();
 
@@ -95,6 +96,12 @@ router.get("/servers/:id", (req: Request, res: Response) => {
   const server = publicServer(req.params.id);
   if (!server) return res.status(404).json({ error: "MCP Server 不存在" });
   res.json(server);
+});
+
+router.get("/servers/:id/tool-audit", (req: Request, res: Response) => {
+  if (!getMcpServer(req.params.id)) return res.status(404).json({ error: "MCP Server does not exist" });
+  const limit = Number(req.query.limit || 50);
+  res.json({ events: listToolChangeAuditEvents(req.params.id, limit) });
 });
 
 router.patch("/servers/:id", async (req: Request, res: Response) => {

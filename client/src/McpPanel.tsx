@@ -11,6 +11,26 @@ interface McpToolSummary {
   overridden: boolean;
 }
 
+interface AuditedTool {
+  name: string;
+  registeredName: string;
+  permission: ToolPermission;
+}
+
+interface ToolAuditEvent {
+  id: string;
+  revision: number;
+  createdAt: string;
+  added: AuditedTool[];
+  removed: AuditedTool[];
+  modified: Array<{
+    name: string;
+    changedFields: string[];
+    before: AuditedTool;
+    after: AuditedTool;
+  }>;
+}
+
 interface McpServer {
   id: string;
   name: string;
@@ -84,6 +104,7 @@ export function McpPanel({ onNotify }: { onNotify: (message: string, type?: "inf
   const [busyId, setBusyId] = useState("");
   const [secretName, setSecretName] = useState("");
   const [secretValue, setSecretValue] = useState("");
+  const [auditView, setAuditView] = useState<{ server: McpServer; events: ToolAuditEvent[]; loading: boolean } | null>(null);
   const toolRevisions = useRef(new Map<string, number>());
 
   const load = async () => {
@@ -233,6 +254,17 @@ export function McpPanel({ onNotify }: { onNotify: (message: string, type?: "inf
     }
   };
 
+  const openAudit = async (server: McpServer) => {
+    setAuditView({ server, events: [], loading: true });
+    try {
+      const data = await request(`/api/mcp/servers/${server.id}/tool-audit?limit=100`);
+      setAuditView({ server, events: data.events || [], loading: false });
+    } catch (error: any) {
+      setAuditView(null);
+      onNotify(error.message || "工具变更记录加载失败", "error");
+    }
+  };
+
   const editingServer = originalId ? servers.find((server) => server.id === originalId) : undefined;
 
   return (
@@ -284,6 +316,7 @@ export function McpPanel({ onNotify }: { onNotify: (message: string, type?: "inf
                 : <button disabled={busyId === server.id || !server.enabled} onClick={() => lifecycle(server.id, "start")}>启动</button>}
               {server.status.state === "running" && <button disabled={busyId === server.id} onClick={() => lifecycle(server.id, "health")}>健康检查</button>}
               <button disabled={busyId === server.id || !server.enabled} onClick={() => lifecycle(server.id, "test")}>测试</button>
+              <button disabled={busyId === server.id} onClick={() => openAudit(server)}>变更记录</button>
               <button disabled={busyId === server.id} onClick={() => openEditor(server)}>编辑</button>
               <button className="danger" disabled={busyId === server.id} onClick={async () => {
                 try { await request(`/api/mcp/servers/${server.id}`, { method: "DELETE" }); await load(); }
@@ -293,6 +326,42 @@ export function McpPanel({ onNotify }: { onNotify: (message: string, type?: "inf
           </div>
         ))}
       </div>
+
+      {auditView && (
+        <div className="modal-overlay" onClick={() => setAuditView(null)}>
+          <div className="modal mcp-audit-modal" onClick={(event) => event.stopPropagation()}>
+            <div className="modal-header">
+              <h2>{auditView.server.name} 工具变更记录</h2>
+              <button className="modal-close" onClick={() => setAuditView(null)}>×</button>
+            </div>
+            <div className="mcp-audit-list">
+              {auditView.loading && <div className="mcp-audit-empty">正在加载…</div>}
+              {!auditView.loading && auditView.events.length === 0 && <div className="mcp-audit-empty">暂无工具列表变化</div>}
+              {auditView.events.map((event) => (
+                <div className="mcp-audit-row" key={event.id}>
+                  <div className="mcp-audit-heading">
+                    <strong>Revision {event.revision}</strong>
+                    <time>{new Date(event.createdAt).toLocaleString()}</time>
+                  </div>
+                  <div className="mcp-audit-counts">
+                    <span className="added">新增 {event.added.length}</span>
+                    <span className="removed">删除 {event.removed.length}</span>
+                    <span className="modified">修改 {event.modified.length}</span>
+                  </div>
+                  {event.added.length > 0 && <div className="mcp-audit-detail"><b>新增</b>{event.added.map((tool) => <code key={tool.name}>{tool.name}</code>)}</div>}
+                  {event.removed.length > 0 && <div className="mcp-audit-detail"><b>删除</b>{event.removed.map((tool) => <code key={tool.name}>{tool.name}</code>)}</div>}
+                  {event.modified.map((tool) => (
+                    <div className="mcp-audit-detail" key={tool.name}>
+                      <b>修改</b><code>{tool.name}</code><span>{tool.changedFields.join("、")}</span>
+                      {tool.changedFields.includes("permission") && <span>{tool.before.permission} → {tool.after.permission}</span>}
+                    </div>
+                  ))}
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
 
       {editing && (
         <div className="modal-overlay" onClick={() => setEditing(null)}>
