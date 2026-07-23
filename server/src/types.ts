@@ -54,6 +54,7 @@ export interface SkillVersion {
 
 export interface SkillReview {
   rating: number;
+  reviewerId?: string;
   comment?: string;
   createdAt: string;
 }

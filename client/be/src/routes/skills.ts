@@ -29,6 +29,10 @@ export function buildHubDownloadUrl(skillId: string): string {
   return `${getSkillHubUrl()}/api/skills/${encodeURIComponent(skillId)}/download`;
 }
 
+export function buildHubReviewUrl(skillId: string): string {
+  return `${getSkillHubUrl()}/api/skills/${encodeURIComponent(skillId)}/review`;
+}
+
 async function fetchHubJson(url: string): Promise<any> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 15000);
@@ -40,6 +44,17 @@ async function fetchHubJson(url: string): Promise<any> {
   } finally {
     clearTimeout(timeout);
   }
+}
+
+async function postHubJson(url: string, body: unknown): Promise<any> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 15000);
+  try {
+    const response = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), signal: controller.signal });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.error || `Hub 返回 HTTP ${response.status}`);
+    return payload;
+  } finally { clearTimeout(timeout); }
 }
 
 function getClient(): OpenAI {
@@ -67,6 +82,18 @@ router.get("/hub/list", async (req: Request, res: Response) => {
   } catch (error: any) {
     res.status(502).json({ error: `Skill Hub 加载失败: ${error.message}` });
   }
+});
+
+router.post("/hub/:skillId/review", async (req: Request, res: Response) => {
+  const rating = Number(req.body?.rating);
+  if (!Number.isInteger(rating) || rating < 1 || rating > 5) {
+    res.status(400).json({ error: "评分必须是 1 到 5 的整数" });
+    return;
+  }
+  try {
+    const reviewerId = typeof req.body?.reviewerId === "string" ? req.body.reviewerId : undefined;
+    res.status(201).json(await postHubJson(buildHubReviewUrl(req.params.skillId), { rating, reviewerId }));
+  } catch (error: any) { res.status(502).json({ error: `提交评分失败: ${error.message}` }); }
 });
 
 // GET /api/skills/:id — 单个 Skill 完整定义（编辑用）

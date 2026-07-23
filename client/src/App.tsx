@@ -865,6 +865,18 @@ function SkillsPanel({ onCreateSkill, onEditSkill, skillsVersion }: { onCreateSk
   const [hubSort, setHubSort] = useState("latest");
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
   const [downloading, setDownloading] = useState<Set<string>>(new Set());
+  const [reviewerId] = useState(() => {
+    const key = "wahtway-reviewer-id";
+    let value = localStorage.getItem(key);
+    if (!value) { value = crypto.randomUUID(); localStorage.setItem(key, value); }
+    return value;
+  });
+  const [ratedSkills, setRatedSkills] = useState<Record<string, number>>(() => {
+    try {
+      const stored = JSON.parse(localStorage.getItem("wahtway-rated-skills") || "{}");
+      return Array.isArray(stored) ? Object.fromEntries(stored.map((id: string) => [id, 0])) : stored;
+    } catch { return {}; }
+  });
 
   const fetchHub = async (q?: string, sort?: string) => {
     setHubLoading(true);
@@ -906,6 +918,22 @@ function SkillsPanel({ onCreateSkill, onEditSkill, skillsVersion }: { onCreateSk
 
   const localIds = new Set(skills.map(s => s.id));
 
+  const rateSkill = async (skillId: string, rating: number) => {
+    try {
+      const response = await fetch(`/api/skills/hub/${encodeURIComponent(skillId)}/review`, {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ rating, reviewerId }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || "评分失败");
+      const next = { ...ratedSkills, [skillId]: rating };
+      setRatedSkills(next);
+      localStorage.setItem("wahtway-rated-skills", JSON.stringify(next));
+      setHubSkills(current => current.map(skill => skill.skillId === skillId
+        ? { ...skill, ratingAverage: data.skill?.ratingAverage, ratingCount: data.skill?.ratingCount } : skill));
+      toast("评分已提交");
+    } catch (error: any) { toast(error.message || "评分失败", "error"); }
+  };
+
   return (
     <div className="skills-panel">
       <header className="header">
@@ -916,7 +944,7 @@ function SkillsPanel({ onCreateSkill, onEditSkill, skillsVersion }: { onCreateSk
 
       <div className="skills-tabs">
         <button className={`skills-tab ${tab === "local" ? "active" : ""}`} onClick={() => setTab("local")}>📁 本地</button>
-        <button className={`skills-tab ${tab === "hub" ? "active" : ""}`} onClick={() => setTab("hub")}>🌐 在线 Hub</button>
+        <button className={`skills-tab ${tab === "hub" ? "active" : ""}`} onClick={() => setTab("hub")}>☁️ 在线 Hub</button>
       </div>
 
       {tab === "local" && (
@@ -998,11 +1026,17 @@ function SkillsPanel({ onCreateSkill, onEditSkill, skillsVersion }: { onCreateSk
                 <span className="hub-meta">
                   {skill.authorName && <span className="hub-author">by {skill.authorName}</span>}
                   <span className="hub-downloads">⬇ {skill.downloadCount || 0}</span>
-                  <span className="hub-rating">{skill.ratingCount ? `⭐ ${skill.ratingAverage}` : ""}</span>
+                  <span className="hub-rating">{skill.ratingCount ? `⭐ ${skill.ratingAverage} (${skill.ratingCount})` : "暂无评分"}</span>
                   <span className="hub-version">v{skill.version}</span>
                 </span>
               </div>
               <p className="skill-card-desc">{skill.description}</p>
+              <div className="hub-review">
+                <span>{ratedSkills[skill.skillId] ? `已评分 ${ratedSkills[skill.skillId]} 星` : "匿名评分"}</span>
+                {[1, 2, 3, 4, 5].map(rating => (
+                  <button key={rating} className={`hub-star-btn ${ratedSkills[skill.skillId] >= rating ? "selected" : ""}`} title={`评分 ${rating} 星`} onClick={() => rateSkill(skill.skillId, rating)}>★</button>
+                ))}
+              </div>
               <div className="hub-card-actions">
                 {localIds.has(skill.skillId) ? (
                   <span className="hub-installed-badge">✅ 已安装</span>

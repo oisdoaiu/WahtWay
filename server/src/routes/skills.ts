@@ -219,7 +219,10 @@ router.post("/:skillId/review", (req: Request, res: Response) => {
   try {
     const body = req.body || {};
     const comment = sanitizeOptionalText(body.comment, "comment", 500);
-    const record = addReview(req.params.skillId, Number(body.rating), comment);
+    const reviewerId = typeof body.reviewerId === "string" && body.reviewerId.trim()
+      ? body.reviewerId.trim().slice(0, 100)
+      : undefined;
+    const record = addReview(req.params.skillId, Number(body.rating), comment, reviewerId);
     res.status(201).json({ success: true, skill: summarizeSkill(record) });
   } catch (err) {
     respondError(res, err);

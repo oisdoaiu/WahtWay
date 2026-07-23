@@ -965,16 +965,19 @@ body {
 .skills-tab:hover { color: #1a73e8; }
 .skills-tab.active { color: #1a73e8; border-bottom-color: #1a73e8; font-weight: 600; }
 
-.hub-toolbar { display: flex; gap: 12px; padding: 16px 24px; background: #fafafa; border-bottom: 1px solid #eee; }
-.hub-search { flex: 1; padding: 8px 14px; border: 1px solid #ddd; border-radius: 8px; font-size: 13px; outline: none; }
+.hub-toolbar { flex: 0 0 100%; width: 100%; box-sizing: border-box; display: flex; align-self: flex-start; align-items: center; gap: 12px; padding: 10px 16px; background: #fafafa; border-bottom: 1px solid #eee; }
+.hub-search { flex: 1; min-width: 0; height: 36px; box-sizing: border-box; padding: 8px 14px; border: 1px solid #ddd; border-radius: 8px; font-size: 13px; outline: none; }
 .hub-search:focus { border-color: #1a73e8; }
-.hub-sort { padding: 8px 12px; border: 1px solid #ddd; border-radius: 8px; font-size: 13px; background: #fff; outline: none; }
+.hub-sort { width: 120px; height: 36px; box-sizing: border-box; padding: 8px 12px; border: 1px solid #ddd; border-radius: 8px; font-size: 13px; background: #fff; outline: none; }
 
 .hub-card { border-left: 3px solid #e0e0e0; position: relative; }
 .hub-card.installed { border-left-color: #4caf50; }
 .hub-meta { display: flex; gap: 10px; font-size: 11px; color: #999; align-items: center; }
 .hub-author { color: #666; }
 .hub-downloads, .hub-rating, .hub-version { color: #999; }
+.hub-review { display: flex; align-items: center; gap: 3px; margin-top: 10px; color: #888; font-size: 12px; }
+.hub-star-btn { padding: 0 2px; border: 0; background: transparent; color: #c7cbd1; cursor: pointer; font-size: 17px; line-height: 1; }
+.hub-star-btn.selected { color: #f0b400; }
 
 .hub-card-actions { margin-top: 10px; display: flex; justify-content: flex-end; }
 .hub-download-btn { padding: 6px 16px; background: #1a73e8; color: #fff; border: none; border-radius: 6px; font-size: 13px; cursor: pointer; transition: background 0.2s; }
