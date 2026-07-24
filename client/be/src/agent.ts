@@ -13,6 +13,7 @@ import {
 import { getTool, formatToolsForLLM } from "./tools/registry";
 import { logger } from "./logger";
 import { resolveModel } from "./models";
+import { buildCompactHistory, mergeSummary, getCompactConfig } from "./context/compactor";
 import { createAiClient, getCurrentModel as getConfiguredModel } from "./ai-settings";
 import { createAgentRunCheckpoint, saveAgentRunCheckpoint } from "./agent-runs/repository";
 import { AgentRunCheckpoint, SerializedToolCall } from "./agent-runs/types";
@@ -89,6 +90,7 @@ async function* agenticLoopStream(
   allowedTools?: string[],
   workspace?: string,
   contextSections: string[] = [],
+  summary?: string,
   metadata?: AgentRunMetadata,
   checkpoint?: AgentRunCheckpoint,
   approved?: boolean
@@ -99,20 +101,41 @@ async function* agenticLoopStream(
   let totalRoundTokens = checkpoint?.totalRoundTokens || 0;
   let toolCallCount = checkpoint?.toolCallCount || 0;
 
+  // V0.21 无感压缩配置
+  const cfg = getCompactConfig();
+  let compactHistory: { role: string; content: string }[] = [];
+  let newSummary: string | undefined;
+
   const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = checkpoint
-    ? checkpoint.messages as OpenAI.Chat.Completions.ChatCompletionMessageParam[]
-    : [
-    { role: "system", content: systemPrompt + "\n\n" + toolPolicy(workspace) },
-  ];
+    ? (checkpoint.messages as OpenAI.Chat.Completions.ChatCompletionMessageParam[])
+    : [{ role: "system", content: systemPrompt + "\n\n" + toolPolicy(workspace) }];
 
   for (const section of contextSections) {
     messages.push({ role: "system", content: section });
   }
 
   if (!checkpoint && history) {
-    for (const h of history) {
-      if (h.role === "user" || h.role === "assistant") {
-        messages.push(h as any);
+    if (cfg.enabled) {
+      const comp = buildCompactHistory(history, summary || "", cfg);
+      compactHistory = comp.history;
+      // 达到增量合并条件 → 调一次 LLM 把刚移出窗口的旧消息并入 summary
+      if (comp.needsUpdate && comp.updateFrom.length > 0) {
+        newSummary = await mergeSummary(traceId || "no-trace", summary || "", comp.updateFrom);
+      }
+      for (const h of compactHistory) {
+        if (h.role === "user" || h.role === "assistant") {
+          messages.push(h as any);
+        } else if (h.role === "system") {
+          messages.push({ role: "system", content: h.content } as any);
+        }
+      }
+    } else {
+      for (const h of history) {
+        if (h.role === "user" || h.role === "assistant") {
+          messages.push(h as any);
+        } else if (h.role === "system") {
+          messages.push({ role: "system", content: h.content } as any);
+        }
       }
     }
   }
@@ -317,12 +340,12 @@ async function* agenticLoopStream(
 
     // 纯文本回复 → 结束
     yield { type: "stats", data: buildStats(round) };
-    yield { type: "done", data: { fullContent: content, stats: buildStats(round) } };
+    yield { type: "done", data: { fullContent: content, stats: buildStats(round), newSummary } };
     return;
   }
 
   const finalStats = buildStats(MAX_TOOL_ROUNDS);
-  yield { type: "done", data: { fullContent: "已达到最大工具调用轮数", stats: finalStats } };
+  yield { type: "done", data: { fullContent: "已达到最大工具调用轮数", stats: finalStats, newSummary } };
 }
 
 export function resumeAgentRun(
@@ -354,6 +377,7 @@ export async function* executeSkillStream(
   history?: { role: string; content: string }[],
   traceId?: string,
   workspace?: string,
+  summary?: string,
   metadata?: AgentRunMetadata
 ): AsyncGenerator<StreamEvent> {
   const log = logger(traceId || "no-trace", "skill");
@@ -404,6 +428,7 @@ export async function* executeSkillStream(
       skill.allowedTools,
       workspace,
       metadata?.contextSections ?? [],
+      summary,
       metadata
     )) {
       if (event.type === "delta") output += event.data as string;
@@ -454,11 +479,12 @@ export async function runAgentStream(
   model?: string,
   skillId?: string,
   workspace?: string,
+  summary?: string,
   metadata?: AgentRunMetadata
 ): Promise<AsyncGenerator<StreamEvent>> {
   if (model) setModel(model);
   const log = logger(traceId || "no-trace", "agent");
-  log.info("start", { msgLen: userMessage.length, mode: skillId || "auto" });
+  log.info("start", { msgLen: userMessage.length, mode: skillId || "auto", compact: getCompactConfig().enabled });
 
   scheduleDelayedObservation(metadata?.conversationId, userMessage);
 
@@ -486,10 +512,10 @@ export async function runAgentStream(
       output: { type: "object", properties: {} },
       requiredTools: [],
     };
-    return executeSkillStream(general, userMessage, history, traceId, workspace, runMetadata);
+    return executeSkillStream(general, userMessage, history, traceId, workspace, summary, runMetadata);
   }
 
-  return executeSkillStream(skill, userMessage, history, traceId, workspace, runMetadata);
+  return executeSkillStream(skill, userMessage, history, traceId, workspace, summary, runMetadata);
 }
 
 export { matchSkill };

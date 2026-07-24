@@ -9,9 +9,6 @@ import {
   updateConversation,
 } from "../conversations/repository";
 import { createAiClient, getCurrentModel } from "../ai-settings";
-import { getConversationsDir } from "../runtime-data";
-import * as fs from "fs";
-import * as path from "path";
 
 const router = Router();
 
@@ -42,7 +39,7 @@ router.patch("/:id", (req: Request, res: Response) => {
   res.json(conversation);
 });
 
-// Compatibility for existing clients. Messages are intentionally ignored.
+// Compatibility for existing clients. The server owns message persistence.
 router.put("/:id", (req: Request, res: Response) => {
   const conversation = updateConversation(req.params.id, { title: req.body?.title });
   if (!conversation) return res.status(404).json({ error: "对话不存在" });

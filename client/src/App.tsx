@@ -5,7 +5,7 @@ import { DEBUG, addDebugEvent, getDebugEvents, onDebugEvents, clearDebugEvents }
 import {
   getMessages, isStreaming, setMessages, appendMessage,
   appendToLast, patchMessage, setStreaming, subscribe,
-  getTodoItems, setTodoItems, updateLastMessage,
+  getTodoItems, setTodoItems, getSummary, setSummary, updateLastMessage,
 } from "./conversations";
 import { McpPanel } from "./McpPanel";
 import "./App.css";
@@ -225,7 +225,7 @@ function ChatPanel({ conversationId, memoryMode, onMemoryModeChange, onTitleChan
     if (getMessages(conversationId).length === 0 && !isStreaming(conversationId)) {
       fetch(`/api/conversations/${conversationId}`)
         .then((r) => r.json())
-        .then((d) => setMessages(conversationId, d.messages || []))
+        .then((d) => { setMessages(conversationId, d.messages || []); if (typeof d.summary === "string") setSummary(conversationId, d.summary); })
         .catch(() => setMessages(conversationId, []));
     }
     setSkillName(null);
@@ -275,6 +275,7 @@ function ChatPanel({ conversationId, memoryMode, onMemoryModeChange, onTitleChan
     appendMessage(conversationId, { id: assistantMessageId, role: "assistant", content: "" });
     setToolCalls([]);
     setTodoItems(conversationId, []);
+    const currentSummary = getSummary(conversationId); // V0.21 无感压缩：带上已有摘要
 
     try {
       const controller = new AbortController();
@@ -289,6 +290,7 @@ function ChatPanel({ conversationId, memoryMode, onMemoryModeChange, onTitleChan
           model,
           skillId: skillId || undefined,
           workspace: workspace || undefined,
+          summary: currentSummary,
           conversationId,
           userMessageId,
           assistantMessageId,
@@ -381,7 +383,22 @@ function ChatPanel({ conversationId, memoryMode, onMemoryModeChange, onTitleChan
             else if (event.type === "delta") { lastEventRef.current = Date.now(); setThinkingStatus(""); appendToLast(conversationId, event.data); }
             else if (event.type === "stats") { lastEventRef.current = Date.now(); updateLastMessage(conversationId, msg => ({ ...msg, stats: event.data as any })); }
             else if (event.type === "error") { lastEventRef.current = Date.now(); setThinkingStatus(""); toast(String(event.data), "error"); appendToLast(conversationId, `\n\n❌ ${event.data}`); addDebugEvent("error", event.data); }
-            else if (event.type === "done") { lastEventRef.current = Date.now(); setThinkingStatus(""); if ((event.data as any)?.stats) updateLastMessage(conversationId, msg => ({ ...msg, stats: (event.data as any).stats })); addDebugEvent("done", "流结束"); }
+            else if (event.type === "done") {
+              lastEventRef.current = Date.now(); setThinkingStatus("");
+              if ((event.data as any)?.stats) updateLastMessage(conversationId, msg => ({ ...msg, stats: (event.data as any).stats }));
+              // V0.21 无感压缩：后端增量更新了摘要 → 存到 store 并持久化（UI 不渲染）
+              const ns = (event.data as any)?.newSummary;
+              if (typeof ns === "string" && ns) {
+                setSummary(conversationId, ns);
+                const msgs = getMessages(conversationId);
+                fetch(`/api/conversations/${conversationId}`, {
+                  method: "PUT",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ messages: msgs, summary: ns }),
+                }).catch(() => {});
+              }
+              addDebugEvent("done", "流结束");
+            }
           } catch { /* skip */ }
         }
       }
@@ -843,7 +860,7 @@ function ChatPanel({ conversationId, memoryMode, onMemoryModeChange, onTitleChan
 
 // ---- Skill 库面板 ----
 
-function SkillsPanel({ onCreateSkill, onEditSkill, skillsVersion }: { onCreateSkill: () => void; onEditSkill: (skillId: string) => void; skillsVersion: number }) {
+function SkillsPanel({ onCreateSkill, onEditSkill, onLearnFromHistory, skillsVersion }: { onCreateSkill: () => void; onEditSkill: (skill: SkillMeta) => void; onLearnFromHistory: (skill: SkillMeta) => void; skillsVersion: number }) {
   const [skills, setSkills] = useState<SkillMeta[]>([]);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<"local" | "hub">("local");
@@ -914,6 +931,8 @@ function SkillsPanel({ onCreateSkill, onEditSkill, skillsVersion }: { onCreateSk
   const [hubSort, setHubSort] = useState("latest");
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
   const [downloading, setDownloading] = useState<Set<string>>(new Set());
+  const [learning, setLearning] = useState(false);
+  const [historyPreview, setHistoryPreview] = useState<{ token: string; operations: string[]; sampleCount: number } | null>(null);
   const [reviewerId] = useState(() => {
     const key = "wahtway-reviewer-id";
     let value = localStorage.getItem(key);
@@ -967,6 +986,36 @@ function SkillsPanel({ onCreateSkill, onEditSkill, skillsVersion }: { onCreateSk
 
   const localIds = new Set(skills.map(s => s.id));
 
+  const learnFromHistory = async () => {
+    if (learning) return;
+    setLearning(true);
+    try {
+      const res = await fetch("/api/skills/learn-from-history/preview", { method: "POST" });
+      const data = await res.json();
+      if (!res.ok || !data.token || !Array.isArray(data.operations)) throw new Error(data.error || "无法创建历史预览");
+      setHistoryPreview(data);
+    } catch (err: any) {
+      toast(err.message || "归纳失败", "error");
+    } finally {
+      setLearning(false);
+    }
+  };
+
+  const confirmLearnFromHistory = async () => {
+    if (!historyPreview || learning) return;
+    setLearning(true);
+    try {
+      const res = await fetch("/api/skills/learn-from-history", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token: historyPreview.token }) });
+      const data = await res.json();
+      if (!res.ok || !data.skill) throw new Error(data.error || "未找到可复用的常用操作");
+      toast(data.reason || `已分析 ${data.sampleCount} 条历史操作`);
+      onLearnFromHistory(data.skill);
+    } catch (err: any) {
+      toast(err.message || "归纳失败", "error");
+    } finally {
+      setLearning(false);
+    }
+  };
   const rateSkill = async (skillId: string, rating: number) => {
     try {
       const response = await fetch(`/api/skills/hub/${encodeURIComponent(skillId)}/review`, {
@@ -988,7 +1037,7 @@ function SkillsPanel({ onCreateSkill, onEditSkill, skillsVersion }: { onCreateSk
       <header className="header">
         <h1>Skill 库</h1>
         <span className="subtitle">{tab === "local" ? `${skills.length} 个本地技能` : "在线 Skill Hub"}</span>
-        {tab === "local" && <button className="create-btn" onClick={onCreateSkill}>+ 创建 Skill</button>}
+        {tab === "local" && <div className="skill-header-actions"><button className="history-skill-btn" onClick={learnFromHistory} disabled={learning}>{learning ? "归纳中..." : "从历史习惯生成"}</button><button className="create-btn" onClick={onCreateSkill}>+ 创建 Skill</button></div>}
       </header>
 
       <div className="skills-tabs">
@@ -1005,7 +1054,7 @@ function SkillsPanel({ onCreateSkill, onEditSkill, skillsVersion }: { onCreateSk
                 <h3>🧠 {skill.name}</h3>
                 <code>{skill.id}</code>
                 <span className="skill-version-badge">v{skill.learning?.activeVersion || skill.version || 1}</span>
-                <button className="skill-edit-btn" title="编辑 Skill" onClick={() => onEditSkill(skill.id)}>✏️</button>
+                <button className="skill-edit-btn" title="编辑 Skill" onClick={() => onEditSkill(skill)}>✏️</button>
                 <button className="skill-delete-btn skill-delete-text" title="删除 Skill" onClick={(e) => { e.stopPropagation(); setDeleteConfirm(skill.id); }}>×</button>
               </div>
               <p className="skill-card-desc">{skill.description}</p>
@@ -1116,6 +1165,18 @@ function SkillsPanel({ onCreateSkill, onEditSkill, skillsVersion }: { onCreateSk
           </div>
         </div>
       )}
+      {historyPreview && (
+        <div className="modal-overlay" onClick={() => setHistoryPreview(null)}>
+          <div className="modal history-preview-modal" onClick={e => e.stopPropagation()}>
+            <div className="modal-header"><h2>确认发送历史摘要</h2><button className="modal-close" onClick={() => setHistoryPreview(null)}>×</button></div>
+            <div className="modal-body">
+              <p className="modal-hint">以下 {historyPreview.sampleCount} 条已脱敏内容将发送给当前模型服务，用于生成候选 Skill。确认后才会发送。</p>
+              <ol className="history-preview-list">{historyPreview.operations.map((operation, index) => <li key={index}>{operation}</li>)}</ol>
+              <div className="modal-actions"><button onClick={() => setHistoryPreview(null)} disabled={learning}>取消</button><button className="primary" onClick={confirmLearnFromHistory} disabled={learning}>{learning ? "归纳中..." : "确认发送"}</button></div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {learningDetail && (
         <div className="modal-overlay" onClick={() => setLearningDetail(null)}>
@@ -1187,7 +1248,7 @@ function CreateSkillModal({ show, onClose, onSaved, prefill, skillToEdit }: { sh
   useEffect(() => {
     if (show && skillToEdit) {
       setStep("edit");
-      setEditSkill({...skillToEdit, whenToUse: skillToEdit.whenToUse || "", allowedTools: (skillToEdit.allowedTools || []).join(", ")});
+      setEditSkill({...skillToEdit, whenToUse: skillToEdit.whenToUse || "", allowedTools: [...(skillToEdit.allowedTools || [])]});
     }
     if (show && prefill && !skillToEdit) setSkillDesc(prefill);
     if (!show) { setSkillDesc(""); setStep(skillToEdit ? "edit" : "describe"); }
@@ -1195,6 +1256,13 @@ function CreateSkillModal({ show, onClose, onSaved, prefill, skillToEdit }: { sh
   const [generating, setGenerating] = useState(false);
   const [editSkill, setEditSkill] = useState<Record<string, any> | null>(null);
   const [msg, setMsg] = useState("");
+  const [toolCatalog, setToolCatalog] = useState<Array<{ name: string; description: string; source: "builtin" | "external" | "mcp"; risk: "read" | "write" | "destructive"; permission: "auto" | "confirm" | "disabled" }>>([]);
+  const [toolSearch, setToolSearch] = useState("");
+  useEffect(() => {
+    if (!show) return;
+    fetch("/api/skills/tools/catalog").then((response) => response.json())
+      .then((data) => setToolCatalog(data.tools || [])).catch(() => setToolCatalog([]));
+  }, [show]);
   if (!show) return null;
 
   const handleGenerate = async () => {
@@ -1203,7 +1271,7 @@ function CreateSkillModal({ show, onClose, onSaved, prefill, skillToEdit }: { sh
     try {
       const res = await fetch("/api/skills/generate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ description: skillDesc }) });
       const data = await res.json();
-      if (data.skill) { setEditSkill(data.skill); setStep("edit"); }
+      if (data.skill) { setEditSkill({ ...data.skill, allowedTools: Array.isArray(data.skill.allowedTools) ? data.skill.allowedTools : [] }); setStep("edit"); }
       else setMsg("生成失败: " + (data.error || "未知错误"));
     } catch (err: any) { setMsg("请求失败: " + err.message); }
     finally { setGenerating(false); }
@@ -1216,6 +1284,7 @@ function CreateSkillModal({ show, onClose, onSaved, prefill, skillToEdit }: { sh
       if (typeof skill.requiredTools === "string") skill.requiredTools = [];
       if (typeof skill.input === "string") skill.input = JSON.parse(skill.input);
       if (typeof skill.output === "string") skill.output = JSON.parse(skill.output);
+      skill.allowedTools = Array.isArray(skill.allowedTools) ? skill.allowedTools : [];
       const res = await fetch("/api/skills/save", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(skill) });
       const data = await res.json();
       if (data.success) { onSaved(); handleClose(); } else setMsg("保存失败: " + (data.error || "未知错误"));
@@ -1226,6 +1295,18 @@ function CreateSkillModal({ show, onClose, onSaved, prefill, skillToEdit }: { sh
   const descLength = String(editSkill?.description || "").length;
   const systemPromptLength = String(editSkill?.systemPrompt || "").length;
   const whenToUseLength = String(editSkill?.whenToUse || "").length;
+  const selectedTools: string[] = Array.isArray(editSkill?.allowedTools) ? editSkill.allowedTools : [];
+  const catalogNames = new Set(toolCatalog.map((tool) => tool.name));
+  const unavailableTools = selectedTools.filter((name) => !catalogNames.has(name));
+  const visibleTools = toolCatalog.filter((tool) => {
+    const query = toolSearch.trim().toLowerCase();
+    return !query || tool.name.toLowerCase().includes(query) || tool.description.toLowerCase().includes(query);
+  });
+  const toggleTool = (name: string) => {
+    if (!editSkill) return;
+    const next = selectedTools.includes(name) ? selectedTools.filter((item) => item !== name) : [...selectedTools, name];
+    setEditSkill({ ...editSkill, allowedTools: next });
+  };
 
   return (
     <div className="modal-overlay" onClick={handleClose}>
@@ -1263,6 +1344,22 @@ function CreateSkillModal({ show, onClose, onSaved, prefill, skillToEdit }: { sh
                 <label className="field-label"><span>触发场景 (whenToUse)</span><span className={`field-count ${whenToUseLength > 120 ? "over" : ""}`}>{whenToUseLength}/120</span></label>
                 <p className="field-hint">说明什么时候该用、什么时候不该用，可减少误触发。</p>
                 <textarea rows={2} placeholder="例如：用户想制定学习计划时触发；不要在文件操作或闲聊时触发。" value={editSkill.whenToUse || ""} onChange={e => setEditSkill({ ...editSkill, whenToUse: e.target.value })} />
+
+                <label className="field-label"><span>允许使用的工具</span><span className="field-count">已选 {selectedTools.length}</span></label>
+                <p className="field-hint">空白名单表示 Skill 可见全部工具；危险或需确认的工具仍由后端审批。</p>
+                <div className="skill-tool-selector">
+                  <input className="skill-tool-search" value={toolSearch} onChange={(event) => setToolSearch(event.target.value)} placeholder="搜索工具名称或描述" />
+                  {selectedTools.length === 0 && <div className="skill-tool-unrestricted">当前未限制工具范围</div>}
+                  {unavailableTools.map((name) => <label className="skill-tool-option unavailable" key={name}><input type="checkbox" checked onChange={() => toggleTool(name)} /><span><strong>{name}</strong><small>当前不可用，保存时仍会保留</small></span><em>失效</em></label>)}
+                  <div className="skill-tool-options">
+                    {visibleTools.map((tool) => <label className={`skill-tool-option risk-${tool.risk}`} key={tool.name}>
+                      <input type="checkbox" checked={selectedTools.includes(tool.name)} onChange={() => toggleTool(tool.name)} />
+                      <span><strong>{tool.name}</strong><small>{tool.description}</small></span>
+                      <em>{tool.source} · {tool.risk}{tool.permission === "confirm" ? " · 需确认" : ""}</em>
+                    </label>)}
+                    {visibleTools.length === 0 && <div className="skill-tool-empty">没有匹配的工具</div>}
+                  </div>
+                </div>
               </div>
             )}
             <div className="modal-actions"><button onClick={handleClose}>取消</button><button className="primary" onClick={handleSave}>保存</button></div>
@@ -1604,9 +1701,9 @@ export default function App() {
       cancelled = true;
     };
   }, []);
-  const openEditSkill = async (skillId: string) => {
+  const openEditSkill = async (skill: SkillMeta) => {
     try {
-      const response = await fetch(`/api/skills/${skillId}`);
+      const response = await fetch(`/api/skills/${skill.id}`);
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "读取 Skill 详情失败");
       setSkillToEdit(data.skill || null);
@@ -1730,7 +1827,10 @@ export default function App() {
         ) : view === "external-tools" ? (
           <ExternalToolsPanel />
         ) : (
-          <McpPanel onNotify={(message, type = "info") => toast(message, type)} />
+          <>
+            <SkillsPanel onCreateSkill={() => setShowModal(true)} onEditSkill={(s) => { setSkillToEdit(s); setShowModal(true); }} onLearnFromHistory={(s) => { setSkillToEdit(s); setShowModal(true); }} skillsVersion={skillsVersion} />
+            <McpPanel onNotify={(message, type = "info") => toast(message, type)} />
+          </>
         )}
       </div>
       <CommandPalette show={showCmdPalette} onClose={() => setShowCmdPalette(false)} skills={appSkills}
@@ -2056,4 +2156,3 @@ function DebugPanel() {
     </div>
   );
 }
-

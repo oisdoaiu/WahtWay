@@ -87,7 +87,7 @@ router.post("/", async (req: Request, res: Response) => {
   let output = "";
   let assistantPatch: Record<string, unknown> = {};
   try {
-    const stream = await runAgentStream(message, context.history, traceId, model, skillId, resolvedWorkspace, {
+    const stream = await runAgentStream(message, context.history, traceId, model, skillId, resolvedWorkspace, context.summary || undefined, {
       conversationId,
       userMessageId,
       assistantMessageId,
