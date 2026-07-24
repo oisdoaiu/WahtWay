@@ -1356,6 +1356,13 @@ body {
 .mcp-tool-permission.permission-disabled { border-color: #ddd; color: #888; background: #f5f5f5; }
 .mcp-tool-permission.permission-confirm { border-color: #ead79b; color: #856404; }
 .mcp-tool-permission select { max-width: 170px; border: 0; border-left: 1px solid currentColor; background: transparent; color: inherit; padding-left: 5px; font-size: 10px; outline: none; }
+.mcp-risk { padding: 1px 4px; border-radius: 3px; font-size: 9px; text-transform: uppercase; }
+.mcp-risk.risk-read { background: #e6f4ea; color: #137333; }
+.mcp-risk.risk-write { background: #fef7e0; color: #856404; }
+.mcp-risk.risk-destructive { background: #fce8e6; color: #c62828; }
+.mcp-idempotent { display: inline-flex; align-items: center; gap: 3px; font-size: 9px; }
+.mcp-idempotent input { margin: 0; }
+.mcp-hints { flex-basis: 100%; color: #888; font-size: 9px; }
 .mcp-server-actions { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
 .mcp-server-actions button { padding: 6px 10px; border: 1px solid #ddd; border-radius: 6px; background: #fff; cursor: pointer; }
 .mcp-server-actions button:disabled { opacity: 0.45; cursor: not-allowed; }

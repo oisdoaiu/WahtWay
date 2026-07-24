@@ -117,6 +117,38 @@ describe("MCP stdio runtime", () => {
     expect(pending).toMatch(/^MCP_PERMISSION_REQUIRED::echo-fixture::echo::/);
   });
 
+  it("forces approval when an auto tool declares a destructive hint", async () => {
+    const repository = await import("./repository");
+    const runtime = await import("./runtime");
+    const registry = await import("../tools/registry");
+    const server = await saveFixtureServer("auto");
+    repository.setMcpSecret(server.id, "FIXTURE_TOKEN", "hidden-value");
+    repository.saveMcpServer({ ...server, env: { ...server.env, FIXTURE_DESTRUCTIVE: "true" } });
+    const started = await runtime.startMcpServer(server.id);
+
+    expect(started.tools[0]).toMatchObject({ risk: "destructive", riskSource: "server", permission: "confirm" });
+    await expect(registry.getTool("mcp-echo-fixture-echo")!.execute({ text: "danger" }))
+      .resolves.toMatch(/^MCP_PERMISSION_REQUIRED::/);
+  });
+
+  it("uses local safety overrides without trusting read-only hints to relax permission", async () => {
+    const repository = await import("./repository");
+    const runtime = await import("./runtime");
+    const server = await saveFixtureServer("confirm");
+    repository.setMcpSecret(server.id, "FIXTURE_TOKEN", "hidden-value");
+    repository.saveMcpServer({
+      ...server,
+      env: { ...server.env, FIXTURE_READ_ONLY: "true", FIXTURE_IDEMPOTENT: "true" },
+      toolSafetyOverrides: { echo: { risk: "read", idempotent: true } },
+    });
+    const started = await runtime.startMcpServer(server.id);
+
+    expect(started.tools[0]).toMatchObject({
+      risk: "read", riskSource: "local", idempotent: true, permission: "confirm",
+      annotations: { readOnlyHint: true, idempotentHint: true },
+    });
+  });
+
   it("updates health metrics after a successful ping", async () => {
     const repository = await import("./repository");
     const runtime = await import("./runtime");
@@ -203,7 +235,7 @@ describe("MCP stdio runtime", () => {
 });
 
 describe("MCP permission config migration", () => {
-  it("maps legacy requireApproval and writes schema version 2 on save", async () => {
+  it("maps legacy requireApproval and writes schema version 3 on save", async () => {
     const directory = path.join(dataDir, "mcp-servers");
     fs.mkdirSync(directory, { recursive: true });
     fs.writeFileSync(path.join(directory, "servers.json"), JSON.stringify({
@@ -230,10 +262,12 @@ describe("MCP permission config migration", () => {
     const migrated = repository.listMcpServers()[0];
     expect(migrated.defaultToolPermission).toBe("auto");
     expect(migrated.toolPermissions).toEqual({});
+    expect(migrated.toolSafetyOverrides).toEqual({});
 
     repository.saveMcpServer(migrated);
     const stored = JSON.parse(fs.readFileSync(path.join(directory, "servers.json"), "utf-8"));
-    expect(stored.servers[0].schemaVersion).toBe(2);
+    expect(stored.schemaVersion).toBe(3);
+    expect(stored.servers[0].schemaVersion).toBe(3);
     expect(stored.servers[0].requireApproval).toBeUndefined();
   });
 });

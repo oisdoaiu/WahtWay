@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 
 type RuntimeState = "stopped" | "starting" | "running" | "reconnecting" | "error";
 type ToolPermission = "auto" | "confirm" | "disabled";
+type ToolRisk = "read" | "write" | "destructive";
 
 interface McpToolSummary {
   name: string;
@@ -9,6 +10,11 @@ interface McpToolSummary {
   description: string;
   permission: ToolPermission;
   overridden: boolean;
+  annotations: { readOnlyHint?: boolean; destructiveHint?: boolean; idempotentHint?: boolean; openWorldHint?: boolean };
+  safetyOverride?: { risk?: ToolRisk; idempotent?: boolean };
+  risk: ToolRisk;
+  riskSource: "local" | "server" | "server-hint" | "default";
+  idempotent: boolean;
 }
 
 interface AuditedTool {
@@ -21,7 +27,7 @@ interface ToolAuditEvent {
   id: string;
   revision: number;
   createdAt: string;
-  source: "list_changed" | "permission_change";
+  source: "list_changed" | "permission_change" | "safety_change";
   added: AuditedTool[];
   removed: AuditedTool[];
   modified: Array<{
@@ -44,6 +50,7 @@ interface McpServer {
   autoStart: boolean;
   defaultToolPermission: ToolPermission;
   toolPermissions: Record<string, ToolPermission>;
+  toolSafetyOverrides: Record<string, { risk?: ToolRisk; idempotent?: boolean }>;
   toolCallTimeoutMs: number;
   secretNames: string[];
   status: {
@@ -255,6 +262,25 @@ export function McpPanel({ onNotify }: { onNotify: (message: string, type?: "inf
     }
   };
 
+  const updateToolSafety = async (serverId: string, tool: McpToolSummary, risk: string, idempotent = tool.safetyOverride?.idempotent === true) => {
+    setBusyId(serverId);
+    try {
+      const inherited = risk === "inherit";
+      await request(`/api/mcp/servers/${serverId}/tool-safety/${encodeURIComponent(tool.name)}`, {
+        method: inherited ? "DELETE" : "PATCH",
+        headers: inherited ? undefined : { "Content-Type": "application/json" },
+        body: inherited ? undefined : JSON.stringify({ risk, idempotent }),
+      });
+      await load();
+      onNotify(inherited ? "工具已恢复保守安全策略" : "工具安全策略已更新");
+    } catch (error: any) {
+      await load().catch(() => undefined);
+      onNotify(error.message || "安全策略更新失败", "error");
+    } finally {
+      setBusyId("");
+    }
+  };
+
   const openAudit = async (server: McpServer) => {
     setAuditView({ server, events: [], loading: true });
     try {
@@ -302,11 +328,16 @@ export function McpPanel({ onNotify }: { onNotify: (message: string, type?: "inf
               {server.status.tools.length > 0 && (
                 <div className="mcp-tool-list">
                   {server.status.tools.map((tool) => <div key={tool.registeredName} className={`mcp-tool-permission permission-${tool.permission}`} title={tool.description}>
-                    <span>{tool.registeredName}</span>
+                    <span>{tool.registeredName}</span><span className={`mcp-risk risk-${tool.risk}`}>{tool.risk}</span>
                     <select value={tool.overridden ? tool.permission : "inherit"} disabled={busyId === server.id} onChange={(event) => updateToolPermission(server.id, tool.name, event.target.value)}>
                       <option value="inherit">继承默认（{server.defaultToolPermission}）</option>
                       <option value="auto">自动调用</option><option value="confirm">每次确认</option><option value="disabled">禁用</option>
                     </select>
+                    <select title="本地风险覆盖" value={tool.safetyOverride?.risk || "inherit"} disabled={busyId === server.id} onChange={(event) => updateToolSafety(server.id, tool, event.target.value)}>
+                      <option value="inherit">风险：保守推断</option><option value="read">只读</option><option value="write">写入</option><option value="destructive">危险</option>
+                    </select>
+                    <label className="mcp-idempotent"><input type="checkbox" checked={tool.safetyOverride?.idempotent === true} disabled={busyId === server.id || !tool.safetyOverride?.risk} onChange={(event) => updateToolSafety(server.id, tool, tool.safetyOverride?.risk || "write", event.target.checked)} />幂等</label>
+                    <span className="mcp-hints">Server: {tool.annotations.readOnlyHint ? "只读 " : ""}{tool.annotations.destructiveHint ? "危险 " : ""}{tool.annotations.idempotentHint ? "幂等提示 " : ""}{tool.annotations.openWorldHint ? "外部访问" : ""}</span>
                   </div>)}
                 </div>
               )}
@@ -342,7 +373,7 @@ export function McpPanel({ onNotify }: { onNotify: (message: string, type?: "inf
                 <div className="mcp-audit-row" key={event.id}>
                   <div className="mcp-audit-heading">
                     <strong>Revision {event.revision}</strong>
-                    <span className="mcp-audit-source">{event.source === "permission_change" ? "权限配置" : "Server 通知"}</span>
+                    <span className="mcp-audit-source">{event.source === "permission_change" ? "权限配置" : event.source === "safety_change" ? "安全配置" : "Server 通知"}</span>
                     <time>{new Date(event.createdAt).toLocaleString()}</time>
                   </div>
                   <div className="mcp-audit-counts">
@@ -356,6 +387,7 @@ export function McpPanel({ onNotify }: { onNotify: (message: string, type?: "inf
                     <div className="mcp-audit-detail" key={tool.name}>
                       <b>修改</b><code>{tool.name}</code><span>{tool.changedFields.join("、")}</span>
                       {tool.changedFields.includes("permission") && <span>{tool.before.permission} → {tool.after.permission}</span>}
+                      {tool.changedFields.includes("risk") && <span>{(tool.before as any).risk} → {(tool.after as any).risk}</span>}
                     </div>
                   ))}
                 </div>
