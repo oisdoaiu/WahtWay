@@ -16,6 +16,7 @@ client/data/conversations/
 client/data/logs/
 client/be/data/conversations/
 server/data/hub/
+client/tmp/
 
 # OS metadata
 .DS_Store

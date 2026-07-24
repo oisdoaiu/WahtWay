@@ -8,6 +8,7 @@ import { matchSkillByKeywords, GENERAL_PROMPT } from "./skills/matcher";
 import { getTool, formatToolsForLLM } from "./tools/registry";
 import { logger } from "./logger";
 import { resolveModel } from "./models";
+import { buildCompactHistory, mergeSummary, getCompactConfig } from "./context/compactor";
 
 let _client: OpenAI | null = null;
 function getClient(): OpenAI {
@@ -74,21 +75,42 @@ async function* agenticLoopStream(
   history?: { role: string; content: string }[],
   traceId?: string,
   allowedTools?: string[],
-  workspace?: string
+  workspace?: string,
+  summary?: string
 ): AsyncGenerator<StreamEvent> {
   const log = logger(traceId || "no-trace", "agent");
   const startTime = Date.now();
   let totalRoundTokens = 0;
   let toolCallCount = 0;
 
+  // V0.21 无感压缩：根据全量 history + 已有 summary 生成压缩后的上下文
+  const cfg = getCompactConfig();
+  let compactHistory: { role: string; content: string }[] = [];
+  let newSummary: string | undefined;
+
+  if (history && history.length > 0) {
+    if (cfg.enabled) {
+      const comp = buildCompactHistory(history, summary || "", cfg);
+      compactHistory = comp.history;
+      // 达到增量合并条件 → 调一次 LLM 把刚移出窗口的旧消息并入 summary
+      if (comp.needsUpdate && comp.updateFrom.length > 0) {
+        newSummary = await mergeSummary(traceId || "no-trace", summary || "", comp.updateFrom);
+      }
+    } else {
+      compactHistory = history; // 关闭压缩时等同于原全量行为
+    }
+  }
+
   const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
     { role: "system", content: systemPrompt + "\n\n" + toolPolicy() },
   ];
 
-  if (history) {
-    for (const h of history) {
+  if (compactHistory.length > 0) {
+    for (const h of compactHistory) {
       if (h.role === "user" || h.role === "assistant") {
         messages.push(h as any);
+      } else if (h.role === "system") {
+        messages.push({ role: "system", content: h.content } as any);
       }
     }
   }
@@ -210,12 +232,12 @@ async function* agenticLoopStream(
 
     // 纯文本回复 → 结束
     yield { type: "stats", data: buildStats(round) };
-    yield { type: "done", data: { fullContent: content, stats: buildStats(round) } };
+    yield { type: "done", data: { fullContent: content, stats: buildStats(round), newSummary } };
     return;
   }
 
   const finalStats = buildStats(MAX_TOOL_ROUNDS);
-  yield { type: "done", data: { fullContent: "已达到最大工具调用轮数", stats: finalStats } };
+  yield { type: "done", data: { fullContent: "已达到最大工具调用轮数", stats: finalStats, newSummary } };
 }
 
 // ---- 流式执行 Skill ----
@@ -225,7 +247,8 @@ export async function* executeSkillStream(
   userMessage: string,
   history?: { role: string; content: string }[],
   traceId?: string,
-  workspace?: string
+  workspace?: string,
+  summary?: string
 ): AsyncGenerator<StreamEvent> {
   const log = logger(traceId || "no-trace", "skill");
   log.info("matched", { skillId: skill.id, skillName: skill.name });
@@ -235,7 +258,7 @@ export async function* executeSkillStream(
     data: { skillName: skill.name, skillId: skill.id },
   };
 
-  for await (const event of agenticLoopStream(skill.systemPrompt, userMessage, history, traceId, skill.allowedTools, workspace)) {
+  for await (const event of agenticLoopStream(skill.systemPrompt, userMessage, history, traceId, skill.allowedTools, workspace, summary)) {
     yield event;
   }
 }
@@ -262,11 +285,12 @@ export async function runAgentStream(
   traceId?: string,
   model?: string,
   skillId?: string,
-  workspace?: string
+  workspace?: string,
+  summary?: string
 ): Promise<AsyncGenerator<StreamEvent>> {
   if (model) setModel(model);
   const log = logger(traceId || "no-trace", "agent");
-  log.info("start", { msgLen: userMessage.length, mode: skillId || "auto" });
+  log.info("start", { msgLen: userMessage.length, mode: skillId || "auto", compact: getCompactConfig().enabled });
 
   let skill: Skill | null = null;
 
@@ -287,10 +311,10 @@ export async function runAgentStream(
       output: { type: "object", properties: {} },
       requiredTools: [],
     };
-    return executeSkillStream(general, userMessage, history, traceId, undefined, workspace);
+    return executeSkillStream(general, userMessage, history, traceId, workspace, summary);
   }
 
-  return executeSkillStream(skill, userMessage, history, traceId, undefined, workspace);
+  return executeSkillStream(skill, userMessage, history, traceId, workspace, summary);
 }
 
 export { matchSkill };

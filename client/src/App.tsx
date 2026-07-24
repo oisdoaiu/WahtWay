@@ -5,6 +5,7 @@ import { DEBUG, addDebugEvent, getDebugEvents, onDebugEvents, clearDebugEvents }
 import {
   getMessages, isStreaming, setMessages, appendMessage,
   appendToLast, setStreaming, subscribe, getTodoItems, setTodoItems,
+  getSummary, setSummary,
 } from "./conversations";
 import "./App.css";
 
@@ -93,7 +94,7 @@ function ChatPanel({ conversationId, onTitleChange, onCreateSkill }: { showModal
     if (getMessages(conversationId).length === 0 && !isStreaming(conversationId)) {
       fetch(`/api/conversations/${conversationId}`)
         .then((r) => r.json())
-        .then((d) => setMessages(conversationId, d.messages || []))
+        .then((d) => { setMessages(conversationId, d.messages || []); if (typeof d.summary === "string") setSummary(conversationId, d.summary); })
         .catch(() => setMessages(conversationId, []));
     }
     setSkillName(null);
@@ -106,7 +107,7 @@ function ChatPanel({ conversationId, onTitleChange, onCreateSkill }: { showModal
     fetch(`/api/conversations/${conversationId}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ messages: msgs }),
+      body: JSON.stringify({ messages: msgs, summary: getSummary(conversationId) }),
     }).catch(() => {});
   };
 
@@ -159,6 +160,7 @@ function ChatPanel({ conversationId, onTitleChange, onCreateSkill }: { showModal
     setLastStats(null);
 
     const history = currentMessages.map((m: any) => ({ role: m.role, content: m.content }));
+    const currentSummary = getSummary(conversationId); // V0.21 无感压缩：带上已有摘要
 
     try {
       const controller = new AbortController();
@@ -168,7 +170,7 @@ function ChatPanel({ conversationId, onTitleChange, onCreateSkill }: { showModal
       const response = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: text, history, model, skillId: skillId || undefined, workspace: workspace || undefined }),
+        body: JSON.stringify({ message: text, history, model, skillId: skillId || undefined, workspace: workspace || undefined, summary: currentSummary }),
         signal: controller.signal,
       });
 
@@ -226,7 +228,22 @@ const res2 = (event.data as any)?.result; // was here
             else if (event.type === "delta") { lastEventRef.current = Date.now(); setThinkingStatus(""); appendToLast(conversationId, event.data); }
             else if (event.type === "stats") { lastEventRef.current = Date.now(); setLastStats(event.data as any); }
             else if (event.type === "error") { lastEventRef.current = Date.now(); setThinkingStatus(""); toast(String(event.data), "error"); appendToLast(conversationId, `\n\n❌ ${event.data}`); addDebugEvent("error", event.data); }
-            else if (event.type === "done") { lastEventRef.current = Date.now(); setThinkingStatus(""); if ((event.data as any)?.stats) setLastStats((event.data as any).stats); addDebugEvent("done", "流结束"); }
+            else if (event.type === "done") {
+              lastEventRef.current = Date.now(); setThinkingStatus("");
+              if ((event.data as any)?.stats) setLastStats((event.data as any).stats);
+              // V0.21 无感压缩：后端增量更新了摘要 → 存到 store 并持久化（UI 不渲染）
+              const ns = (event.data as any)?.newSummary;
+              if (typeof ns === "string" && ns) {
+                setSummary(conversationId, ns);
+                const msgs = getMessages(conversationId);
+                fetch(`/api/conversations/${conversationId}`, {
+                  method: "PUT",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ messages: msgs, summary: ns }),
+                }).catch(() => {});
+              }
+              addDebugEvent("done", "流结束");
+            }
           } catch { /* skip */ }
         }
       }

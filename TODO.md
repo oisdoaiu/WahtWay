@@ -131,7 +131,7 @@ undefined
 |---|------|-----------------|:---:|
 | 37 | **Todo/Planning 系统**：纯 prompt 驱动的 JSON 规划器，Agent 接到复杂任务自动拆解为子任务列表 | 加一个虚拟 Todo Tool，Agent 在对话中展示计划 → 逐步勾掉 | 中 |
 | 38 | **文件系统记忆**：Agent 自己写 `.md` 摘要到临时目录，下次读自己的笔记而非重新扫描 | 加 `write-file` Tool + 约定笔记目录 `be/data/agent-notes/`，Agent 能给自己记笔记 | 小 |
-| 39 | **Context 编辑/Compaction**：上下文快满 (92%) 时自动裁剪旧的中间工具结果 | conversations.ts store 加裁剪逻辑，当前对话长度不需要，后期加 | 大 |
+| 39 | **Context 编辑/Compaction**：上下文快满 (92%) 时自动裁剪旧的中间工具结果 | **已完成（2026-07-24，V0.21 无感滚动压缩）→ 见 docs/context-compaction-plan.md：每次对话都压、summary 常驻、增量更新(每12条)、UI 无感、COMPACT_ENABLED=false 可一键回滚** | 大 |
 | 40 | **子 Agent 分叉**：探索任务 fork 到独立上下文，跑完只返回摘要，不污染主对话 | store 已支持多 conversation，子 Agent = 起隐藏 conversation → 结果写回主对话 | 中 |
 | 41 | **"Give it tools and get out of the way"**：相信模型自己会用工具，少写编排代码多写好的 Tool 描述 | 当前架构已遵循这个方向——全局 Tool + System Prompt 约束，保持住 | 理念 |
 | 42 | **Checkpoint/恢复**：崩溃后从上次状态继续，不从头开始 | conversations.ts 已持久化每条消息，天然支持断点续聊 | 已做 |

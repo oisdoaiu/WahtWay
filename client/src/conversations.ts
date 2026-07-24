@@ -18,6 +18,7 @@ interface ConvState {
   messages: ConvMessage[];
   streaming: boolean;
   todoItems: TodoItem[];
+  summary: string; // V0.21 无感压缩：早期对话常驻摘要（不渲染，仅后端使用）
 }
 
 // 全局对话状态 Map
@@ -27,7 +28,7 @@ const listeners = new Set<() => void>();
 
 function getOrCreate(id: string): ConvState {
   if (!store.has(id)) {
-    store.set(id, { messages: [], streaming: false, todoItems: [] });
+    store.set(id, { messages: [], streaming: false, todoItems: [], summary: "" });
   }
   return store.get(id)!;
 }
@@ -42,6 +43,16 @@ export function isStreaming(id: string): boolean {
 
 export function getTodoItems(id: string): TodoItem[] {
   return getOrCreate(id).todoItems;
+}
+
+// V0.21 无感压缩：早期对话摘要的存取（不渲染，仅用于发给后端做上下文压缩）
+export function getSummary(id: string): string {
+  return getOrCreate(id).summary;
+}
+
+export function setSummary(id: string, summary: string) {
+  getOrCreate(id).summary = summary;
+  notify();
 }
 
 export function setTodoItems(id: string, items: TodoItem[]) {
