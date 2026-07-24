@@ -21,6 +21,13 @@ client/be/data/agent-runs/
 server/data/hub/
 client/tmp/
 
+# Python
+__pycache__/
+*.pyc
+
+# MCP test outputs
+mcp-servers/*/test_output/
+
 # OS metadata
 .DS_Store
 Thumbs.db
