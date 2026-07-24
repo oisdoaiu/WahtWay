@@ -58,8 +58,10 @@ export function listMemoryItems(): MemoryItem[] {
 export function createMemoryItem(input: {
   content: string;
   category?: unknown;
+  source?: "manual" | "suggested";
   sourceConversationId?: unknown;
   sourceMessageId?: unknown;
+  enabled?: boolean;
 }): MemoryItem {
   const content = input.content.trim().slice(0, 2000);
   if (!content) throw new Error("EMPTY_MEMORY");
@@ -69,10 +71,10 @@ export function createMemoryItem(input: {
     id: randomUUID(),
     content,
     category: CATEGORIES.has(input.category as MemoryCategory) ? input.category as MemoryCategory : "other",
-    source: "manual",
+    source: input.source === "suggested" ? "suggested" : "manual",
     sourceConversationId: typeof input.sourceConversationId === "string" ? input.sourceConversationId : null,
     sourceMessageId: typeof input.sourceMessageId === "string" ? input.sourceMessageId : null,
-    enabled: true,
+    enabled: typeof input.enabled === "boolean" ? input.enabled : true,
     sensitive: false,
     createdAt: now,
     updatedAt: now,
@@ -108,6 +110,15 @@ export function deleteMemoryItem(id: string): boolean {
   if (next.length === items.length) return false;
   writeItems(next);
   return true;
+}
+
+// 将自动提取的 `suggested` 候选转正为正式记忆（enabled: true）。
+// 手动记忆已是正式状态，直接返回；不存在则返回 null。
+export function acceptSuggestion(id: string): MemoryItem | null {
+  const item = readItems().find((candidate) => candidate.id === id);
+  if (!item) return null;
+  if (item.source !== "suggested") return item;
+  return updateMemoryItem(id, { enabled: true });
 }
 
 export function selectMemoryItems(mode: "off" | "manual" | "all", selectedIds: string[], query: string): MemoryItem[] {

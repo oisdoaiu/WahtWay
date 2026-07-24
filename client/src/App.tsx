@@ -70,6 +70,7 @@ interface MemoryItem {
   content: string;
   category: "preference" | "profile" | "project" | "instruction" | "other";
   enabled: boolean;
+  source: "manual" | "suggested";
   sourceConversationId: string | null;
   updatedAt: string;
   lastUsedAt: string | null;
@@ -1014,6 +1015,17 @@ function MemoryPanel() {
     await load();
   };
 
+  // 接受自动提取的 suggested 候选，转正为正式记忆
+  const accept = async (id: string) => {
+    try {
+      const response = await fetch(`/api/memory/suggestions/${id}/accept`, { method: "POST" });
+      if (!response.ok) return;
+      await load();
+    } catch {
+      /* 静默失败，下次刷新可重试 */
+    }
+  };
+
   return (
     <section className="memory-panel">
       <header className="header"><h1>长期记忆</h1><span className="subtitle">由你控制的跨对话信息</span></header>
@@ -1029,9 +1041,20 @@ function MemoryPanel() {
         {items.length === 0 && <div className="memory-empty">还没有长期记忆</div>}
         {items.map(item => (
           <article key={item.id} className={`memory-item-card ${item.enabled ? "" : "disabled"}`}>
-            <div className="memory-item-main"><span className="memory-category">{item.category}</span><p>{item.content}</p></div>
+            <div className="memory-item-main">
+              <span className="memory-category">{item.category}</span>
+              {item.source === "suggested" && (
+                <span style={{ fontSize: 11, padding: "1px 6px", borderRadius: 4, background: item.enabled ? "#27ae60" : "#e67e22", color: "#fff", marginLeft: 6 }}>
+                  {item.enabled ? "AI 建议" : "待确认"}
+                </span>
+              )}
+              <p>{item.content}</p>
+            </div>
             <div className="memory-item-actions">
               <label><input type="checkbox" checked={item.enabled} onChange={() => toggle(item)} /> 启用</label>
+              {item.source === "suggested" && !item.enabled && (
+                <button className="primary" title="接受为长期记忆" onClick={() => accept(item.id)}>接受</button>
+              )}
               <button title="编辑" onClick={() => { setEditingId(item.id); setContent(item.content); setCategory(item.category); }}>编辑</button>
               <button className="danger" title="删除" onClick={() => remove(item.id)}>删除</button>
             </div>

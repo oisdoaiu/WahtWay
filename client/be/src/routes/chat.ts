@@ -3,6 +3,7 @@ import { Router, Request, Response } from "express";
 import { runAgentStream, getCurrentModel } from "../agent";
 import { buildAgentContext, formatContextSections } from "../context/builder";
 import { scheduleConversationSummary } from "../context/summary";
+import { scheduleProfileExtraction } from "../memory/profile-extractor";
 import { appendMessage, patchMessage, readConversation } from "../conversations/repository";
 import { createTraceId, logger } from "../logger";
 import { formatLlmError } from "../llm-errors";
@@ -105,6 +106,7 @@ router.post("/", async (req: Request, res: Response) => {
       status: "completed",
     });
     scheduleConversationSummary(conversationId);
+    scheduleProfileExtraction(conversationId);
     log.info("done", { outputLength: output.length });
   } catch (error: any) {
     const friendlyMessage = formatLlmError(error);
