@@ -11,12 +11,14 @@ import {
   executeApprovedMcpTool,
   getMcpStatus,
   listPublicMcpServers,
+  resolveEffectiveMcpToolPermission,
   resolveMcpToolPermission,
+  resolveMcpToolSafety,
   restartMcpServer,
   startMcpServer,
   stopMcpServer,
 } from "../mcp/runtime";
-import { McpServerConfig, McpToolPermission } from "../mcp/types";
+import { McpServerConfig, McpToolPermission, McpToolRisk } from "../mcp/types";
 import {
   appendToolChangeAuditEvent,
   buildToolChangeAuditEvent,
@@ -62,9 +64,10 @@ function requestPermission(value: unknown): McpToolPermission {
   return value as McpToolPermission;
 }
 
-async function updatePermissions(
+async function updateToolConfig(
   id: string,
-  update: (server: McpServerConfig) => Partial<McpServerConfig>
+  update: (server: McpServerConfig) => Partial<McpServerConfig>,
+  source: "permission_change" | "safety_change"
 ) {
   const current = getMcpServer(id);
   if (!current) throw new Error("SERVER_NOT_FOUND");
@@ -73,15 +76,17 @@ async function updatePermissions(
   const beforeTools = getMcpStatus(id).tools;
   const afterTools = beforeTools.map((tool) => ({
     ...tool,
-    permission: resolveMcpToolPermission(nextConfig, tool.name),
+    permission: resolveEffectiveMcpToolPermission(nextConfig, tool.name, tool.annotations),
     overridden: Object.prototype.hasOwnProperty.call(nextConfig.toolPermissions, tool.name),
+    safetyOverride: nextConfig.toolSafetyOverrides[tool.name],
+    ...resolveMcpToolSafety(nextConfig, tool.name, tool.annotations),
   }));
   const auditEvent = buildToolChangeAuditEvent(
     id,
     nextToolChangeAuditRevision(id),
     beforeTools,
     afterTools,
-    "permission_change"
+    source
   );
   if (auditEvent) appendToolChangeAuditEvent(auditEvent);
   const wasRunning = getMcpStatus(id).state === "running";
@@ -141,7 +146,7 @@ router.patch("/servers/:id", async (req: Request, res: Response) => {
 router.patch("/servers/:id/tool-permissions/default", async (req: Request, res: Response) => {
   try {
     const permission = requestPermission(req.body?.permission);
-    res.json(await updatePermissions(req.params.id, () => ({ defaultToolPermission: permission })));
+    res.json(await updateToolConfig(req.params.id, () => ({ defaultToolPermission: permission }), "permission_change"));
   } catch (error) {
     const status = error instanceof Error && error.message === "SERVER_NOT_FOUND" ? 404 : 400;
     res.status(status).json({ error: errorMessage(error), status: getMcpStatus(req.params.id) });
@@ -153,9 +158,9 @@ router.patch("/servers/:id/tool-permissions/:toolName", async (req: Request, res
     const permission = requestPermission(req.body?.permission);
     const toolName = req.params.toolName;
     if (!toolName || toolName.length > 256 || toolName.includes("\0")) throw new Error("INVALID_TOOL_NAME");
-    res.json(await updatePermissions(req.params.id, (server) => ({
+    res.json(await updateToolConfig(req.params.id, (server) => ({
       toolPermissions: { ...server.toolPermissions, [toolName]: permission },
-    })));
+    }), "permission_change"));
   } catch (error) {
     const status = error instanceof Error && error.message === "SERVER_NOT_FOUND" ? 404 : 400;
     res.status(status).json({ error: errorMessage(error), status: getMcpStatus(req.params.id) });
@@ -165,11 +170,45 @@ router.patch("/servers/:id/tool-permissions/:toolName", async (req: Request, res
 router.delete("/servers/:id/tool-permissions/:toolName", async (req: Request, res: Response) => {
   try {
     const toolName = req.params.toolName;
-    res.json(await updatePermissions(req.params.id, (server) => {
+    res.json(await updateToolConfig(req.params.id, (server) => {
       const toolPermissions = { ...server.toolPermissions };
       delete toolPermissions[toolName];
       return { toolPermissions };
-    }));
+    }, "permission_change"));
+  } catch (error) {
+    const status = error instanceof Error && error.message === "SERVER_NOT_FOUND" ? 404 : 400;
+    res.status(status).json({ error: errorMessage(error), status: getMcpStatus(req.params.id) });
+  }
+});
+
+router.patch("/servers/:id/tool-safety/:toolName", async (req: Request, res: Response) => {
+  try {
+    const toolName = req.params.toolName;
+    const risk = req.body?.risk;
+    const idempotent = req.body?.idempotent;
+    if (risk !== undefined && !new Set<McpToolRisk>(["read", "write", "destructive"]).has(risk)) {
+      throw new Error("INVALID_TOOL_RISK");
+    }
+    if (idempotent !== undefined && typeof idempotent !== "boolean") throw new Error("INVALID_TOOL_IDEMPOTENT");
+    res.json(await updateToolConfig(req.params.id, (server) => ({
+      toolSafetyOverrides: {
+        ...server.toolSafetyOverrides,
+        [toolName]: { ...(server.toolSafetyOverrides[toolName] || {}), risk, idempotent },
+      },
+    }), "safety_change"));
+  } catch (error) {
+    const status = error instanceof Error && error.message === "SERVER_NOT_FOUND" ? 404 : 400;
+    res.status(status).json({ error: errorMessage(error), status: getMcpStatus(req.params.id) });
+  }
+});
+
+router.delete("/servers/:id/tool-safety/:toolName", async (req: Request, res: Response) => {
+  try {
+    res.json(await updateToolConfig(req.params.id, (server) => {
+      const toolSafetyOverrides = { ...server.toolSafetyOverrides };
+      delete toolSafetyOverrides[req.params.toolName];
+      return { toolSafetyOverrides };
+    }, "safety_change"));
   } catch (error) {
     const status = error instanceof Error && error.message === "SERVER_NOT_FOUND" ? 404 : 400;
     res.status(status).json({ error: errorMessage(error), status: getMcpStatus(req.params.id) });

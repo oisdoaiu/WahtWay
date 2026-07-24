@@ -33,7 +33,7 @@ export interface McpToolChangeAuditEvent {
   id: string;
   serverId: string;
   revision: number;
-  source: "list_changed" | "permission_change";
+  source: "list_changed" | "permission_change" | "safety_change";
   createdAt: string;
   added: McpAuditedTool[];
   removed: McpAuditedTool[];
