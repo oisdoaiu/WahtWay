@@ -1,10 +1,16 @@
 const state = {
   skills: [],
   selected: null,
+  token: localStorage.getItem("skillHubToken") || "",
+  user: null,
+  authMode: "login",
 };
 
 const els = {
   hubStatus: document.querySelector("#hubStatus"),
+  userBadge: document.querySelector("#userBadge"),
+  authBtn: document.querySelector("#authBtn"),
+  logoutBtn: document.querySelector("#logoutBtn"),
   searchInput: document.querySelector("#searchInput"),
   sortSelect: document.querySelector("#sortSelect"),
   skillCount: document.querySelector("#skillCount"),
@@ -37,6 +43,19 @@ const els = {
   tagsInput: document.querySelector("#tagsInput"),
   changelogInput: document.querySelector("#changelogInput"),
   manifestInput: document.querySelector("#manifestInput"),
+  authModal: document.querySelector("#authModal"),
+  authForm: document.querySelector("#authForm"),
+  authTitle: document.querySelector("#authTitle"),
+  closeAuthBtn: document.querySelector("#closeAuthBtn"),
+  cancelAuthBtn: document.querySelector("#cancelAuthBtn"),
+  loginModeBtn: document.querySelector("#loginModeBtn"),
+  registerModeBtn: document.querySelector("#registerModeBtn"),
+  displayNameLabel: document.querySelector("#displayNameLabel"),
+  authUsername: document.querySelector("#authUsername"),
+  authDisplayName: document.querySelector("#authDisplayName"),
+  authPassword: document.querySelector("#authPassword"),
+  authMsg: document.querySelector("#authMsg"),
+  submitAuthBtn: document.querySelector("#submitAuthBtn"),
 };
 
 const exampleSkill = {
@@ -80,13 +99,60 @@ function debounce(fn, wait) {
   };
 }
 
-async function requestJson(url, options) {
-  const response = await fetch(url, options);
+async function requestJson(url, options = {}) {
+  const headers = new Headers(options.headers || {});
+  if (state.token && !headers.has("Authorization")) {
+    headers.set("Authorization", `Bearer ${state.token}`);
+  }
+  const response = await fetch(url, { ...options, headers });
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
     throw new Error(data.error || `HTTP ${response.status}`);
   }
   return data;
+}
+
+function setSession(token, user) {
+  state.token = token || "";
+  state.user = user || null;
+  if (state.token) {
+    localStorage.setItem("skillHubToken", state.token);
+  } else {
+    localStorage.removeItem("skillHubToken");
+  }
+  updateAuthUi();
+}
+
+function updateAuthUi() {
+  if (state.user) {
+    els.userBadge.textContent = state.user.displayName || state.user.username;
+    els.userBadge.classList.remove("hidden");
+    els.authBtn.classList.add("hidden");
+    els.logoutBtn.classList.remove("hidden");
+    els.openUploadBtn.textContent = "发布 Skill";
+  } else {
+    els.userBadge.textContent = "";
+    els.userBadge.classList.add("hidden");
+    els.authBtn.classList.remove("hidden");
+    els.logoutBtn.classList.add("hidden");
+    els.openUploadBtn.textContent = "登录后发布";
+  }
+}
+
+async function loadCurrentUser() {
+  if (!state.token) {
+    updateAuthUi();
+    return;
+  }
+
+  try {
+    const data = await requestJson("/api/auth/me");
+    state.user = data.user;
+  } catch {
+    setSession("", null);
+    return;
+  }
+  updateAuthUi();
 }
 
 async function loadSkills() {
@@ -219,7 +285,12 @@ async function downloadSelected() {
 }
 
 function openUpload() {
+  if (!state.user) {
+    openAuth("login");
+    return;
+  }
   els.uploadMsg.textContent = "";
+  els.authorInput.value = state.user.displayName || state.user.username;
   els.uploadModal.classList.remove("hidden");
   els.manifestInput.focus();
 }
@@ -252,7 +323,6 @@ async function submitUpload(event) {
     manifest,
     version: els.versionInput.value.trim() || "1.0.0",
     visibility: els.visibilityInput.value,
-    authorName: els.authorInput.value.trim() || undefined,
     category: els.categoryInput.value.trim() || undefined,
     tags: parseTags(els.tagsInput.value),
     changelog: els.changelogInput.value.trim() || undefined,
@@ -269,6 +339,7 @@ async function submitUpload(event) {
     closeUpload();
     els.uploadForm.reset();
     els.versionInput.value = "1.0.0";
+    els.authorInput.value = state.user?.displayName || state.user?.username || "";
     await loadSkills();
     await selectSkill(created.skill.skillId);
   } catch (err) {
@@ -281,11 +352,67 @@ async function submitUpload(event) {
 function loadExample() {
   els.versionInput.value = "1.0.0";
   els.visibilityInput.value = "public";
+  els.authorInput.value = state.user?.displayName || state.user?.username || "";
   els.categoryInput.value = "学习";
   els.tagsInput.value = "写作, 学习";
   els.changelogInput.value = "首次发布";
   els.manifestInput.value = JSON.stringify(exampleSkill, null, 2);
   els.uploadMsg.textContent = "";
+}
+
+function openAuth(mode = "login") {
+  setAuthMode(mode);
+  els.authMsg.textContent = "";
+  els.authModal.classList.remove("hidden");
+  els.authUsername.focus();
+}
+
+function closeAuth() {
+  els.authModal.classList.add("hidden");
+}
+
+function setAuthMode(mode) {
+  state.authMode = mode;
+  const isRegister = mode === "register";
+  els.authTitle.textContent = isRegister ? "注册" : "登录";
+  els.submitAuthBtn.textContent = isRegister ? "注册" : "登录";
+  els.displayNameLabel.classList.toggle("hidden", !isRegister);
+  els.loginModeBtn.classList.toggle("active", !isRegister);
+  els.registerModeBtn.classList.toggle("active", isRegister);
+  els.authPassword.setAttribute("autocomplete", isRegister ? "new-password" : "current-password");
+}
+
+async function submitAuth(event) {
+  event.preventDefault();
+  els.authMsg.textContent = "";
+  const username = els.authUsername.value.trim();
+  const password = els.authPassword.value;
+  const endpoint = state.authMode === "register" ? "/api/auth/register" : "/api/auth/login";
+  const body = { username, password };
+  if (state.authMode === "register") {
+    body.displayName = els.authDisplayName.value.trim() || undefined;
+  }
+
+  els.submitAuthBtn.disabled = true;
+  try {
+    const data = await requestJson(endpoint, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    setSession(data.token, data.user);
+    els.authForm.reset();
+    closeAuth();
+  } catch (err) {
+    els.authMsg.textContent = err.message;
+  } finally {
+    els.submitAuthBtn.disabled = false;
+  }
+}
+
+function logout() {
+  setSession("", null);
+  els.hubStatus.textContent = "已退出";
 }
 
 els.skillsList.addEventListener("click", (event) => {
@@ -301,20 +428,36 @@ els.searchInput.addEventListener("input", debounce(() => loadSkills().catch((err
 els.sortSelect.addEventListener("change", () => loadSkills().catch((err) => (els.hubStatus.textContent = err.message)));
 els.downloadBtn.addEventListener("click", () => downloadSelected().catch((err) => (els.hubStatus.textContent = err.message)));
 els.openUploadBtn.addEventListener("click", openUpload);
+els.authBtn.addEventListener("click", () => openAuth("login"));
+els.logoutBtn.addEventListener("click", logout);
 els.closeUploadBtn.addEventListener("click", closeUpload);
 els.cancelUploadBtn.addEventListener("click", closeUpload);
 els.loadExampleBtn.addEventListener("click", loadExample);
 els.uploadForm.addEventListener("submit", submitUpload);
+els.closeAuthBtn.addEventListener("click", closeAuth);
+els.cancelAuthBtn.addEventListener("click", closeAuth);
+els.loginModeBtn.addEventListener("click", () => setAuthMode("login"));
+els.registerModeBtn.addEventListener("click", () => setAuthMode("register"));
+els.authForm.addEventListener("submit", submitAuth);
 els.uploadModal.addEventListener("click", (event) => {
   if (event.target === els.uploadModal) closeUpload();
 });
+els.authModal.addEventListener("click", (event) => {
+  if (event.target === els.authModal) closeAuth();
+});
 
 document.addEventListener("keydown", (event) => {
-  if (event.key === "Escape" && !els.uploadModal.classList.contains("hidden")) {
-    closeUpload();
+  if (event.key === "Escape") {
+    if (!els.uploadModal.classList.contains("hidden")) closeUpload();
+    if (!els.authModal.classList.contains("hidden")) closeAuth();
   }
 });
 
-loadSkills().catch((err) => {
-  els.hubStatus.textContent = err.message;
-});
+updateAuthUi();
+loadCurrentUser()
+  .catch(() => updateAuthUi())
+  .finally(() => {
+    loadSkills().catch((err) => {
+      els.hubStatus.textContent = err.message;
+    });
+  });

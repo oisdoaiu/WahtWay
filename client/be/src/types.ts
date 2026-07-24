@@ -170,11 +170,15 @@ export interface TokenUsage {
   totalTokens: number;
 }
 
+export interface ToolExecutionContext {
+  workspace?: string;
+}
+
 // V0.9 Tool 定义
 export interface ToolDef {
   input_examples?: { args: Record<string, unknown>; description: string }[];  // V0.17
   name: string;
   description: string;
   parameters: JSONSchema;
-  execute: (args: Record<string, unknown>) => Promise<string>;
+  execute: (args: Record<string, unknown>, context?: ToolExecutionContext) => Promise<string>;
 }

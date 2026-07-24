@@ -26,6 +26,7 @@ interface CreateSkillInput {
   manifest: Skill;
   version: string;
   changelog?: string;
+  authorUserId: string;
   authorName?: string;
   category?: string;
   tags: string[];
@@ -247,6 +248,7 @@ export function createSkill(input: CreateSkillInput): SkillHubRecord {
     slug: skillId,
     name: manifest.name,
     description: manifest.description,
+    authorUserId: input.authorUserId,
     authorName: input.authorName,
     category: input.category,
     tags: input.tags,
@@ -341,7 +343,7 @@ export function listVersions(skillId: string): Omit<SkillVersion, "manifest">[] 
   return record.versions.map(({ manifest: _manifest, ...version }) => version);
 }
 
-export function addReview(skillId: string, rating: number, comment?: string): SkillHubRecord {
+export function addReview(skillId: string, rating: number, comment?: string, reviewerId?: string): SkillHubRecord {
   if (!Number.isInteger(rating) || rating < 1 || rating > 5) {
     throw new Error("rating 必须是 1-5 的整数");
   }
@@ -350,8 +352,14 @@ export function addReview(skillId: string, rating: number, comment?: string): Sk
   const record = db.records.find((item) => item.skillId === skillId);
   if (!record) throw new Error("Skill not found");
 
-  const review: SkillReview = { rating, comment, createdAt: nowIso() };
-  record.reviews.push(review);
+  const existing = reviewerId ? record.reviews.find((item) => item.reviewerId === reviewerId) : undefined;
+  if (existing) {
+    existing.rating = rating;
+    existing.comment = comment;
+    existing.createdAt = nowIso();
+  } else {
+    record.reviews.push({ rating, reviewerId, comment, createdAt: nowIso() });
+  }
   record.ratingCount = record.reviews.length;
   record.ratingAverage = Number(
     (record.reviews.reduce((sum, item) => sum + item.rating, 0) / record.ratingCount).toFixed(2)

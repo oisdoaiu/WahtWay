@@ -1,6 +1,6 @@
 const LLM_TIMEOUT_MESSAGE = "LLM 响应超时了，可能是网络不稳定或模型服务暂时繁忙。请稍后重试，或检查 API Key、代理/网络连接。";
-const LLM_NETWORK_MESSAGE = "连接 LLM 服务失败，请检查网络、代理设置或 DeepSeek API 服务状态后重试。";
-const LLM_AUTH_MESSAGE = "LLM 鉴权失败，请检查 client/be/.env 中的 DEEPSEEK_API_KEY 是否正确。";
+const LLM_NETWORK_MESSAGE = "连接 LLM 服务失败，请检查网络、代理设置或当前 API 服务状态后重试。";
+const LLM_AUTH_MESSAGE = "LLM 鉴权失败，请检查 AI 配置里的 API Key 是否正确。";
 const LLM_RATE_LIMIT_MESSAGE = "LLM 请求过于频繁或额度受限，请稍后再试。";
 
 export function formatLlmError(err: unknown): string {
@@ -45,4 +45,3 @@ export function formatLlmError(err: unknown): string {
 
   return rawMessage || "LLM 请求失败，请稍后重试。";
 }
-

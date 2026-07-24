@@ -2,68 +2,64 @@
 // GET  /api/skills         — 已注册 Skill 列表
 // POST /api/skills/generate — LLM 自动生成 Skill JSON
 // POST /api/skills/save     — 保存新 Skill 到文件
-// POST /api/skills/download — 从 Hub 下载 Skill 到本地
 
 import { Router, Request, Response } from "express";
 import OpenAI from "openai";
-import { formatLlmError } from "../llm-errors";
-import { resolveModel } from "../models";
-import { registeredSkills, saveSkill, deleteSkill, initSkills } from "../skills/loader";
-import { scheduleSkillOptimization } from "../skills/learning-engine";
-import {
-  activateSkillVersion,
-  getLearningSummary,
-  readLearningState,
-  setAutoImprove,
-} from "../skills/learning-store";
+import { registeredSkills, saveSkill, deleteSkill } from "../skills/loader";
 import { Skill } from "../types";
+import { createAiClient, getCurrentModel } from "../ai-settings";
 
 const router = Router();
+const DEFAULT_SKILL_HUB_URL = "https://wahtway-production.up.railway.app";
 
-// ===== Skill Hub 代理 =====
-const SKILL_HUB_URL = process.env.SKILL_HUB_URL || "https://wahtway-production.up.railway.app";
-
-// GET /api/hub/skills — 代理 Hub 列表（支持搜索/排序）
-router.get("/hub/list", async (req: Request, res: Response) => {
-  try {
-    const params = new URLSearchParams();
-    if (req.query.q) params.set("q", String(req.query.q));
-    if (req.query.sort) params.set("sort", String(req.query.sort));
-    if (req.query.category) params.set("category", String(req.query.category));
-
-    const response = await fetch(`${SKILL_HUB_URL}/api/skills?${params.toString()}`);
-    if (!response.ok) throw new Error(`Hub 返回 HTTP ${response.status}`);
-    const data = await response.json();
-    res.json(data);
-  } catch (err: any) {
-    res.status(502).json({ error: `Hub 连接失败: ${err.message}` });
-  }
-});
-
-// GET /api/hub/skills/:id — 代理 Hub 单个 Skill 详情
-router.get("/hub/skills/:id", async (req: Request, res: Response) => {
-  try {
-    const response = await fetch(`${SKILL_HUB_URL}/api/skills/${req.params.id}`);
-    if (!response.ok) throw new Error(`Hub 返回 HTTP ${response.status}`);
-    const data = await response.json();
-    res.json(data);
-  } catch (err: any) {
-    res.status(502).json({ error: `Hub 连接失败: ${err.message}` });
-  }
-});
-
-// DeepSeek 客户端（延迟初始化）
-let _client: OpenAI | null = null;
-function getClient(): OpenAI {
-  if (!_client) {
-    _client = new OpenAI({
-      apiKey: process.env.DEEPSEEK_API_KEY,
-      baseURL: process.env.DEEPSEEK_BASE_URL || "https://api.deepseek.com",
-    });
-  }
-  return _client;
+function getSkillHubUrl(): string {
+  return (process.env.SKILL_HUB_URL || DEFAULT_SKILL_HUB_URL).trim().replace(/\/+$/, "");
 }
-const MODEL = resolveModel(process.env.DEEPSEEK_MODEL);
+
+export function buildHubListUrl(query: Request["query"]): string {
+  const url = new URL("/api/skills", getSkillHubUrl());
+  for (const key of ["q", "sort", "category", "tag"] as const) {
+    const value = query[key];
+    if (typeof value === "string" && value.trim()) url.searchParams.set(key, value.trim());
+  }
+  return url.toString();
+}
+
+export function buildHubDownloadUrl(skillId: string): string {
+  return `${getSkillHubUrl()}/api/skills/${encodeURIComponent(skillId)}/download`;
+}
+
+export function buildHubReviewUrl(skillId: string): string {
+  return `${getSkillHubUrl()}/api/skills/${encodeURIComponent(skillId)}/review`;
+}
+
+async function fetchHubJson(url: string): Promise<any> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 15000);
+  try {
+    const response = await fetch(url, { signal: controller.signal });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.error || `Hub 返回 HTTP ${response.status}`);
+    return payload;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function postHubJson(url: string, body: unknown): Promise<any> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 15000);
+  try {
+    const response = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), signal: controller.signal });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.error || `Hub 返回 HTTP ${response.status}`);
+    return payload;
+  } finally { clearTimeout(timeout); }
+}
+
+function getClient(): OpenAI {
+  return createAiClient();
+}
 
 // GET /api/skills — 已注册 Skill 列表（脱敏）
 router.get("/", (_req: Request, res: Response) => {
@@ -71,18 +67,43 @@ router.get("/", (_req: Request, res: Response) => {
     id: s.id,
     name: s.name,
     description: s.description,
-    systemPrompt: s.systemPrompt,
     input: s.input,
     output: s.output,
     requiredTools: s.requiredTools,
-    allowedTools: s.allowedTools,
-    whenToUse: s.whenToUse,
     keywords: s.keywords,
-    version: s.version || 1,
-    origin: s.origin,
-    learning: getLearningSummary(s.id),
   }));
   res.json({ skills });
+});
+
+router.get("/hub/list", async (req: Request, res: Response) => {
+  try {
+    const payload = await fetchHubJson(buildHubListUrl(req.query));
+    res.json({ skills: Array.isArray(payload.skills) ? payload.skills : [] });
+  } catch (error: any) {
+    res.status(502).json({ error: `Skill Hub 加载失败: ${error.message}` });
+  }
+});
+
+router.post("/hub/:skillId/review", async (req: Request, res: Response) => {
+  const rating = Number(req.body?.rating);
+  if (!Number.isInteger(rating) || rating < 1 || rating > 5) {
+    res.status(400).json({ error: "评分必须是 1 到 5 的整数" });
+    return;
+  }
+  try {
+    const reviewerId = typeof req.body?.reviewerId === "string" ? req.body.reviewerId : undefined;
+    res.status(201).json(await postHubJson(buildHubReviewUrl(req.params.skillId), { rating, reviewerId }));
+  } catch (error: any) { res.status(502).json({ error: `提交评分失败: ${error.message}` }); }
+});
+
+// GET /api/skills/:id — 单个 Skill 完整定义（编辑用）
+router.get("/:id", (req: Request, res: Response) => {
+  const skill = registeredSkills.find((s) => s.id === req.params.id);
+  if (!skill) {
+    res.status(404).json({ error: "Skill 不存在" });
+    return;
+  }
+  res.json({ skill });
 });
 
 // POST /api/skills/generate — LLM 自动生成 Skill JSON
@@ -132,7 +153,7 @@ router.post("/generate", async (req: Request, res: Response) => {
 
   try {
     const response = await getClient().chat.completions.create({
-      model: MODEL,
+      model: getCurrentModel(),
       messages: [
         { role: "system", content: "你只输出纯 JSON，不输出任何其他内容。" },
         { role: "user", content: META_PROMPT },
@@ -156,7 +177,7 @@ router.post("/generate", async (req: Request, res: Response) => {
       });
     }
   } catch (err: any) {
-    res.status(500).json({ error: formatLlmError(err) });
+    res.status(500).json({ error: err.message });
   }
 });
 
@@ -172,97 +193,30 @@ router.post("/save", (req: Request, res: Response) => {
   }
 });
 
-// POST /api/skills/download — 从服务端下载 Skill 到本地
+// POST /api/skills/download — 从服务端下载 Skill
 router.post("/download", async (req: Request, res: Response) => {
-  const { serverUrl, skillId } = req.body;
-  if (!skillId) {
+  const { skillId } = req.body;
+  if (!skillId || typeof skillId !== "string") {
     res.status(400).json({ error: "请提供 skillId" });
     return;
   }
 
   try {
-    const base = (serverUrl || SKILL_HUB_URL).replace(/\/$/, "");
-    const url = `${base}/api/skills/${encodeURIComponent(skillId)}/download`;
-    const response = await fetch(url);
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    const data = await response.json();
+    const payload = await fetchHubJson(buildHubDownloadUrl(skillId));
+    const skill = payload.skill || payload;
+    if (payload.skill) {
+      skill.hub = {
+        skillId: payload.source?.skillId || skillId,
+        version: payload.version,
+        checksum: payload.checksum,
+        downloadedAt: new Date().toISOString(),
+      };
+    }
 
-    // Hub 下载返回 { skill, version, checksum, source } 或 raw Skill JSON
-    const skill = data.skill || data;
     saveSkill(skill as Skill);
     res.json({ success: true, skill });
   } catch (err: any) {
     res.status(500).json({ error: `下载失败: ${err.message}` });
-  }
-});
-
-// GET /api/skills/search?q= — 模糊搜索 Skill
-router.get("/search", (req: Request, res: Response) => {
-  const q = (typeof req.query.q === "string" ? req.query.q : "").toLowerCase();
-  if (!q) { res.json({ skills: [] }); return; }
-  const results = registeredSkills
-    .filter((s) => {
-      const haystack = [s.name, s.description, ...(s.keywords || [])].join(" ").toLowerCase();
-      return haystack.includes(q);
-    })
-    .map((s) => ({ id: s.id, name: s.name, description: s.description, keywords: s.keywords }));
-  res.json({ skills: results });
-});
-
-// GET /api/skills/:id/learning — 本地隐式学习状态
-router.get("/:id/learning", (req: Request, res: Response) => {
-  const skill = registeredSkills.find((item) => item.id === req.params.id);
-  if (!skill) { res.status(404).json({ error: "Skill 不存在" }); return; }
-  const state = readLearningState(skill.id);
-  res.json({
-    summary: getLearningSummary(skill.id),
-    evidence: [...state.evidence].sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 30),
-    versions: state.versions.map((version) => ({
-      version: version.version,
-      status: version.status,
-      rationale: version.rationale,
-      createdAt: version.createdAt,
-      activatedAt: version.activatedAt,
-      evaluation: version.evaluation,
-    })),
-  });
-});
-
-// PATCH /api/skills/:id/learning — 开关自动改进
-router.patch("/:id/learning", (req: Request, res: Response) => {
-  const skill = registeredSkills.find((item) => item.id === req.params.id);
-  if (!skill) { res.status(404).json({ error: "Skill 不存在" }); return; }
-  if (typeof req.body?.autoImprove !== "boolean") {
-    res.status(400).json({ error: "请提供 autoImprove 布尔值" });
-    return;
-  }
-  setAutoImprove(skill.id, req.body.autoImprove);
-  res.json({ success: true, summary: getLearningSummary(skill.id) });
-});
-
-// POST /api/skills/:id/optimize — 使用现有证据立即尝试生成候选版本
-router.post("/:id/optimize", (req: Request, res: Response) => {
-  const skill = registeredSkills.find((item) => item.id === req.params.id);
-  if (!skill) { res.status(404).json({ error: "Skill 不存在" }); return; }
-  scheduleSkillOptimization(skill.id, true);
-  res.status(202).json({ success: true });
-});
-
-// POST /api/skills/:id/rollback — 激活指定本地版本，1 表示原始版本
-router.post("/:id/rollback", (req: Request, res: Response) => {
-  const skill = registeredSkills.find((item) => item.id === req.params.id);
-  if (!skill) { res.status(404).json({ error: "Skill 不存在" }); return; }
-  const version = Number(req.body?.version ?? 1);
-  if (!Number.isInteger(version) || version < 1) {
-    res.status(400).json({ error: "无效的版本号" });
-    return;
-  }
-  try {
-    activateSkillVersion(skill.id, version);
-    initSkills();
-    res.json({ success: true, summary: getLearningSummary(skill.id) });
-  } catch (error) {
-    res.status(400).json({ error: error instanceof Error ? error.message : String(error) });
   }
 });
 

@@ -1,11 +1,8 @@
-# Dependencies and build outputs
 node_modules/
 dist/
 release/
 .npm-cache/
 *.exe
-
-# Local configuration
 .env
 .env.*
 !.env.example
@@ -18,6 +15,9 @@ client/data/logs/
 client/data/skill-learning/
 client/be/data/conversations/
 client/be/data/skill-learning/
+client/be/data/external-tools/
+client/be/data/mcp-servers/
+client/be/data/agent-runs/
 server/data/hub/
 
 # OS metadata

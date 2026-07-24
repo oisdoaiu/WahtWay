@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from "react";
+﻿import { useState, useRef, useEffect, useCallback } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { DEBUG, addDebugEvent, getDebugEvents, onDebugEvents, clearDebugEvents } from "./debug";
@@ -7,14 +7,91 @@ import {
   appendToLast, patchMessage, setStreaming, subscribe,
   getTodoItems, setTodoItems, updateLastMessage,
 } from "./conversations";
+import { McpPanel } from "./McpPanel";
 import "./App.css";
 
-const DEFAULT_MODEL = "deepseek-v4-flash";
-const SUPPORTED_MODELS = new Set([DEFAULT_MODEL, "deepseek-v4-pro"]);
+type AiProviderKind =
+  | "deepseek"
+  | "openai"
+  | "qwen"
+  | "zhipu"
+  | "moonshot"
+  | "siliconflow"
+  | "openai-compatible";
 
-function getInitialModel(): string {
-  const savedModel = localStorage.getItem("wahtway-model");
-  return savedModel && SUPPORTED_MODELS.has(savedModel) ? savedModel : DEFAULT_MODEL;
+interface AiSettingsView {
+  provider: AiProviderKind;
+  baseURL: string;
+  model: string;
+  modelOptions: string[];
+  balancePath: string;
+  apiKeyConfigured: boolean;
+}
+
+const AI_PROVIDER_PRESETS: Record<AiProviderKind, { label: string; defaultBaseURL: string; defaultModel: string; modelOptions: string[]; balancePath: string; }> = {
+  deepseek: {
+    label: "DeepSeek",
+    defaultBaseURL: "https://api.deepseek.com",
+    defaultModel: "deepseek-v4-flash",
+    modelOptions: ["deepseek-v4-flash", "deepseek-v4-pro", "deepseek-chat"],
+    balancePath: "/user/balance",
+  },
+  openai: {
+    label: "OpenAI",
+    defaultBaseURL: "https://api.openai.com/v1",
+    defaultModel: "gpt-5.5",
+    modelOptions: ["gpt-5.5", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"],
+    balancePath: "",
+  },
+  qwen: {
+    label: "通义千问",
+    defaultBaseURL: "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    defaultModel: "qwen3.7-max",
+    modelOptions: ["qwen3.7-max", "qwen3.7-plus", "qwen3.6-flash", "qwen3.5-omni-plus"],
+    balancePath: "",
+  },
+  zhipu: {
+    label: "智谱 GLM",
+    defaultBaseURL: "https://open.bigmodel.cn/api/paas/v4",
+    defaultModel: "glm-5.2",
+    modelOptions: ["glm-5.2", "glm-5-turbo", "glm-4.7", "glm-4.6"],
+    balancePath: "",
+  },
+  moonshot: {
+    label: "Moonshot",
+    defaultBaseURL: "https://api.moonshot.cn/v1",
+    defaultModel: "kimi-k3",
+    modelOptions: ["kimi-k3", "kimi-k2.7-code", "kimi-k2.6", "kimi-k2.5"],
+    balancePath: "",
+  },
+  siliconflow: {
+    label: "SiliconFlow",
+    defaultBaseURL: "https://api.siliconflow.cn/v1",
+    defaultModel: "Qwen/Qwen3.5-397B-A17B",
+    modelOptions: ["Qwen/Qwen3.5-397B-A17B", "deepseek-ai/DeepSeek-V3.2", "deepseek-ai/DeepSeek-R1-0528", "zai-org/GLM-5"],
+    balancePath: "",
+  },
+  "openai-compatible": {
+    label: "自定义兼容",
+    defaultBaseURL: "https://api.openai.com/v1",
+    defaultModel: "gpt-5.5",
+    modelOptions: ["gpt-5.5", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"],
+    balancePath: "",
+  },
+};
+
+const DEFAULT_MODEL = AI_PROVIDER_PRESETS.deepseek.defaultModel;
+
+function getFallbackAiSettings(provider: AiProviderKind = "deepseek"): AiSettingsView {
+  const preset = AI_PROVIDER_PRESETS[provider];
+  return {
+    provider,
+    baseURL: preset.defaultBaseURL,
+    model: preset.defaultModel,
+    modelOptions: [...preset.modelOptions],
+    balancePath: preset.balancePath,
+    apiKeyConfigured: false,
+  };
 }
 
 // ---- 全局 Toast（替代 alert，解决 Electron 焦点丢失） ----
@@ -75,24 +152,42 @@ interface MemoryItem {
   updatedAt: string;
   lastUsedAt: string | null;
 }
+interface ExternalToolConfig {
+  id: string;
+  name: string;
+  description: string;
+  method: "GET" | "POST" | "PUT" | "PATCH";
+  url: string;
+  headers: Record<string, string>;
+  parameters: Record<string, unknown>;
+  query: Record<string, string>;
+  body: unknown;
+  responseDataPath: string;
+  permission: "read" | "write";
+  enabled: boolean;
+  timeoutMs: number;
+  maxResponseBytes: number;
+  secretNames: string[];
+
+}
 
 // ---- 对话面板 ----
 
-function ChatPanel({ conversationId, memoryMode, onMemoryModeChange, onTitleChange, onCreateSkill }: { showModal: boolean; conversationId: string; memoryMode: MemoryMode; onMemoryModeChange: (mode: MemoryMode) => void; onTitleChange: (title: string) => void; onCreateSkill: (prefill?: string) => void }) {
+function ChatPanel({ conversationId, memoryMode, onMemoryModeChange, onTitleChange, onCreateSkill, aiSettings, onAiSettingsChange, onOpenAiSettings }: { showModal: boolean; conversationId: string; memoryMode: MemoryMode; onMemoryModeChange: (mode: MemoryMode) => void; onTitleChange: (title: string) => void; onCreateSkill: (prefill?: string) => void; aiSettings: AiSettingsView | null; onAiSettingsChange: (patch: Partial<AiSettingsView> & { apiKey?: string }) => void; onOpenAiSettings: () => void; }) {
   const [, setTick] = useState(0);
   const messages = getMessages(conversationId);
+  const msg = messages[messages.length - 1];
   const streaming = isStreaming(conversationId);
   const [input, setInput] = useState("");
   const [skillName, setSkillName] = useState<string | null>(null);
   const [thinkingStatus, setThinkingStatus] = useState("");
   const [toolCalls, setToolCalls] = useState<{name: string; startTime: number}[]>([]);
   const toolTimersRef = useRef<Map<string, number>>(new Map());
-  const [model, setModel] = useState(getInitialModel);
   const [skillId, setSkillId] = useState<string>("");
   const [showSkillPicker, setShowSkillPicker] = useState(false);
   const [skillSearch, setSkillSearch] = useState("");
   const [allSkills, setAllSkills] = useState<SkillMeta[]>([]);
-  const [permDialog, setPermDialog] = useState<{ reason: string; path: string; isCommand?: boolean; command?: string; cwd?: string } | null>(null);
+  const [permDialog, setPermDialog] = useState<{ reason: string; path: string; runId?: string; kind?: string; isCommand?: boolean; command?: string; cwd?: string; externalToken?: string; externalToolId?: string; mcpToken?: string; mcpServerId?: string; mcpToolName?: string } | null>(null);
   const [permBusy, setPermBusy] = useState(false);
   const [showPulse, setShowPulse] = useState(false);
   const [attachedFiles, setAttachedFiles] = useState<string[]>([]);
@@ -107,6 +202,9 @@ function ChatPanel({ conversationId, memoryMode, onMemoryModeChange, onTitleChan
   const historyIdx = useRef(-1);
   const lastEventRef = useRef(Date.now());
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const provider = aiSettings?.provider || "deepseek";
+  const model = aiSettings?.model || DEFAULT_MODEL;
+  const modelOptions = aiSettings?.modelOptions?.length ? aiSettings.modelOptions : AI_PROVIDER_PRESETS[provider].modelOptions;
 
   // 加载 Skill 列表（下拉用）
   const loadSkills = () => fetch("/api/skills").then(r => r.json()).then(d => setAllSkills(d.skills || []));
@@ -131,6 +229,14 @@ function ChatPanel({ conversationId, memoryMode, onMemoryModeChange, onTitleChan
         .catch(() => setMessages(conversationId, []));
     }
     setSkillName(null);
+    setPermDialog(null);
+    fetch(`/api/agent-runs/pending?conversationId=${encodeURIComponent(conversationId)}`)
+      .then((response) => response.ok ? response.json() : Promise.reject())
+      .then((data) => {
+        const run = data.runs?.[0];
+        if (run) setPermDialog({ runId: run.runId, kind: run.kind, reason: run.reason, path: run.target || run.toolName });
+      })
+      .catch(() => {});
   }, [conversationId]);
 
   useEffect(() => {
@@ -192,7 +298,12 @@ function ChatPanel({ conversationId, memoryMode, onMemoryModeChange, onTitleChan
       });
 
       if (!response.ok) {
-        const msg = response.status === 504 ? "请求超时，请重试" : response.status >= 500 ? "服务器异常，稍后重试" : `请求失败 (${response.status})`;
+        let detail = "";
+        try {
+          const body = await response.json();
+          detail = typeof body?.error === "string" ? body.error : "";
+        } catch {}
+        const msg = detail || (response.status === 504 ? "请求超时，请重试" : response.status >= 500 ? "服务器异常，稍后重试" : `请求失败 (${response.status})`);
         throw new Error(msg);
       }
 
@@ -224,6 +335,16 @@ function ChatPanel({ conversationId, memoryMode, onMemoryModeChange, onTitleChan
               addDebugEvent("skill", event.data.skillName);
             }
             else if (event.type === "tool_call") { lastEventRef.current = Date.now(); const tn = event.data.toolName; toolTimersRef.current.set(tn, Date.now()); setThinkingStatus(`正在${toolLabel(tn)}…`); setToolCalls(prev => [...prev, {name: tn, startTime: Date.now()}]); addDebugEvent("tool_call", tn); }
+            else if (event.type === "approval_required") {
+              lastEventRef.current = Date.now();
+              setThinkingStatus("");
+              setPermDialog({
+                runId: event.data.runId,
+                kind: event.data.kind,
+                reason: event.data.reason,
+                path: event.data.target || event.data.toolName,
+              });
+            }
             else if (event.type === "tool_result") {
               lastEventRef.current = Date.now();
               const tn = (event.data as any).toolName as string;
@@ -239,9 +360,13 @@ function ChatPanel({ conversationId, memoryMode, onMemoryModeChange, onTitleChan
                 });
                 if (items.length > 0) setTodoItems(conversationId, items);
               }
-              // 检测权限拦截// 检测权限拦截// 检测权限拦截// 检测权限拦截// 检测权限拦截
-const res2 = (event.data as any)?.result; // was here
-              if (typeof res === "string" && res.startsWith("PERMISSION_REQUIRED::")) {
+              if (typeof res === "string" && res.startsWith("MCP_PERMISSION_REQUIRED::")) {
+                const parts = res.split("::");
+                setPermDialog({ reason: "MCP Server 工具调用需要确认", path: `mcp-${parts[1] || "unknown"}-${parts[2] || "tool"}`, mcpServerId: parts[1], mcpToolName: parts[2], mcpToken: parts[3] });
+              } else if (typeof res === "string" && res.startsWith("EXTERNAL_PERMISSION_REQUIRED::")) {
+                const parts = res.split("::");
+                setPermDialog({ reason: "外部工具将修改远端数据", path: `external-${parts[1] || "unknown"}`, externalToolId: parts[1], externalToken: parts[2] });
+              } else if (typeof res === "string" && res.startsWith("PERMISSION_REQUIRED::")) {
                 const parts = res.split("::");
                 const reason = parts[1] || "未知";
                 const path = parts[2] || "";
@@ -272,6 +397,70 @@ const res2 = (event.data as any)?.result; // was here
       setStreaming(conversationId, false);
     }
   }, [input, streaming, conversationId, onTitleChange, attachedFiles, model, skillId, workspace, memoryMode, selectedMemoryIds]);
+
+  const continueApproval = async (runId: string, action: "approve" | "reject") => {
+    setPermBusy(true);
+    setStreaming(conversationId, true);
+    setThinkingStatus(action === "approve" ? "正在执行已批准的工具…" : "正在处理拒绝结果…");
+    try {
+      const response = await fetch(`/api/agent-runs/${encodeURIComponent(runId)}/${action}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ conversationId }),
+      });
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.error || `请求失败 (${response.status})`);
+      }
+      const reader = response.body?.getReader();
+      if (!reader) throw new Error("无法读取响应流");
+      const decoder = new TextDecoder();
+      let buffer = "";
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          const event = JSON.parse(line.slice(6));
+          lastEventRef.current = Date.now();
+          if (event.type === "delta") appendToLast(conversationId, event.data);
+          else if (event.type === "tool_call") {
+            const name = event.data.toolName;
+            toolTimersRef.current.set(name, Date.now());
+            setToolCalls((previous) => [...previous, { name, startTime: Date.now() }]);
+            setThinkingStatus(`正在${toolLabel(name)}…`);
+          } else if (event.type === "tool_result") {
+            setThinkingStatus("正在整理结果…");
+          } else if (event.type === "stats") {
+            updateLastMessage(conversationId, (message) => ({ ...message, stats: event.data as any }));
+          } else if (event.type === "approval_required") {
+            setPermDialog({
+              runId: event.data.runId,
+              kind: event.data.kind,
+              reason: event.data.reason,
+              path: event.data.target || event.data.toolName,
+            });
+          } else if (event.type === "error") {
+            toast(String(event.data), "error");
+            appendToLast(conversationId, `\n\n❌ ${event.data}`);
+          } else if (event.type === "done") {
+            setThinkingStatus("");
+            if (event.data?.stats) updateLastMessage(conversationId, (message) => ({ ...message, stats: event.data.stats }));
+          }
+        }
+      }
+    } catch (error: any) {
+      toast(error.message || "审批续跑失败", "error");
+    } finally {
+      setThinkingStatus("");
+      setStreaming(conversationId, false);
+      setPermBusy(false);
+    }
+  };
+
 
   const stopStreaming = () => {
     if (abortRef.current) {
@@ -333,7 +522,21 @@ const res2 = (event.data as any)?.result; // was here
     if (api?.openFolderDialog) {
       const dir = await api.openFolderDialog();
       if (dir) { setWorkspace(dir); localStorage.setItem("wahtway-workspace", dir); }
+      return;
     }
+    const dir = window.prompt("请输入工作区的完整路径", workspace);
+    if (dir?.trim()) {
+      const normalized = dir.trim();
+      setWorkspace(normalized);
+      localStorage.setItem("wahtway-workspace", normalized);
+    }
+  };
+
+  const clearWorkspace = (event: React.MouseEvent) => {
+    event.stopPropagation();
+    setWorkspace("");
+    localStorage.removeItem("wahtway-workspace");
+    toast("已清空工作区");
   };
 
   const openFilePicker = async () => {
@@ -372,11 +575,41 @@ const res2 = (event.data as any)?.result; // was here
         <h1>WahtWay</h1>
         <span className="subtitle">何以委</span>
         {skillName && <span className="skill-badge">已激活: {skillName}</span>}
-        <span className="workspace-badge" onClick={openFolderPicker} title="切换工作目录">{workspace ? `📂 ${workspace.split(/[\/]/).pop()}` : "📂 未设置工作区"}</span>
-        <select className="model-select" value={model} onChange={(e) => { const m = e.target.value; setModel(m); localStorage.setItem("wahtway-model", m); }}>
-          <option value="deepseek-v4-flash">DeepSeek V4 Flash (快)</option>
-          <option value="deepseek-v4-pro">DeepSeek V4 Pro (深)</option>
-        </select>
+        <div className="ai-top-controls">
+          <label className="ai-inline-field">
+            <span>API</span>
+            <select
+              value={provider}
+              onChange={(e) => {
+                const nextProvider = e.target.value as AiProviderKind;
+                onAiSettingsChange({ provider: nextProvider, baseURL: AI_PROVIDER_PRESETS[nextProvider].defaultBaseURL, model: AI_PROVIDER_PRESETS[nextProvider].defaultModel, modelOptions: AI_PROVIDER_PRESETS[nextProvider].modelOptions, balancePath: AI_PROVIDER_PRESETS[nextProvider].balancePath });
+              }}
+            >
+              <option value="deepseek">DeepSeek</option>
+              <option value="openai">OpenAI</option>
+              <option value="qwen">通义千问</option>
+              <option value="zhipu">智谱 GLM</option>
+              <option value="moonshot">Moonshot</option>
+              <option value="siliconflow">SiliconFlow</option>
+              <option value="openai-compatible">自定义兼容</option>
+            </select>
+          </label>
+          <label className="ai-inline-field">
+            <span>模型</span>
+            <select
+              value={model}
+              onChange={(e) => onAiSettingsChange({ model: e.target.value })}
+            >
+              {modelOptions.map((item) => <option key={item} value={item}>{item}</option>)}
+              {!modelOptions.includes(model) && <option value={model}>{model}</option>}
+            </select>
+          </label>
+          <button className="ai-settings-btn" onClick={onOpenAiSettings}>AI 配置</button>
+        </div>
+        <span className="workspace-control">
+          <span className="workspace-badge" onClick={openFolderPicker} title="切换工作目录">{workspace ? `📂 ${workspace.split(/[\/]/).pop()}` : "📂 未设置工作区"}</span>
+          {workspace && <button className="workspace-clear" onClick={clearWorkspace} title="清空工作区">×</button>}
+        </span>
       </header>
       <main className="chat-area">
         {messages.length === 0 && (
@@ -462,7 +695,7 @@ const res2 = (event.data as any)?.result; // was here
                   ))}
                 </div>
               )}
-              {msg.content && !streaming && (
+              {msg && msg.content && !streaming && (
                 <button className="message-memory-button" title="保存为长期记忆" onClick={() => setMemoryDraft({ content: msg.content, messageId: msg.id })}>保存为记忆</button>
               )}
             </div>
@@ -547,22 +780,46 @@ const res2 = (event.data as any)?.result; // was here
           <div className="modal" style={{ maxWidth: 480 }} onClick={e => e.stopPropagation()}>
             <div className="modal-header"><h2>🔐 确认操作</h2></div>
             <div className="modal-body">
-              <p>{permDialog.isCommand ? "即将执行命令：" : "即将操作路径："}</p>
+              <p>{permDialog.kind === "mcp" || permDialog.mcpToken ? "即将调用 MCP 工具：" : permDialog.kind === "external" || permDialog.externalToken ? "即将调用写入型外部工具：" : permDialog.kind === "command" || permDialog.isCommand ? "即将执行命令：" : "即将操作路径："}</p>
               <p className="perm-path">{permDialog.isCommand && permDialog.command ? permDialog.command : (permDialog.path || "未知路径")}</p>
               {permDialog.cwd && <p className="perm-cwd">📂 {permDialog.cwd}</p>}
               <p className="perm-reason">原因：{permDialog.reason}</p>
               <div className="modal-actions">
-                <button onClick={() => setPermDialog(null)} disabled={permBusy}>取消</button>
+                <button onClick={() => {
+                  if (permDialog.runId) {
+                    const runId = permDialog.runId;
+                    setPermDialog(null);
+                    void continueApproval(runId, "reject");
+                  } else setPermDialog(null);
+                }} disabled={permBusy}>{permDialog.runId ? "拒绝" : "取消"}</button>
                 <button className="primary" disabled={permBusy}
                   style={permDialog.reason.includes("危险") ? { background: "#c62828" } : {}}
                   onClick={async () => {
+                  if (permDialog.runId) {
+                    const runId = permDialog.runId;
+                    setPermDialog(null);
+                    await continueApproval(runId, "approve");
+                    return;
+                  }
                   setPermBusy(true);
                   const isCmd = permDialog.isCommand;
                   const cmd = permDialog.command;
                   const cwd = permDialog.cwd;
+                  const externalToken = permDialog.externalToken;
+                  const mcpToken = permDialog.mcpToken;
                   setPermDialog(null); // 立即关闭弹窗
                   try {
-                    if (isCmd) {
+                    if (mcpToken) {
+                      const r = await fetch("/api/mcp/approve/execute", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token: mcpToken }) });
+                      const d = await r.json();
+                      if (!r.ok) throw new Error(d.error || "MCP 工具执行失败");
+                      appendToLast(conversationId, `\n\n> MCP 工具结果\n\n\`\`\`\n${String(d.output || "").slice(0, 4000)}\n\`\`\``);
+                    } else if (externalToken) {
+                      const r = await fetch("/api/external-tools/approve/execute", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token: externalToken }) });
+                      const d = await r.json();
+                      if (!r.ok) throw new Error(d.error || "外部工具执行失败");
+                      appendToLast(conversationId, `\n\n> 外部工具结果\n\n\`\`\`\n${String(d.output || "").slice(0, 4000)}\n\`\`\``);
+                    } else if (isCmd) {
                       const r = await fetch("/api/tools/approve-command", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ command: cmd, cwd }) });
                       const d = await r.json();
                       if (d.result) {
@@ -571,8 +828,8 @@ const res2 = (event.data as any)?.result; // was here
                     } else {
                       await fetch("/api/tools/approve", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path: permDialog.path }) });
                     }
-                    setTimeout(() => sendMessage(), 300);
-                  } catch (e) { /* ignore */ }
+                    if (!externalToken && !mcpToken) setTimeout(() => sendMessage(), 300);
+                  } catch (e: any) { toast(e.message || "执行失败", "error"); }
                   finally { setPermBusy(false); }
                 }}>{permBusy ? "执行中…" : "批准执行"}</button>
               </div>
@@ -586,7 +843,7 @@ const res2 = (event.data as any)?.result; // was here
 
 // ---- Skill 库面板 ----
 
-function SkillsPanel({ onCreateSkill, onEditSkill, skillsVersion }: { onCreateSkill: () => void; onEditSkill: (skill: SkillMeta) => void; skillsVersion: number }) {
+function SkillsPanel({ onCreateSkill, onEditSkill, skillsVersion }: { onCreateSkill: () => void; onEditSkill: (skillId: string) => void; skillsVersion: number }) {
   const [skills, setSkills] = useState<SkillMeta[]>([]);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<"local" | "hub">("local");
@@ -657,17 +914,35 @@ function SkillsPanel({ onCreateSkill, onEditSkill, skillsVersion }: { onCreateSk
   const [hubSort, setHubSort] = useState("latest");
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
   const [downloading, setDownloading] = useState<Set<string>>(new Set());
+  const [reviewerId] = useState(() => {
+    const key = "wahtway-reviewer-id";
+    let value = localStorage.getItem(key);
+    if (!value) { value = crypto.randomUUID(); localStorage.setItem(key, value); }
+    return value;
+  });
+  const [ratedSkills, setRatedSkills] = useState<Record<string, number>>(() => {
+    try {
+      const stored = JSON.parse(localStorage.getItem("wahtway-rated-skills") || "{}");
+      return Array.isArray(stored) ? Object.fromEntries(stored.map((id: string) => [id, 0])) : stored;
+    } catch { return {}; }
+  });
 
-  const fetchHub = (q?: string, sort?: string) => {
+  const fetchHub = async (q?: string, sort?: string) => {
     setHubLoading(true);
     setHubError("");
     const params = new URLSearchParams();
     if (q) params.set("q", q);
     params.set("sort", sort || hubSort);
-    fetch(`/api/skills/hub/list?${params.toString()}`)
-      .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
-      .then(d => { setHubSkills(d.skills || []); setHubLoading(false); })
-      .catch(err => { setHubError(err.message); setHubLoading(false); });
+    try {
+      const response = await fetch(`/api/skills/hub/list?${params.toString()}`);
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
+      setHubSkills(data.skills || []);
+    } catch (error: any) {
+      setHubError(error.message || "Skill Hub 加载失败");
+    } finally {
+      setHubLoading(false);
+    }
   };
   useEffect(() => { if (tab === "hub") fetchHub(); }, [tab, hubSort]);
 
@@ -692,6 +967,22 @@ function SkillsPanel({ onCreateSkill, onEditSkill, skillsVersion }: { onCreateSk
 
   const localIds = new Set(skills.map(s => s.id));
 
+  const rateSkill = async (skillId: string, rating: number) => {
+    try {
+      const response = await fetch(`/api/skills/hub/${encodeURIComponent(skillId)}/review`, {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ rating, reviewerId }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || "评分失败");
+      const next = { ...ratedSkills, [skillId]: rating };
+      setRatedSkills(next);
+      localStorage.setItem("wahtway-rated-skills", JSON.stringify(next));
+      setHubSkills(current => current.map(skill => skill.skillId === skillId
+        ? { ...skill, ratingAverage: data.skill?.ratingAverage, ratingCount: data.skill?.ratingCount } : skill));
+      toast("评分已提交");
+    } catch (error: any) { toast(error.message || "评分失败", "error"); }
+  };
+
   return (
     <div className="skills-panel">
       <header className="header">
@@ -702,7 +993,7 @@ function SkillsPanel({ onCreateSkill, onEditSkill, skillsVersion }: { onCreateSk
 
       <div className="skills-tabs">
         <button className={`skills-tab ${tab === "local" ? "active" : ""}`} onClick={() => setTab("local")}>📁 本地</button>
-        <button className={`skills-tab ${tab === "hub" ? "active" : ""}`} onClick={() => setTab("hub")}>🌐 在线 Hub</button>
+        <button className={`skills-tab ${tab === "hub" ? "active" : ""}`} onClick={() => setTab("hub")}>☁️ 在线 Hub</button>
       </div>
 
       {tab === "local" && (
@@ -714,7 +1005,7 @@ function SkillsPanel({ onCreateSkill, onEditSkill, skillsVersion }: { onCreateSk
                 <h3>🧠 {skill.name}</h3>
                 <code>{skill.id}</code>
                 <span className="skill-version-badge">v{skill.learning?.activeVersion || skill.version || 1}</span>
-                <button className="skill-edit-btn" title="编辑 Skill" onClick={() => onEditSkill(skill)}>✏️</button>
+                <button className="skill-edit-btn" title="编辑 Skill" onClick={() => onEditSkill(skill.id)}>✏️</button>
                 <button className="skill-delete-btn skill-delete-text" title="删除 Skill" onClick={(e) => { e.stopPropagation(); setDeleteConfirm(skill.id); }}>×</button>
               </div>
               <p className="skill-card-desc">{skill.description}</p>
@@ -784,11 +1075,17 @@ function SkillsPanel({ onCreateSkill, onEditSkill, skillsVersion }: { onCreateSk
                 <span className="hub-meta">
                   {skill.authorName && <span className="hub-author">by {skill.authorName}</span>}
                   <span className="hub-downloads">⬇ {skill.downloadCount || 0}</span>
-                  <span className="hub-rating">{skill.ratingCount ? `⭐ ${skill.ratingAverage}` : ""}</span>
+                  <span className="hub-rating">{skill.ratingCount ? `⭐ ${skill.ratingAverage} (${skill.ratingCount})` : "暂无评分"}</span>
                   <span className="hub-version">v{skill.version}</span>
                 </span>
               </div>
               <p className="skill-card-desc">{skill.description}</p>
+              <div className="hub-review">
+                <span>{ratedSkills[skill.skillId] ? `已评分 ${ratedSkills[skill.skillId]} 星` : "匿名评分"}</span>
+                {[1, 2, 3, 4, 5].map(rating => (
+                  <button key={rating} className={`hub-star-btn ${ratedSkills[skill.skillId] >= rating ? "selected" : ""}`} title={`评分 ${rating} 星`} onClick={() => rateSkill(skill.skillId, rating)}>★</button>
+                ))}
+              </div>
               <div className="hub-card-actions">
                 {localIds.has(skill.skillId) ? (
                   <span className="hub-installed-badge">✅ 已安装</span>
@@ -1064,19 +1361,184 @@ function MemoryPanel() {
     </section>
   );
 }
+const EMPTY_EXTERNAL_TOOL = {
+  id: "",
+  name: "",
+  description: "",
+  method: "GET" as "GET" | "POST" | "PUT" | "PATCH",
+  url: "https://",
+  headersText: "{}",
+  parametersText: JSON.stringify({ type: "object", properties: {}, required: [] }, null, 2),
+  queryText: "{}",
+  bodyText: "null",
+  responseDataPath: "",
+  permission: "read" as "read" | "write",
+  enabled: true,
+  timeoutMs: 10000,
+  maxResponseBytes: 65536,
+};
+
+function ExternalToolsPanel() {
+  const [tools, setTools] = useState<ExternalToolConfig[]>([]);
+  const [editing, setEditing] = useState<typeof EMPTY_EXTERNAL_TOOL | null>(null);
+  const [originalId, setOriginalId] = useState<string | null>(null);
+  const [testArgs, setTestArgs] = useState("{}");
+  const [testOutput, setTestOutput] = useState("");
+  const [secretName, setSecretName] = useState("");
+  const [secretValue, setSecretValue] = useState("");
+
+  const load = () => fetch("/api/external-tools").then(r => r.json()).then(d => setTools(d.tools || []));
+  useEffect(() => { load().catch(() => setTools([])); }, []);
+
+  const openEditor = (tool?: ExternalToolConfig) => {
+    setOriginalId(tool?.id || null);
+    setEditing(tool ? {
+      id: tool.id,
+      name: tool.name,
+      description: tool.description,
+      method: tool.method,
+      url: tool.url,
+      headersText: JSON.stringify(tool.headers, null, 2),
+      parametersText: JSON.stringify(tool.parameters, null, 2),
+      queryText: JSON.stringify(tool.query, null, 2),
+      bodyText: JSON.stringify(tool.body, null, 2),
+      responseDataPath: tool.responseDataPath,
+      permission: tool.permission,
+      enabled: tool.enabled,
+      timeoutMs: tool.timeoutMs,
+      maxResponseBytes: tool.maxResponseBytes,
+    } : { ...EMPTY_EXTERNAL_TOOL });
+    setTestArgs("{}");
+    setTestOutput("");
+    setSecretName("");
+    setSecretValue("");
+  };
+
+  const payload = () => {
+    if (!editing) throw new Error("没有待保存的工具");
+    return {
+      id: editing.id,
+      name: editing.name,
+      description: editing.description,
+      method: editing.method,
+      url: editing.url,
+      headers: JSON.parse(editing.headersText),
+      parameters: JSON.parse(editing.parametersText),
+      query: JSON.parse(editing.queryText),
+      body: JSON.parse(editing.bodyText),
+      responseDataPath: editing.responseDataPath,
+      permission: editing.permission,
+      enabled: editing.enabled,
+      timeoutMs: editing.timeoutMs,
+      maxResponseBytes: editing.maxResponseBytes,
+    };
+  };
+
+  const save = async () => {
+    try {
+      const response = await fetch(originalId ? `/api/external-tools/${originalId}` : "/api/external-tools", {
+        method: originalId ? "PATCH" : "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload()),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "保存失败");
+      setEditing(null);
+      await load();
+      toast("外部工具已保存");
+    } catch (error: any) { toast(error.message || "JSON 配置无效", "error"); }
+  };
+
+  const test = async () => {
+    if (!originalId) { toast("请先保存工具，再测试连接", "error"); return; }
+    try {
+      setTestOutput("测试中...");
+      const response = await fetch(`/api/external-tools/${originalId}/test`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ args: JSON.parse(testArgs) }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "测试失败");
+      setTestOutput(String(data.output || "(空响应)"));
+    } catch (error: any) { setTestOutput(`错误: ${error.message}`); }
+  };
+
+  const addSecret = async () => {
+    if (!originalId) { toast("请先保存工具", "error"); return; }
+    const response = await fetch(`/api/external-tools/${originalId}/secrets/${encodeURIComponent(secretName.trim())}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ value: secretValue }),
+    });
+    const data = await response.json();
+    if (!response.ok) { toast(data.error || "Secret 保存失败", "error"); return; }
+    setSecretName(""); setSecretValue(""); await load(); toast("Secret 已保存");
+  };
+
+  return (
+    <section className="external-tools-panel">
+      <header className="header"><h1>外部工具</h1><span className="subtitle">受控 HTTPS API 连接器</span><button className="create-btn" onClick={() => openEditor()}>新建工具</button></header>
+      <div className="external-tools-list">
+        {tools.length === 0 && <div className="external-empty">还没有外部工具</div>}
+        {tools.map(tool => (
+          <div key={tool.id} className={`external-tool-row ${tool.enabled ? "" : "disabled"}`}>
+            <div className="external-tool-state"><span className={`external-status ${tool.enabled ? "on" : ""}`} /></div>
+            <div className="external-tool-info"><strong>{tool.name}</strong><code>external-{tool.id}</code><p>{tool.description}</p><small>{tool.method} · {new URL(tool.url).hostname} · {tool.permission === "read" ? "只读" : "写入需确认"}</small></div>
+            <div className="external-tool-actions">
+              <button onClick={() => openEditor(tool)}>编辑</button>
+              <button onClick={async () => { await fetch(`/api/external-tools/${tool.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ enabled: !tool.enabled }) }); await load(); }}>{tool.enabled ? "禁用" : "启用"}</button>
+              <button className="danger" onClick={async () => { await fetch(`/api/external-tools/${tool.id}`, { method: "DELETE" }); await load(); }}>删除</button>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {editing && (
+        <div className="modal-overlay" onClick={() => setEditing(null)}>
+          <div className="modal external-tool-modal" onClick={e => e.stopPropagation()}>
+            <div className="modal-header"><h2>{originalId ? "编辑外部工具" : "新建外部工具"}</h2><button className="modal-close" onClick={() => setEditing(null)}>×</button></div>
+            <div className="external-form">
+              <label>工具 ID<input value={editing.id} disabled={!!originalId} onChange={e => setEditing({ ...editing, id: e.target.value })} placeholder="weather-query" /></label>
+              <label>名称<input value={editing.name} onChange={e => setEditing({ ...editing, name: e.target.value })} /></label>
+              <label className="wide">描述<input value={editing.description} onChange={e => setEditing({ ...editing, description: e.target.value })} /></label>
+              <label>方法<select value={editing.method} onChange={e => setEditing({ ...editing, method: e.target.value as any })}><option>GET</option><option>POST</option><option>PUT</option><option>PATCH</option></select></label>
+              <label>权限<select value={editing.permission} onChange={e => setEditing({ ...editing, permission: e.target.value as any })}><option value="read">只读自动执行</option><option value="write">写入需要确认</option></select></label>
+              <label className="wide">HTTPS URL<input value={editing.url} onChange={e => setEditing({ ...editing, url: e.target.value })} /></label>
+              <label className="wide">参数 Schema<textarea rows={7} value={editing.parametersText} onChange={e => setEditing({ ...editing, parametersText: e.target.value })} /></label>
+              <label>Query 模板<textarea rows={5} value={editing.queryText} onChange={e => setEditing({ ...editing, queryText: e.target.value })} /></label>
+              <label>Headers<textarea rows={5} value={editing.headersText} onChange={e => setEditing({ ...editing, headersText: e.target.value })} /></label>
+              <label className="wide">Body 模板<textarea rows={5} value={editing.bodyText} onChange={e => setEditing({ ...editing, bodyText: e.target.value })} /></label>
+              <label>响应字段路径<input value={editing.responseDataPath} onChange={e => setEditing({ ...editing, responseDataPath: e.target.value })} placeholder="data.items" /></label>
+              <label>超时（毫秒）<input type="number" value={editing.timeoutMs} onChange={e => setEditing({ ...editing, timeoutMs: Number(e.target.value) })} /></label>
+              <label className="external-check"><input type="checkbox" checked={editing.enabled} onChange={e => setEditing({ ...editing, enabled: e.target.checked })} /> 启用</label>
+              {originalId && <div className="external-secret-box wide"><strong>Secret</strong><div><input value={secretName} onChange={e => setSecretName(e.target.value.toUpperCase())} placeholder="API_KEY" /><input type="password" value={secretValue} onChange={e => setSecretValue(e.target.value)} placeholder="不会回显" /><button onClick={addSecret}>保存 Secret</button></div><small>在 Header、Query 或 Body 中使用 ${"${API_KEY}"}</small><div className="external-secret-list">{(tools.find(tool => tool.id === originalId)?.secretNames || []).map(name => <span key={name}>{name}<button title="删除 Secret" onClick={async () => { await fetch(`/api/external-tools/${originalId}/secrets/${name}`, { method: "DELETE" }); await load(); }}>×</button></span>)}</div></div>}
+              {originalId && <div className="external-test-box wide"><strong>测试参数</strong><textarea rows={4} value={testArgs} onChange={e => setTestArgs(e.target.value)} /><button onClick={test}>测试连接</button>{testOutput && <pre>{testOutput}</pre>}</div>}
+            </div>
+            <div className="modal-actions"><button onClick={() => setEditing(null)}>取消</button><button className="primary" onClick={save}>保存工具</button></div>
+          </div>
+        </div>
+      )}
+
+    </section>
+  );
+}
 
 // ---- App 主入口 ----
 
 export default function App() {
-  const [view, setView] = useState<"chat" | "skills" | "memory">("chat");
+  const [view, setView] = useState<"chat" | "skills" | "memory" | "external-tools" | "mcp">("chat");
   const [showModal, setShowModal] = useState(false);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [showCmdPalette, setShowCmdPalette] = useState(false);
+  const [showAiSettings, setShowAiSettings] = useState(false);
   const [skillsVersion, setSkillsVersion] = useState(0);
   const [prefillSkillDesc, setPrefillSkillDesc] = useState("");
   const [appSkills, setAppSkills] = useState<SkillMeta[]>([]);
   const [editingConvId, setEditingConvId] = useState("");
   const [editTitle, setEditTitle] = useState("");
+  const [aiSettings, setAiSettings] = useState<AiSettingsView | null>(null);
+  const [needsSetup, setNeedsSetup] = useState<boolean | null>(null);
 
   // Load skills for command palette
   useEffect(() => { fetch("/api/skills").then(r => r.json()).then(d => setAppSkills(d.skills || [])); }, [showCmdPalette]);
@@ -1092,15 +1554,68 @@ export default function App() {
   const [conversationId, setConversationId] = useState<string>("");
   const [conversations, setConversations] = useState<any[]>([]);
   const [convVersion, setConvVersion] = useState(0);
-  const [needsSetup, setNeedsSetup] = useState<boolean | null>(null);
 
-  // 启动时检查 API Key 是否配置
+  const saveAiSettings = async (patch: Partial<AiSettingsView> & { apiKey?: string }) => {
+    const response = await fetch("/api/ai-config", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(patch),
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || "保存 AI 配置失败");
+    const settings = data.settings || null;
+    setAiSettings(settings);
+    setNeedsSetup(!data.configured);
+    if (settings) {
+      localStorage.setItem("wahtway-model", settings.model);
+    }
+    return settings as AiSettingsView | null;
+  };
+
   useEffect(() => {
-    fetch("/api/health")
-      .then(r => r.json())
-      .then(d => setNeedsSetup(d.needsSetup || false))
-      .catch(() => setNeedsSetup(false));
+    let cancelled = false;
+    const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+    const loadAiConfig = async () => {
+      for (let attempt = 0; attempt < 6; attempt++) {
+        try {
+          const response = await fetch("/api/ai-config");
+          if (!response.ok) throw new Error(`HTTP ${response.status}`);
+          const data = await response.json();
+          if (cancelled) return;
+          const settings = data.settings || getFallbackAiSettings();
+          setAiSettings(settings);
+          setNeedsSetup(!data.configured);
+          if (!data.configured) setShowAiSettings(true);
+          return;
+        } catch {
+          if (attempt < 5) {
+            await sleep(300);
+            continue;
+          }
+          if (cancelled) return;
+          setAiSettings(getFallbackAiSettings());
+          setNeedsSetup(true);
+          setShowAiSettings(true);
+        }
+      }
+    };
+    void loadAiConfig();
+    return () => {
+      cancelled = true;
+    };
   }, []);
+  const openEditSkill = async (skillId: string) => {
+    try {
+      const response = await fetch(`/api/skills/${skillId}`);
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "读取 Skill 详情失败");
+      setSkillToEdit(data.skill || null);
+      setPrefillSkillDesc("");
+      setShowModal(true);
+    } catch (error: any) {
+      toast(error.message || "读取 Skill 详情失败", "error");
+    }
+  };
 
   const refreshConvs = async () => {
     const r = await fetch("/api/conversations");
@@ -1173,6 +1688,8 @@ export default function App() {
           <button className={`nav-item ${view === "chat" ? "active" : ""}`} onClick={() => setView("chat")}><span className="nav-icon">💬</span><span>对话</span></button>
           <button className={`nav-item ${view === "skills" ? "active" : ""}`} onClick={() => setView("skills")}><span className="nav-icon">🧠</span><span>Skill 库</span></button>
           <button className={`nav-item ${view === "memory" ? "active" : ""}`} onClick={() => setView("memory")}><span className="nav-icon">◉</span><span>长期记忆</span></button>
+          <button className={`nav-item ${view === "external-tools" ? "active" : ""}`} onClick={() => setView("external-tools")}><span className="nav-icon">🔌</span><span>外部工具</span></button>
+          <button className={`nav-item ${view === "mcp" ? "active" : ""}`} onClick={() => setView("mcp")}><span className="nav-icon">◫</span><span>MCP</span></button>
         </div>
         {view === "chat" && (
           <div className="conv-list">
@@ -1198,7 +1715,6 @@ export default function App() {
         <div className="sidebar-footer">
           <button id="sidebar-create-skill" className="nav-item" onClick={() => setShowModal(true)}><span className="nav-icon">✨</span><span>创建 Skill</span></button>
           <div className="sidebar-reset" onClick={() => setShowResetConfirm(true)}>🔄 重置</div>
-          <BalanceWidget />
           <div className="sidebar-item" onClick={() => { const t = theme === "light" ? "dark" : "light"; setTheme(t); localStorage.setItem("wahtway-theme", t); }}>{theme === "light" ? "🌙 深色模式" : "☀️ 浅色模式"}</div>
         <div className="sidebar-reset" onClick={() => { DEBUG.on = !DEBUG.on; setConvVersion(v => v + 1); }}>{DEBUG.on ? "🟢 调试中" : "⚫ 调试关"}</div>
         <div className="sidebar-reset" onClick={() => setShowCmdPalette(true)}>⌨ 命令面板 (Ctrl+K)</div>
@@ -1206,11 +1722,15 @@ export default function App() {
       </nav>
       <div className="main-content">
         {view === "chat" ? (
-          conversationId ? <ChatPanel showModal={showModal} conversationId={conversationId} memoryMode={activeConversation?.memoryMode || "off"} onMemoryModeChange={handleMemoryModeChange} onTitleChange={handleTitleChange} onCreateSkill={(prefill) => { setPrefillSkillDesc(prefill || ""); setShowModal(true); }} /> : <div className="welcome"><h2>🤔 Waht?</h2></div>
+          conversationId ? <ChatPanel showModal={showModal} conversationId={conversationId} memoryMode={activeConversation?.memoryMode || "off"} onMemoryModeChange={handleMemoryModeChange} onTitleChange={handleTitleChange} onCreateSkill={(prefill) => { setPrefillSkillDesc(prefill || ""); setShowModal(true); }} aiSettings={aiSettings} onAiSettingsChange={(patch) => { void saveAiSettings(patch).catch((error: any) => toast(error.message || "保存 AI 配置失败", "error")); }} onOpenAiSettings={() => setShowAiSettings(true)} /> : <div className="welcome"><h2>🤔 Waht?</h2></div>
         ) : view === "skills" ? (
-          <SkillsPanel onCreateSkill={() => setShowModal(true)} onEditSkill={(s) => { setSkillToEdit(s); setShowModal(true); }} skillsVersion={skillsVersion} />
-        ) : (
+          <SkillsPanel onCreateSkill={() => setShowModal(true)} onEditSkill={openEditSkill} skillsVersion={skillsVersion} />
+        ) : view === "memory" ? (
           <MemoryPanel />
+        ) : view === "external-tools" ? (
+          <ExternalToolsPanel />
+        ) : (
+          <McpPanel onNotify={(message, type = "info") => toast(message, type)} />
         )}
       </div>
       <CommandPalette show={showCmdPalette} onClose={() => setShowCmdPalette(false)} skills={appSkills}
@@ -1220,8 +1740,16 @@ export default function App() {
         onToggleTheme={() => { const t = theme === "light" ? "dark" : "light"; setTheme(t); localStorage.setItem("wahtway-theme", t); }}
         theme={theme} />
       <CreateSkillModal show={showModal} onClose={() => { setShowModal(false); setPrefillSkillDesc(""); setSkillToEdit(null); }} onSaved={() => { setSkillsVersion(v => v + 1); setSkillToEdit(null); }} prefill={prefillSkillDesc} skillToEdit={skillToEdit} />
-
-      <SetupScreen show={needsSetup === true} onDone={() => setNeedsSetup(false)} />
+      <AiSettingsModal
+        show={showAiSettings || needsSetup === true}
+        required={needsSetup === true}
+        config={aiSettings}
+        onClose={() => { if (needsSetup !== true) setShowAiSettings(false); }}
+        onSave={async (patch) => {
+          await saveAiSettings(patch);
+          setShowAiSettings(false);
+        }}
+      />
 
       {showResetConfirm && (
         <div className="modal-overlay" onClick={() => setShowResetConfirm(false)}>
@@ -1295,7 +1823,7 @@ function BalanceWidget() {
 
   return (
     <div className="balance-widget">
-      <button className="balance-button" onClick={queryBalance} disabled={loading} title="手动查询 DeepSeek 账户余额">
+      <button className="balance-button" onClick={queryBalance} disabled={loading} title="手动查询当前 API 余额">
         <span>💰</span><span>{loading ? "查询中…" : "查询余额"}</span>
       </button>
       {balance && <div className="balance-value">{balance}</div>}
@@ -1304,38 +1832,175 @@ function BalanceWidget() {
   );
 }
 
-function SetupScreen({ show, onDone }: { show: boolean; onDone: () => void }) {
+function AiSettingsModal({
+  show,
+  required,
+  config,
+  onClose,
+  onSave,
+}: {
+  show: boolean;
+  required: boolean;
+  config: AiSettingsView | null;
+  onClose: () => void;
+  onSave: (patch: Partial<AiSettingsView> & { apiKey?: string }) => Promise<void> | void;
+}) {
+  const [provider, setProvider] = useState<AiProviderKind>("deepseek");
   const [key, setKey] = useState("");
+  const [baseURL, setBaseURL] = useState(AI_PROVIDER_PRESETS.deepseek.defaultBaseURL);
+  const [model, setModel] = useState(AI_PROVIDER_PRESETS.deepseek.defaultModel);
+  const [modelOptionsText, setModelOptionsText] = useState(AI_PROVIDER_PRESETS.deepseek.modelOptions.join("\n"));
+  const [balancePath, setBalancePath] = useState(AI_PROVIDER_PRESETS.deepseek.balancePath);
   const [busy, setBusy] = useState(false);
+  const [modelsBusy, setModelsBusy] = useState(false);
   const [err, setErr] = useState("");
 
-  if (!show) return null;
+  useEffect(() => {
+    if (!show) return;
+    const current = config || getFallbackAiSettings();
+    setProvider(current.provider);
+    setKey("");
+    setBaseURL(current.baseURL);
+    setModel(current.model);
+    setModelOptionsText(current.modelOptions.join("\n"));
+    setBalancePath(current.balancePath);
+    setErr("");
+  }, [show, config?.provider, config?.baseURL, config?.model, config?.balancePath, config?.apiKeyConfigured]);
 
   const submit = async () => {
-    if (!key.trim() || busy) return;
+    if (!key.trim() && !config?.apiKeyConfigured) {
+      setErr("请先输入 API Key");
+      return;
+    }
+    if (busy) return;
     setBusy(true); setErr("");
     try {
-      const r = await fetch("/api/setup", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ apiKey: key.trim() }) });
-      const d = await r.json();
-      if (d.success) onDone();
-      else setErr(d.error || "保存失败");
-    } catch { setErr("网络错误，请检查后端是否启动"); }
+      const modelOptions = modelOptionsText
+        .split(/\r?\n/)
+        .map((item) => item.trim())
+        .filter(Boolean);
+      await onSave({
+        provider,
+        apiKey: key.trim() || undefined,
+        baseURL,
+        model,
+        modelOptions,
+        balancePath,
+      });
+      onClose();
+    } catch (error: any) {
+      setErr(error.message || "保存失败");
+    }
     finally { setBusy(false); }
   };
 
+  const refreshModels = async () => {
+    if (!key.trim() && !config?.apiKeyConfigured) {
+      setErr("请先输入 API Key");
+      return;
+    }
+    setModelsBusy(true);
+    setErr("");
+    try {
+      const response = await fetch("/api/ai-config/models", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ baseURL, apiKey: key.trim() || undefined }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || "获取模型失败");
+      const models = Array.isArray(data.models) ? data.models : [];
+      setModelOptionsText(models.join("\n"));
+      if (models.length > 0 && !models.includes(model)) setModel(models[0]);
+    } catch (error: any) {
+      setErr(error.message || "获取模型失败");
+    } finally {
+      setModelsBusy(false);
+    }
+  };
+
+  if (!show) return null;
+
+  const modelOptions = modelOptionsText.split(/\r?\n/).map((item) => item.trim()).filter(Boolean);
+  const activePreset = AI_PROVIDER_PRESETS[provider];
+  const showBalance = !!balancePath.trim();
+
   return (
-    <div className="setup-overlay">
-      <div className="setup-card">
-        <h1>🚀 欢迎使用 WahtWay</h1>
-        <p>需要配置 DeepSeek API Key 才能使用。</p>
+    <div className="setup-overlay" onClick={() => { if (!required) onClose(); }}>
+      <div className="setup-card ai-settings-card" onClick={e => e.stopPropagation()}>
+        <div className="modal-header ai-settings-header">
+          <h1>⚙ AI 配置</h1>
+          {!required && <button className="modal-close" onClick={onClose}>×</button>}
+        </div>
+        <p>配置会保存到本机，不需要每次启动重新输入 key。</p>
+        <div className="ai-settings-form">
+          <label>
+            <span>API 类型</span>
+            <select className="setup-input" value={provider} onChange={(e) => {
+              const next = e.target.value as AiProviderKind;
+              const preset = AI_PROVIDER_PRESETS[next];
+              setProvider(next);
+              setBaseURL(preset.defaultBaseURL);
+              setModel(preset.defaultModel);
+              setModelOptionsText(preset.modelOptions.join("\n"));
+              setBalancePath(preset.balancePath);
+              }}>
+              <option value="deepseek">DeepSeek</option>
+              <option value="openai">OpenAI</option>
+              <option value="qwen">通义千问</option>
+              <option value="zhipu">智谱 GLM</option>
+              <option value="moonshot">Moonshot</option>
+              <option value="siliconflow">SiliconFlow</option>
+              <option value="openai-compatible">自定义兼容</option>
+            </select>
+          </label>
+          <label>
+            <span>API Key</span>
+            <input
+              className="setup-input"
+              type="password"
+              placeholder={config?.apiKeyConfigured ? "留空则保持现有 Key" : "sk-xxxxxxxxxxxxxxxxxxxxxxxx"}
+              value={key}
+              onChange={e => setKey(e.target.value)}
+              onKeyDown={e => { if (e.key === "Enter") submit(); }}
+            />
+          </label>
+          <label>
+            <span>Base URL</span>
+            <input className="setup-input" type="text" value={baseURL} onChange={e => setBaseURL(e.target.value)} />
+          </label>
+          <label>
+            <span>模型</span>
+            <input className="setup-input" type="text" list="ai-model-options" value={model} onChange={e => setModel(e.target.value)} />
+            <datalist id="ai-model-options">
+              {modelOptions.map((item) => <option key={item} value={item} />)}
+            </datalist>
+          </label>
+          <label className="wide">
+            <span className="model-options-header">
+              <span>可选模型列表（每行一个）</span>
+              <button type="button" className="model-refresh-btn" onClick={refreshModels} disabled={modelsBusy || busy}>
+                {modelsBusy ? "获取中…" : "获取模型列表"}
+              </button>
+            </span>
+            <textarea className="setup-textarea" rows={4} value={modelOptionsText} onChange={e => setModelOptionsText(e.target.value)} />
+          </label>
+          <label className="wide">
+            <span>余额查询路径（可选）</span>
+            <input className="setup-input" type="text" value={balancePath} onChange={e => setBalancePath(e.target.value)} placeholder={activePreset.balancePath || "可留空"} />
+          </label>
+          {showBalance && config?.apiKeyConfigured && (
+            <div className="wide">
+              <BalanceWidget />
+            </div>
+          )}
+        </div>
         <p className="setup-hint">
-          前往 <a href="https://platform.deepseek.com/api_keys" target="_blank">platform.deepseek.com</a> 注册获取 API Key。
+          余额查询不是统一标准：只有服务商提供兼容的余额接口时才填写，否则留空即可。
         </p>
-        <input className="setup-input" type="password" placeholder="sk-xxxxxxxxxxxxxxxxxxxxxxxx" value={key}
-          onChange={e => setKey(e.target.value)} onKeyDown={e => { if (e.key === "Enter") submit(); }} autoFocus />
         {err && <p className="setup-error">{err}</p>}
-        <button className="setup-btn" onClick={submit} disabled={busy || !key.trim()}>
-          {busy ? "验证中…" : "开始使用"}
+        <button className="setup-btn" onClick={submit} disabled={busy}>
+          {busy ? "保存中…" : (config?.apiKeyConfigured ? "保存配置" : "开始使用")}
         </button>
       </div>
     </div>
@@ -1391,3 +2056,4 @@ function DebugPanel() {
     </div>
   );
 }
+

@@ -6,16 +6,10 @@ import { formatLlmError } from "../llm-errors";
 import { resolveModel } from "../models";
 import { NeedSnapshot, Skill } from "../types";
 import { hasUsefulContext } from "./context-signals";
+import { createAiClient, getCurrentModel } from "../ai-settings";
 
-let _client: OpenAI | null = null;
 function getClient(): OpenAI {
-  if (!_client) {
-    _client = new OpenAI({
-      apiKey: process.env.DEEPSEEK_API_KEY,
-      baseURL: process.env.DEEPSEEK_BASE_URL || "https://api.deepseek.com",
-    });
-  }
-  return _client;
+  return createAiClient();
 }
 
 /** 通用闲聊 System Prompt — 不用任何 Skill */
@@ -26,6 +20,12 @@ export const GENERAL_PROMPT = `你是 WahtWay（何以委），一个面向大�
 - 操作文件：move-file、copy-file、new-folder、write-file、delete-file（移到回收站）
 - 用户说"看看桌面"→直接看。说"找一下报告"→直接搜。说"移到文档"→直接移。
 - 能动手绝不多嘴。
+
+## 多步任务规范
+- 读完模板结构后，不要停，立刻构造 slideMap 然后调 fill-template 生成
+- 查完文件列表后，不要问，直接继续下一步操作
+- 分析完数据后，不要等用户确认，直接执行后续步骤
+- **一口气把任务做完，用户不想跟你一问一答**
 
 ## 回答风格
 简洁、友好。用 Markdown。只有纯社交问候（嗨/谢谢/再见）时才不操作文件。`;
@@ -100,7 +100,7 @@ ${context.length > 0 ? JSON.stringify(context) : "无。只根据当前消息判
 {"skillIndex":-1或Skill编号,"needSnapshot":{"primaryGoal":"...","constraints":[],"expectedDeliverables":[],"formatPreferences":[],"knownPreferences":[],"ambiguities":[],"confidence":0到1}}`;
 
   const response = await getClient().chat.completions.create({
-    model: resolveModel(process.env.DEEPSEEK_MODEL),
+    model: resolveModel(getCurrentModel()),
     messages: [{ role: "user", content: prompt }],
     temperature: 0,
     max_tokens: 600,

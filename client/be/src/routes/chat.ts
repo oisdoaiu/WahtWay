@@ -7,6 +7,7 @@ import { scheduleProfileExtraction } from "../memory/profile-extractor";
 import { appendMessage, patchMessage, readConversation } from "../conversations/repository";
 import { createTraceId, logger } from "../logger";
 import { formatLlmError } from "../llm-errors";
+import { normalizeWorkspace } from "../tools/workspace";
 
 const router = Router();
 
@@ -53,6 +54,14 @@ router.post("/", async (req: Request, res: Response) => {
     memoryIds: context.longTermMemories.map((item) => item.id),
   });
 
+  let resolvedWorkspace: string | undefined;
+  try {
+    resolvedWorkspace = normalizeWorkspace(workspace);
+  } catch (error: any) {
+    res.status(400).json({ error: error.message || "工作区无效" });
+    return;
+  }
+
   const traceId = createTraceId();
   const log = logger(traceId, "chat");
   log.info("request", {
@@ -78,7 +87,7 @@ router.post("/", async (req: Request, res: Response) => {
   let output = "";
   let assistantPatch: Record<string, unknown> = {};
   try {
-    const stream = await runAgentStream(message, context.history, traceId, model, skillId, workspace, {
+    const stream = await runAgentStream(message, context.history, traceId, model, skillId, resolvedWorkspace, {
       conversationId,
       userMessageId,
       assistantMessageId,

@@ -9,6 +9,10 @@ export function registerTool(tool: ToolDef): void {
   console.log(`🔧 Tool 已注册: ${tool.name}`);
 }
 
+export function unregisterTool(name: string): void {
+  tools.delete(name);
+}
+
 export function getTool(name: string): ToolDef | null {
   return tools.get(name) || null;
 }
