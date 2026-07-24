@@ -550,9 +550,17 @@ export function listPublicMcpServers(): PublicMcpServer[] {
 
 export async function autoStartMcpServers(): Promise<void> {
   shuttingDown = false;
-  for (const server of listMcpServers().filter((item) => item.enabled && item.autoStart)) {
-    startMcpServer(server.id).catch((error) => {
-      console.warn(`MCP Server ${server.id} auto-start failed:`, error instanceof Error ? error.message : error);
+  const servers = listMcpServers();
+  console.log(`🔌 MCP: 发现 ${servers.length} 个 Server 配置`);
+  const targets = servers.filter((item) => item.enabled && item.autoStart);
+  if (targets.length === 0) { console.log("🔌 MCP: 没有需要自动启动的 Server"); return; }
+  for (const server of targets) {
+    console.log(`🔌 MCP: 正在启动 ${server.id} (${server.command} ${server.args.join(" ")})...`);
+    startMcpServer(server.id).then((status) => {
+      console.log(`✅ MCP Server ${server.id} 已启动，${status.tools.length} 个 Tool`);
+      status.tools.forEach((t) => console.log(`  🛠️ MCP Tool: ${t.registeredName} → ${t.description.slice(0, 50)}`));
+    }).catch((error) => {
+      console.warn(`❌ MCP Server ${server.id} 启动失败:`, error instanceof Error ? error.message : error);
     });
   }
 }
