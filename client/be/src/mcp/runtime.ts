@@ -5,7 +5,7 @@ import { getDefaultEnvironment, StdioClientTransport } from "@modelcontextprotoc
 import { ToolDef } from "../types";
 import { getTool, registerTool, unregisterTool } from "../tools/registry";
 import { getMcpSecrets, getMcpServer, listMcpServers, listMcpSecretNames } from "./repository";
-import { McpServerConfig, McpServerStatus, McpToolPermission, McpToolSummary, PendingMcpApproval, PublicMcpServer } from "./types";
+import { McpServerConfig, McpServerStatus, McpToolAnnotations, McpToolPermission, McpToolRisk, McpToolRiskSource, McpToolSummary, PendingMcpApproval, PublicMcpServer } from "./types";
 import { appendToolChangeAuditEvent, buildToolChangeAuditEvent, nextToolChangeAuditRevision } from "./tool-change-audit";
 
 interface ActiveMcpServer {
@@ -127,6 +127,45 @@ export function resolveMcpToolPermission(config: McpServerConfig, toolName: stri
   return config.toolPermissions[toolName] || config.defaultToolPermission;
 }
 
+function normalizeAnnotations(value: unknown): McpToolAnnotations {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  const raw = value as Record<string, unknown>;
+  const annotations: McpToolAnnotations = {};
+  if (typeof raw.title === "string") annotations.title = raw.title;
+  for (const key of ["readOnlyHint", "destructiveHint", "idempotentHint", "openWorldHint"] as const) {
+    if (typeof raw[key] === "boolean") annotations[key] = raw[key] as boolean;
+  }
+  return annotations;
+}
+
+export function resolveMcpToolSafety(
+  config: McpServerConfig,
+  toolName: string,
+  annotations: McpToolAnnotations
+): { risk: McpToolRisk; riskSource: McpToolRiskSource; idempotent: boolean } {
+  const override = config.toolSafetyOverrides?.[toolName];
+  if (override?.risk) {
+    return { risk: override.risk, riskSource: "local", idempotent: override.idempotent === true };
+  }
+  if (annotations.destructiveHint === true) {
+    return { risk: "destructive", riskSource: "server", idempotent: override?.idempotent === true };
+  }
+  if (annotations.readOnlyHint === true) {
+    return { risk: "read", riskSource: "server-hint", idempotent: override?.idempotent === true };
+  }
+  return { risk: "write", riskSource: "default", idempotent: override?.idempotent === true };
+}
+
+export function resolveEffectiveMcpToolPermission(
+  config: McpServerConfig,
+  toolName: string,
+  annotations: McpToolAnnotations
+): McpToolPermission {
+  const configured = resolveMcpToolPermission(config, toolName);
+  if (configured === "disabled") return "disabled";
+  return resolveMcpToolSafety(config, toolName, annotations).risk === "destructive" ? "confirm" : configured;
+}
+
 function formatMcpResult(result: any): string {
   const sections: string[] = [];
   if (result?.structuredContent !== undefined) sections.push(JSON.stringify(result.structuredContent, null, 2));
@@ -170,7 +209,8 @@ export async function executeConfirmedMcpTool(
   args: Record<string, unknown>
 ): Promise<string> {
   const config = getMcpServer(serverId);
-  if (!config || resolveMcpToolPermission(config, toolName) !== "confirm") {
+  const summary = statusFor(serverId).tools.find((tool) => tool.name === toolName);
+  if (!config || !summary || resolveEffectiveMcpToolPermission(config, toolName, summary.annotations) !== "confirm") {
     throw new Error("MCP tool permission changed; start a new request");
   }
   return invoke(serverId, toolName, args);
@@ -233,7 +273,9 @@ async function discoverAndRegister(
     const page = await client.listTools(cursor ? { cursor } : undefined, { timeout: 15000 });
     for (const tool of page.tools) {
       const registeredName = registeredToolName(config.id, tool.name);
-      const permission = resolveMcpToolPermission(config, tool.name);
+      const annotations = normalizeAnnotations(tool.annotations);
+      const safety = resolveMcpToolSafety(config, tool.name, annotations);
+      const permission = resolveEffectiveMcpToolPermission(config, tool.name, annotations);
       if (names.has(registeredName)) throw new Error(`MCP Tool 名称冲突: ${registeredName}`);
       if (permission !== "disabled" && getTool(registeredName)) throw new Error(`MCP Tool 名称冲突: ${registeredName}`);
       names.add(registeredName);
@@ -244,6 +286,9 @@ async function discoverAndRegister(
         inputSchema: tool.inputSchema as Record<string, unknown>,
         permission,
         overridden: Object.prototype.hasOwnProperty.call(config.toolPermissions, tool.name),
+        annotations,
+        safetyOverride: config.toolSafetyOverrides?.[tool.name],
+        ...safety,
       };
       if (permission !== "disabled") {
         const definition: ToolDef = {
@@ -254,7 +299,7 @@ async function discoverAndRegister(
             try {
               const current = getMcpServer(config.id);
               if (!current) return "错误: MCP Server 配置不存在";
-              const currentPermission = resolveMcpToolPermission(current, tool.name);
+              const currentPermission = resolveEffectiveMcpToolPermission(current, tool.name, annotations);
               if (currentPermission === "disabled") return "错误: MCP 工具已禁用";
               if (currentPermission === "confirm") {
                 const token = createApproval(config.id, tool.name, args);
@@ -295,7 +340,9 @@ async function replaceToolsFromNotification(
   const names = new Set<string>();
   for (const tool of tools) {
     const registeredName = registeredToolName(config.id, tool.name);
-    const permission = resolveMcpToolPermission(config, tool.name);
+    const annotations = normalizeAnnotations(tool.annotations);
+    const safety = resolveMcpToolSafety(config, tool.name, annotations);
+    const permission = resolveEffectiveMcpToolPermission(config, tool.name, annotations);
     if (names.has(registeredName)) throw new Error(`MCP tool name collision: ${registeredName}`);
     const existing = getTool(registeredName);
     if (permission !== "disabled" && existing && !active.registeredNames.includes(registeredName)) {
@@ -309,6 +356,9 @@ async function replaceToolsFromNotification(
       inputSchema: tool.inputSchema as Record<string, unknown>,
       permission,
       overridden: Object.prototype.hasOwnProperty.call(config.toolPermissions, tool.name),
+      annotations,
+      safetyOverride: config.toolSafetyOverrides?.[tool.name],
+      ...safety,
     };
     summaries.push(summary);
     if (permission === "disabled") continue;
@@ -320,7 +370,7 @@ async function replaceToolsFromNotification(
         try {
           const current = getMcpServer(config.id);
           if (!current) return "Error: MCP Server configuration no longer exists";
-          const currentPermission = resolveMcpToolPermission(current, tool.name);
+          const currentPermission = resolveEffectiveMcpToolPermission(current, tool.name, annotations);
           if (currentPermission === "disabled") return "Error: MCP tool is disabled";
           if (currentPermission === "confirm") {
             const token = createApproval(config.id, tool.name, args);

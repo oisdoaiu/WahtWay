@@ -1,4 +1,19 @@
 export type McpToolPermission = "auto" | "confirm" | "disabled";
+export type McpToolRisk = "read" | "write" | "destructive";
+export type McpToolRiskSource = "local" | "server" | "server-hint" | "default";
+
+export interface McpToolAnnotations {
+  title?: string;
+  readOnlyHint?: boolean;
+  destructiveHint?: boolean;
+  idempotentHint?: boolean;
+  openWorldHint?: boolean;
+}
+
+export interface McpToolSafetyOverride {
+  risk?: McpToolRisk;
+  idempotent?: boolean;
+}
 
 export interface McpServerConfig {
   id: string;
@@ -12,12 +27,13 @@ export interface McpServerConfig {
   autoStart: boolean;
   defaultToolPermission: McpToolPermission;
   toolPermissions: Record<string, McpToolPermission>;
+  toolSafetyOverrides: Record<string, McpToolSafetyOverride>;
   /** Read-only compatibility field for schema version 1 data. */
   requireApproval?: boolean;
   toolCallTimeoutMs: number;
   createdAt: string;
   updatedAt: string;
-  schemaVersion: 2;
+  schemaVersion: 3;
 }
 
 export interface McpToolSummary {
@@ -27,6 +43,11 @@ export interface McpToolSummary {
   inputSchema: Record<string, unknown>;
   permission?: McpToolPermission;
   overridden?: boolean;
+  annotations: McpToolAnnotations;
+  safetyOverride?: McpToolSafetyOverride;
+  risk: McpToolRisk;
+  riskSource: McpToolRiskSource;
+  idempotent: boolean;
 }
 
 export interface PendingMcpApproval {

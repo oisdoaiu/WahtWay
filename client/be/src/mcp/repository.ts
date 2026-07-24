@@ -2,13 +2,14 @@ import { randomUUID } from "crypto";
 import * as fs from "fs";
 import * as path from "path";
 import { getMcpServersDir } from "../runtime-data";
-import { McpServerConfig, McpToolPermission } from "./types";
+import { McpServerConfig, McpToolPermission, McpToolRisk, McpToolSafetyOverride } from "./types";
 
 const CONFIG_PATH = path.join(getMcpServersDir(), "servers.json");
 const SECRETS_PATH = path.join(getMcpServersDir(), "secrets.json");
 const VALID_ID = /^[a-z][a-z0-9-]{1,62}$/;
 const VALID_ENV_NAME = /^[A-Za-z_][A-Za-z0-9_]{0,127}$/;
 const TOOL_PERMISSIONS = new Set<McpToolPermission>(["auto", "confirm", "disabled"]);
+const TOOL_RISKS = new Set<McpToolRisk>(["read", "write", "destructive"]);
 
 function atomicWrite(filePath: string, value: unknown): void {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
@@ -73,6 +74,29 @@ function normalizeToolPermissions(value: unknown): Record<string, McpToolPermiss
   return permissions;
 }
 
+function normalizeToolSafetyOverrides(value: unknown): Record<string, McpToolSafetyOverride> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  const entries = Object.entries(value as Record<string, unknown>);
+  if (entries.length > 500) throw new Error("TOO_MANY_TOOL_SAFETY_OVERRIDES");
+  const overrides: Record<string, McpToolSafetyOverride> = {};
+  for (const [toolName, raw] of entries) {
+    if (!toolName || toolName.length > 256 || toolName.includes("\0")) throw new Error("INVALID_TOOL_NAME");
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) throw new Error("INVALID_TOOL_SAFETY_OVERRIDE");
+    const value = raw as Record<string, unknown>;
+    const override: McpToolSafetyOverride = {};
+    if (value.risk !== undefined) {
+      if (!TOOL_RISKS.has(value.risk as McpToolRisk)) throw new Error("INVALID_TOOL_RISK");
+      override.risk = value.risk as McpToolRisk;
+    }
+    if (value.idempotent !== undefined) {
+      if (typeof value.idempotent !== "boolean") throw new Error("INVALID_TOOL_IDEMPOTENT");
+      override.idempotent = value.idempotent;
+    }
+    if (Object.keys(override).length > 0) overrides[toolName] = override;
+  }
+  return overrides;
+}
+
 function migrateStoredServer(raw: any): McpServerConfig {
   const legacyDefault: McpToolPermission = raw?.requireApproval === false ? "auto" : "confirm";
   return {
@@ -81,7 +105,8 @@ function migrateStoredServer(raw: any): McpServerConfig {
       ? raw.defaultToolPermission
       : legacyDefault,
     toolPermissions: normalizeToolPermissions(raw?.toolPermissions),
-    schemaVersion: 2,
+    toolSafetyOverrides: normalizeToolSafetyOverrides(raw?.toolSafetyOverrides),
+    schemaVersion: 3,
   } as McpServerConfig;
 }
 
@@ -108,11 +133,12 @@ function normalize(input: any, existing?: McpServerConfig): McpServerConfig {
       existing?.defaultToolPermission || (input?.requireApproval === false ? "auto" : "confirm")
     ),
     toolPermissions: normalizeToolPermissions(input?.toolPermissions ?? existing?.toolPermissions),
+    toolSafetyOverrides: normalizeToolSafetyOverrides(input?.toolSafetyOverrides ?? existing?.toolSafetyOverrides),
     toolCallTimeoutMs: Math.max(1000, Math.min(5 * 60 * 1000,
       Number(input?.toolCallTimeoutMs ?? existing?.toolCallTimeoutMs ?? 60000))),
     createdAt: existing?.createdAt || now,
     updatedAt: now,
-    schemaVersion: 2,
+    schemaVersion: 3,
   };
 }
 
@@ -133,7 +159,7 @@ export function saveMcpServer(input: unknown): McpServerConfig {
   const next = existing
     ? servers.map((item) => item.id === server.id ? server : item)
     : [...servers, server];
-  atomicWrite(CONFIG_PATH, { schemaVersion: 1, servers: next });
+  atomicWrite(CONFIG_PATH, { schemaVersion: 3, servers: next });
   return server;
 }
 
@@ -141,7 +167,7 @@ export function deleteMcpServer(id: string): boolean {
   const servers = listMcpServers();
   const next = servers.filter((server) => server.id !== id);
   if (next.length === servers.length) return false;
-  atomicWrite(CONFIG_PATH, { schemaVersion: 1, servers: next });
+  atomicWrite(CONFIG_PATH, { schemaVersion: 3, servers: next });
   const secrets = readMcpSecrets();
   delete secrets[id];
   atomicWrite(SECRETS_PATH, secrets);

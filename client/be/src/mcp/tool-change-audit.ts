@@ -2,7 +2,7 @@ import { randomUUID } from "crypto";
 import * as fs from "fs";
 import * as path from "path";
 import { getMcpServersDir } from "../runtime-data";
-import { McpToolPermission, McpToolSummary } from "./types";
+import { McpToolAnnotations, McpToolPermission, McpToolRisk, McpToolRiskSource, McpToolSummary } from "./types";
 
 const AUDIT_PATH = path.join(getMcpServersDir(), "tool-change-audit.json");
 const MAX_EVENTS = 500;
@@ -14,9 +14,13 @@ export interface McpAuditedTool {
   description: string;
   inputSchema: Record<string, unknown>;
   permission: McpToolPermission;
+  annotations: McpToolAnnotations;
+  risk: McpToolRisk;
+  riskSource: McpToolRiskSource;
+  idempotent: boolean;
 }
 
-export type McpToolChangedField = "description" | "inputSchema" | "permission" | "registeredName";
+export type McpToolChangedField = "description" | "inputSchema" | "permission" | "registeredName" | "annotations" | "risk" | "idempotent";
 
 export interface McpModifiedTool {
   name: string;
@@ -64,6 +68,10 @@ function auditedTool(tool: McpToolSummary): McpAuditedTool {
     description: tool.description,
     inputSchema: structuredClone(tool.inputSchema),
     permission: tool.permission || "confirm",
+    annotations: structuredClone(tool.annotations || {}),
+    risk: tool.risk || "write",
+    riskSource: tool.riskSource || "default",
+    idempotent: tool.idempotent === true,
   };
 }
 
@@ -116,6 +124,9 @@ export function buildToolChangeAuditEvent(
     if (stableJson(oldTool.inputSchema) !== stableJson(tool.inputSchema)) changedFields.push("inputSchema");
     if (oldTool.permission !== tool.permission) changedFields.push("permission");
     if (oldTool.registeredName !== tool.registeredName) changedFields.push("registeredName");
+    if (stableJson(oldTool.annotations) !== stableJson(tool.annotations)) changedFields.push("annotations");
+    if (oldTool.risk !== tool.risk || oldTool.riskSource !== tool.riskSource) changedFields.push("risk");
+    if (oldTool.idempotent !== tool.idempotent) changedFields.push("idempotent");
     if (changedFields.length > 0) modified.push({ name, changedFields, before: oldTool, after: tool });
   }
   for (const [name, tool] of previous) {
