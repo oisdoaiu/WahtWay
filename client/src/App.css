@@ -1031,6 +1031,20 @@ body {
 .drop-hint { position: absolute; top: -36px; left: 50%; transform: translateX(-50%); background: #1a73e8; color: #fff; padding: 6px 16px; border-radius: 8px; font-size: 13px; pointer-events: none; z-index: 10; }
 
 .skill-edit-btn:hover { opacity: 1; color: #1a73e8; border-color: #1a73e8; }
+.skill-tool-selector { border: 1px solid #ddd; border-radius: 7px; overflow: hidden; }
+.skill-tool-search { width: 100%; border: 0 !important; border-bottom: 1px solid #eee !important; border-radius: 0 !important; }
+.skill-tool-options { max-height: 230px; overflow-y: auto; }
+.skill-tool-option { display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; gap: 8px; align-items: center; padding: 8px 10px; border-bottom: 1px solid #f0f0f0; cursor: pointer; }
+.skill-tool-option input { width: auto; }
+.skill-tool-option span { min-width: 0; display: flex; flex-direction: column; }
+.skill-tool-option strong { font: 11px Consolas, monospace; }
+.skill-tool-option small { overflow: hidden; color: #888; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.skill-tool-option em { color: #777; font-size: 9px; font-style: normal; white-space: nowrap; }
+.skill-tool-option.risk-destructive em, .skill-tool-option.unavailable em { color: #c62828; }
+.skill-tool-option.risk-write em { color: #856404; }
+.skill-tool-option.unavailable { background: #fff5f5; }
+.skill-tool-unrestricted { padding: 7px 10px; background: #fef7e0; color: #856404; font-size: 10px; }
+.skill-tool-empty { padding: 20px; color: #888; text-align: center; font-size: 11px; }
 
 /* === 文件上传按钮 === */
 .file-add-wrapper { position: relative; }
