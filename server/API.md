@@ -8,28 +8,48 @@ Skill Hub 负责在线发布、发现、版本化下载 Skill。客户端仍然�
 
 - `PORT`: 服务端口，默认 `4000`
 - `SKILL_HUB_DATA_DIR`: Hub 持久化目录，默认 `server/data/hub`
+- `AUTH_TOKEN_SECRET`: token 签名密钥；未设置时服务端会在数据目录生成 `auth-secret.txt`
 - `REQUIRE_SKILL_REVIEW`: 设置为 `true` 时，新上传 Skill 默认为 `pending`
 - `ALLOWED_SKILL_TOOLS`: 逗号分隔的工具白名单，默认不允许上传声明外部工具的 Skill
-- `SKILL_HUB_ADMIN_TOKEN`: 管理员令牌。必须配置；上传、发布版本、修改元数据和归档 Skill 都需要在请求中携带它。
 
-## 管理员鉴权
+## 登录
 
-公开的查询、下载、评分和举报接口不需要令牌。会改变 Skill 内容或状态的接口需要 HTTP Bearer Token：
+上传、更新版本、修改和删除 Skill 都由服务端校验登录权限。请求这些接口时需要携带：
 
 ```txt
-Authorization: Bearer <SKILL_HUB_ADMIN_TOKEN>
+Authorization: Bearer <token>
 ```
 
-例如：
-
-```bash
-curl -X POST https://hub.example.com/api/skills \
-  -H "Authorization: Bearer $SKILL_HUB_ADMIN_TOKEN" \
-  -H "Content-Type: application/json" \
-  --data @skill.json
+```txt
+POST /api/auth/register
+POST /api/auth/login
+GET  /api/auth/me
 ```
 
-未配置 `SKILL_HUB_ADMIN_TOKEN` 时，受保护接口会返回 `503`，以避免服务器意外以公开写入模式运行。网页上传功能会在当前浏览器会话中询问令牌；令牌不会写入仓库或持久化到磁盘。
+注册请求：
+
+```json
+{
+  "username": "alice",
+  "displayName": "Alice",
+  "password": "password123"
+}
+```
+
+登录和注册都会返回：
+
+```json
+{
+  "user": {
+    "id": "user-id",
+    "username": "alice",
+    "displayName": "Alice",
+    "role": "user",
+    "createdAt": "2026-07-16T00:00:00.000Z"
+  },
+  "token": "signed-token"
+}
+```
 
 ## 查询与下载
 
@@ -66,6 +86,8 @@ GET /api/skills/:skillId/download?format=raw
 ```txt
 POST /api/skills
 ```
+
+该接口必须登录。作者信息由服务端从登录用户写入，客户端传入的 `authorName` 不会被信任。
 
 ```json
 {
@@ -107,4 +129,4 @@ POST   /api/skills/:skillId/review
 POST   /api/skills/:skillId/report
 ```
 
-`DELETE` 采用软删除，会把 Skill 标记为 `archived`。列表接口不会暴露完整 `systemPrompt`，只有下载接口返回完整 Skill manifest。
+新增版本、修改和删除仅允许 Skill 作者或 admin 操作。`DELETE` 采用软删除，会把 Skill 标记为 `archived`。列表接口不会暴露完整 `systemPrompt`，只有下载接口返回完整 Skill manifest。

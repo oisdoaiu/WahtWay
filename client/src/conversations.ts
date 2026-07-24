@@ -6,6 +6,20 @@ export interface ConvMessage {
   role: "user" | "assistant";
   content: string;
   skillName?: string;
+  skillId?: string;
+  skillVersion?: number;
+  skillRunId?: string;
+  stats?: MessageStats;
+  status?: "streaming" | "completed" | "aborted" | "error";
+  memoryIds?: string[];
+}
+
+export interface MessageStats {
+  totalTokens: number;
+  totalTime: number;
+  rounds: number;
+  toolCalls: number;
+  model: string;
 }
 
 export interface TodoItem {
@@ -18,6 +32,7 @@ interface ConvState {
   messages: ConvMessage[];
   streaming: boolean;
   todoItems: TodoItem[];
+  summary: string; // V0.21 无感压缩：早期对话常驻摘要（不渲染，仅后端使用）
 }
 
 // 全局对话状态 Map
@@ -27,7 +42,7 @@ const listeners = new Set<() => void>();
 
 function getOrCreate(id: string): ConvState {
   if (!store.has(id)) {
-    store.set(id, { messages: [], streaming: false, todoItems: [] });
+    store.set(id, { messages: [], streaming: false, todoItems: [], summary: "" });
   }
   return store.get(id)!;
 }
@@ -42,6 +57,16 @@ export function isStreaming(id: string): boolean {
 
 export function getTodoItems(id: string): TodoItem[] {
   return getOrCreate(id).todoItems;
+}
+
+// V0.21 无感压缩：早期对话摘要的存取（不渲染，仅用于发给后端做上下文压缩）
+export function getSummary(id: string): string {
+  return getOrCreate(id).summary;
+}
+
+export function setSummary(id: string, summary: string) {
+  getOrCreate(id).summary = summary;
+  notify();
 }
 
 export function setTodoItems(id: string, items: TodoItem[]) {
@@ -59,6 +84,22 @@ export function appendMessage(id: string, msg: ConvMessage) {
   const s = getOrCreate(id);
   s.messages.push(msg);
   flushAndNotify();
+}
+
+export function patchMessage(id: string, messageId: string, patch: Partial<ConvMessage>) {
+  const state = getOrCreate(id);
+  const index = state.messages.findIndex((message) => message.id === messageId);
+  if (index === -1) return;
+  state.messages[index] = { ...state.messages[index], ...patch };
+  flushAndNotify();
+}
+
+export function updateLastMessage(id: string, updater: (msg: ConvMessage) => ConvMessage) {
+  if (flushTimer) { clearTimeout(flushTimer); flushTimer = null; flushDeltas(); }
+  const s = getOrCreate(id);
+  if (s.messages.length === 0) return;
+  s.messages[s.messages.length - 1] = updater(s.messages[s.messages.length - 1]);
+  notify();
 }
 
 // delta 批处理 — 每 60ms flush 一次，避免高频 re-render

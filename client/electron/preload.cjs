@@ -17,6 +17,8 @@ contextBridge.exposeInMainWorld("electronAPI", {
   openFileDialog: () => ipcRenderer.invoke("open-file-dialog"),
   // 打开文件夹选择对话框
   openFolderDialog: () => ipcRenderer.invoke("open-folder-dialog"),
+  // HTML 转图片（PPT 生成用）
+  renderHTMLSlides: (htmlArr) => ipcRenderer.invoke("render-html-slides", htmlArr),
 });
 
 // 关键修复：劫持任意点击，确保焦点落到对应元素

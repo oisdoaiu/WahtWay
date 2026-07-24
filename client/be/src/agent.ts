@@ -2,26 +2,29 @@
 // 职责：匹配 Skill → LLM+Tool 循环 → 流式返回
 
 import OpenAI from "openai";
-import { Skill, AgentResult } from "./types";
+import { AgentStatsSnapshot, NeedSnapshot, Skill, AgentResult } from "./types";
 import { registeredSkills } from "./skills/loader";
-import { matchSkillByKeywords, GENERAL_PROMPT } from "./skills/matcher";
+import { matchSkillByKeywords, matchSkillWithNeed, GENERAL_PROMPT } from "./skills/matcher";
+import {
+  beginSkillObservation,
+  finishSkillObservation,
+  scheduleDelayedObservation,
+} from "./skills/learning-engine";
 import { getTool, formatToolsForLLM } from "./tools/registry";
 import { logger } from "./logger";
 import { resolveModel } from "./models";
+import { buildCompactHistory, mergeSummary, getCompactConfig } from "./context/compactor";
+import { createAiClient, getCurrentModel as getConfiguredModel } from "./ai-settings";
+import { createAgentRunCheckpoint, saveAgentRunCheckpoint } from "./agent-runs/repository";
+import { AgentRunCheckpoint, SerializedToolCall } from "./agent-runs/types";
+import { executeApprovedTool, parsePendingApproval } from "./agent-runs/approval";
 
-let _client: OpenAI | null = null;
 function getClient(): OpenAI {
-  if (!_client) {
-    _client = new OpenAI({
-      apiKey: process.env.DEEPSEEK_API_KEY,
-      baseURL: process.env.DEEPSEEK_BASE_URL || "https://api.deepseek.com",
-    });
-  }
-  return _client;
+  return createAiClient();
 }
 let _model: string | null = null;
 function getModel(override?: string): string {
-  return resolveModel(override || _model || process.env.DEEPSEEK_MODEL);
+  return resolveModel(override || _model || getConfiguredModel());
 }
 export function setModel(m: string) { _model = resolveModel(m); }
 export function getCurrentModel(): string { return getModel(); }
@@ -34,7 +37,7 @@ async function matchSkill(userMessage: string): Promise<Skill | null> {
 // ---- 流式 Agentic Loop ----
 
 export interface StreamEvent {
-  type: "skill_matched" | "tool_call" | "tool_result" | "delta" | "thinking" | "stats" | "done";
+  type: "skill_matched" | "tool_call" | "tool_result" | "approval_required" | "delta" | "thinking" | "stats" | "done";
   data: unknown;
 }
 
@@ -46,13 +49,25 @@ export interface AgentStats {
   model: string;
 }
 
-function toolPolicy(): string {
+export interface AgentRunMetadata {
+  conversationId?: string;
+  userMessageId?: string;
+  assistantMessageId?: string;
+  needSnapshot?: NeedSnapshot;
+  contextSections?: string[];
+}
+
+function toolPolicy(workspace?: string): string {
+  const workspaceInfo = workspace
+    ? `- 当前工作区: ${workspace}\n- 用户说“这里”“当前目录”或使用相对路径时，都以当前工作区为基准。命令未指定 cwd 时也在工作区执行。`
+    : "- 当前未设置工作区。文件操作需要使用明确的完整路径，命令默认在用户主目录执行。";
   return `
 ## 系统信息
 - 用户主目录: ${require("os").homedir()}
 - 桌面路径: ${require("os").homedir() + "\\Desktop"}
 - 文档路径: ${require("os").homedir() + "\\Documents"}
 - WahtWay 回收站: ${require("os").homedir() + "\\.wahtway-trash"}（被删除的文件移到这里，不是 Windows 系统回收站）
+${workspaceInfo}
 
 ## 你的基本能力（和说话一样自然，想到就用）
 - 你能看到用户电脑上的文件：list-files / read-file / search-files / file-info
@@ -61,11 +76,10 @@ function toolPolicy(): string {
 - 用户说"看看桌面"、"回收站里有什么"、"找一下报告"——和呼吸一样自然地调用
 - 只有"你好"、"谢谢"、"再见"这种纯社交场合才不操作文件
 
-## 你的记忆能力
-- 你可以在 ${require("os").homedir()}\\.wahtway-notes\\ 目录下读写 .md 笔记文件
-- 遇到复杂任务时，先写笔记记录分析结果，下次对话可以直接读笔记，不用重复扫描
-- 用户信息、偏好、之前做过什么都可以记在笔记里，形成长期记忆
-- 用 write-file 记笔记，用 read-file 读笔记`.trim();
+## 记忆与隐私
+- 对话历史和长期记忆由 WahtWay 后端提供，不能自行把用户信息写入文件作为长期记忆
+- 不要把密码、密钥、token、验证码或其他敏感信息保存到文件
+- 只有用户明确要求创建任务笔记或文件时，才使用 write-file 写入用户指定的内容`.trim();
 }
 
 async function* agenticLoopStream(
@@ -74,26 +88,59 @@ async function* agenticLoopStream(
   history?: { role: string; content: string }[],
   traceId?: string,
   allowedTools?: string[],
-  workspace?: string
+  workspace?: string,
+  contextSections: string[] = [],
+  summary?: string,
+  metadata?: AgentRunMetadata,
+  checkpoint?: AgentRunCheckpoint,
+  approved?: boolean
 ): AsyncGenerator<StreamEvent> {
+  if (checkpoint?.model) setModel(checkpoint.model);
   const log = logger(traceId || "no-trace", "agent");
-  const startTime = Date.now();
-  let totalRoundTokens = 0;
-  let toolCallCount = 0;
+  const startTime = checkpoint ? Date.parse(checkpoint.startedAt) : Date.now();
+  let totalRoundTokens = checkpoint?.totalRoundTokens || 0;
+  let toolCallCount = checkpoint?.toolCallCount || 0;
 
-  const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
-    { role: "system", content: systemPrompt + "\n\n" + toolPolicy() },
-  ];
+  // V0.21 无感压缩配置
+  const cfg = getCompactConfig();
+  let compactHistory: { role: string; content: string }[] = [];
+  let newSummary: string | undefined;
 
-  if (history) {
-    for (const h of history) {
-      if (h.role === "user" || h.role === "assistant") {
-        messages.push(h as any);
+  const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = checkpoint
+    ? (checkpoint.messages as OpenAI.Chat.Completions.ChatCompletionMessageParam[])
+    : [{ role: "system", content: systemPrompt + "\n\n" + toolPolicy(workspace) }];
+
+  for (const section of contextSections) {
+    messages.push({ role: "system", content: section });
+  }
+
+  if (!checkpoint && history) {
+    if (cfg.enabled) {
+      const comp = buildCompactHistory(history, summary || "", cfg);
+      compactHistory = comp.history;
+      // 达到增量合并条件 → 调一次 LLM 把刚移出窗口的旧消息并入 summary
+      if (comp.needsUpdate && comp.updateFrom.length > 0) {
+        newSummary = await mergeSummary(traceId || "no-trace", summary || "", comp.updateFrom);
+      }
+      for (const h of compactHistory) {
+        if (h.role === "user" || h.role === "assistant") {
+          messages.push(h as any);
+        } else if (h.role === "system") {
+          messages.push({ role: "system", content: h.content } as any);
+        }
+      }
+    } else {
+      for (const h of history) {
+        if (h.role === "user" || h.role === "assistant") {
+          messages.push(h as any);
+        } else if (h.role === "system") {
+          messages.push({ role: "system", content: h.content } as any);
+        }
       }
     }
   }
 
-  messages.push({ role: "user", content: userMessage });
+  if (!checkpoint) messages.push({ role: "user", content: userMessage });
 
   const tools = formatToolsForLLM(allowedTools);
 
@@ -107,7 +154,79 @@ async function* agenticLoopStream(
     };
   }
 
-  for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
+  async function persistApproval(
+    pending: NonNullable<ReturnType<typeof parsePendingApproval>>,
+    calls: SerializedToolCall[],
+    nextIndex: number,
+    round: number
+  ): Promise<AgentRunCheckpoint> {
+    const state = {
+      conversationId: metadata?.conversationId,
+      userMessageId: metadata?.userMessageId,
+      assistantMessageId: metadata?.assistantMessageId,
+      traceId: traceId || "no-trace",
+      model: getModel(),
+      systemPrompt,
+      messages: messages as unknown[],
+      allowedTools,
+      workspace,
+      round,
+      totalRoundTokens,
+      toolCallCount,
+      startedAt: new Date(startTime).toISOString(),
+      currentBatch: { calls, nextIndex },
+      pendingApproval: pending,
+    };
+    if (!checkpoint) return createAgentRunCheckpoint(state);
+    return saveAgentRunCheckpoint({
+      ...checkpoint,
+      ...state,
+      status: "waiting_approval",
+      expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+    });
+  }
+
+  function approvalEvent(state: AgentRunCheckpoint): StreamEvent {
+    return {
+      type: "approval_required",
+      data: {
+        runId: state.id,
+        conversationId: state.conversationId,
+        kind: state.pendingApproval.kind,
+        toolName: state.pendingApproval.toolName,
+        reason: state.pendingApproval.reason,
+        target: state.pendingApproval.target,
+        expiresAt: state.expiresAt,
+      },
+    };
+  }
+
+  let initialRound = checkpoint?.round || 0;
+  if (checkpoint) {
+    const calls = checkpoint.currentBatch.calls;
+    for (let index = checkpoint.currentBatch.nextIndex; index < calls.length; index++) {
+      const tc = calls[index];
+      let args: Record<string, unknown> = {};
+      try { args = JSON.parse(tc.argumentsJson); } catch {}
+      yield { type: "tool_call", data: { toolName: tc.name, args } };
+      const result = index === checkpoint.currentBatch.nextIndex
+        ? approved
+          ? await executeApprovedTool(checkpoint.pendingApproval, { workspace })
+          : "The user rejected this tool call. Do not retry the same operation; explain the impact and offer a safe alternative."
+        : await (getTool(tc.name)?.execute(args, { workspace }) ?? Promise.resolve(`Error: unknown Tool "${tc.name}"`));
+      const pending = parsePendingApproval(result, tc.id, tc.name, args);
+      if (pending) {
+        yield approvalEvent(await persistApproval(pending, calls, index, initialRound));
+        return;
+      }
+      yield { type: "tool_result", data: { toolName: tc.name, result: result.slice(0, 500) } };
+      messages.push({ role: "tool", tool_call_id: tc.id, content: result } as any);
+    }
+    yield { type: "stats", data: buildStats(initialRound) };
+    initialRound += 1;
+  }
+
+  for (let round = initialRound; round < MAX_TOOL_ROUNDS; round++) {
     log.info("llm_call_stream", { round, toolsAvailable: tools.length });
 
     const stream = await getClient().chat.completions.create({
@@ -166,30 +285,41 @@ async function* agenticLoopStream(
     totalRoundTokens += roundTokens;
 
     if (hasToolCalls && toolCallMap.size > 0) {
-      const toolCalls = Array.from(toolCallMap.values());
+      const toolCalls: SerializedToolCall[] = Array.from(toolCallMap.values()).map((tc, index) => ({
+        id: tc.id || `call_${index}`,
+        name: tc.name,
+        argumentsJson: tc.args,
+      }));
       toolCallCount += toolCalls.length;
 
       messages.push({
         role: "assistant",
         content: content || null,
-        tool_calls: toolCalls.map((tc, i) => ({
-          id: tc.id || `call_${i}`,
+        tool_calls: toolCalls.map((tc) => ({
+          id: tc.id,
           type: "function" as const,
-          function: { name: tc.name, arguments: tc.args },
+          function: { name: tc.name, arguments: tc.argumentsJson },
         })),
       } as any);
 
-      for (const tc of toolCalls) {
+      for (let index = 0; index < toolCalls.length; index++) {
+        const tc = toolCalls[index];
         let args: Record<string, unknown> = {};
-        try { args = JSON.parse(tc.args); } catch {}
+        try { args = JSON.parse(tc.argumentsJson); } catch {}
 
         log.info("tool_call", { tool: tc.name, argKeys: Object.keys(args) });
         yield { type: "tool_call", data: { toolName: tc.name, args } };
 
         const tool = getTool(tc.name);
         const result = tool
-          ? await tool.execute(args)
+          ? await tool.execute(args, { workspace })
           : `错误: 未知 Tool "${tc.name}"`;
+
+        const pending = parsePendingApproval(result, tc.id, tc.name, args);
+        if (pending) {
+          yield approvalEvent(await persistApproval(pending, toolCalls, index, round));
+          return;
+        }
 
         yield {
           type: "tool_result",
@@ -198,7 +328,7 @@ async function* agenticLoopStream(
 
         messages.push({
           role: "tool",
-          tool_call_id: tc.id || `call_${Array.from(toolCallMap.keys()).indexOf(tc.name)}`,
+          tool_call_id: tc.id || `call_${toolCalls.indexOf(tc)}`,
           content: result,
         } as any);
       }
@@ -210,12 +340,33 @@ async function* agenticLoopStream(
 
     // 纯文本回复 → 结束
     yield { type: "stats", data: buildStats(round) };
-    yield { type: "done", data: { fullContent: content, stats: buildStats(round) } };
+    yield { type: "done", data: { fullContent: content, stats: buildStats(round), newSummary } };
     return;
   }
 
   const finalStats = buildStats(MAX_TOOL_ROUNDS);
-  yield { type: "done", data: { fullContent: "已达到最大工具调用轮数", stats: finalStats } };
+  yield { type: "done", data: { fullContent: "已达到最大工具调用轮数", stats: finalStats, newSummary } };
+}
+
+export function resumeAgentRun(
+  checkpoint: AgentRunCheckpoint,
+  approved: boolean
+): AsyncGenerator<StreamEvent> {
+  return agenticLoopStream(
+    checkpoint.systemPrompt,
+    "",
+    undefined,
+    checkpoint.traceId,
+    checkpoint.allowedTools,
+    checkpoint.workspace,
+    {
+      conversationId: checkpoint.conversationId,
+      userMessageId: checkpoint.userMessageId,
+      assistantMessageId: checkpoint.assistantMessageId,
+    },
+    checkpoint,
+    approved
+  );
 }
 
 // ---- 流式执行 Skill ----
@@ -225,18 +376,83 @@ export async function* executeSkillStream(
   userMessage: string,
   history?: { role: string; content: string }[],
   traceId?: string,
-  workspace?: string
+  workspace?: string,
+  summary?: string,
+  metadata?: AgentRunMetadata
 ): AsyncGenerator<StreamEvent> {
   const log = logger(traceId || "no-trace", "skill");
   log.info("matched", { skillId: skill.id, skillName: skill.name });
 
+  let runId: string | undefined;
+  if (skill.id !== "general") {
+    try {
+      const run = await beginSkillObservation({
+        traceId: traceId || "no-trace",
+        skill,
+        userMessage,
+        history,
+        conversationId: metadata?.conversationId,
+        userMessageId: metadata?.userMessageId,
+        assistantMessageId: metadata?.assistantMessageId,
+        needSnapshot: metadata?.needSnapshot,
+      });
+      runId = run.id;
+    } catch (error) {
+      log.warn("observation_start_failed", {
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
   yield {
     type: "skill_matched",
-    data: { skillName: skill.name, skillId: skill.id },
+    data: {
+      skillName: skill.name,
+      skillId: skill.id,
+      skillVersion: skill.version || 1,
+      runId,
+    },
   };
 
-  for await (const event of agenticLoopStream(skill.systemPrompt, userMessage, history, traceId, skill.allowedTools, workspace)) {
-    yield event;
+  let output = "";
+  let stats: AgentStatsSnapshot | undefined;
+  const toolCalls: { toolName: string; ok: boolean; summary: string }[] = [];
+  let status: "completed" | "aborted" | "error" = "aborted";
+
+  try {
+    for await (const event of agenticLoopStream(
+      skill.systemPrompt,
+      userMessage,
+      history,
+      traceId,
+      skill.allowedTools,
+      workspace,
+      metadata?.contextSections ?? [],
+      summary,
+      metadata
+    )) {
+      if (event.type === "delta") output += event.data as string;
+      if (event.type === "stats") stats = event.data as AgentStatsSnapshot;
+      if (event.type === "tool_result") {
+        const data = event.data as { toolName?: string; result?: string };
+        const result = typeof data.result === "string" ? data.result : "";
+        const ok = !result.startsWith("错误") && !result.startsWith("PERMISSION_REQUIRED::");
+        toolCalls.push({
+          toolName: data.toolName || "unknown",
+          ok,
+          summary: ok ? "执行成功" : "执行未完成",
+        });
+      }
+      if (event.type === "done") status = "completed";
+      yield event;
+    }
+  } catch (error) {
+    status = "error";
+    throw error;
+  } finally {
+    if (runId) {
+      finishSkillObservation(runId, { output, toolCalls, stats, status });
+    }
   }
 }
 
@@ -262,13 +478,18 @@ export async function runAgentStream(
   traceId?: string,
   model?: string,
   skillId?: string,
-  workspace?: string
+  workspace?: string,
+  summary?: string,
+  metadata?: AgentRunMetadata
 ): Promise<AsyncGenerator<StreamEvent>> {
   if (model) setModel(model);
   const log = logger(traceId || "no-trace", "agent");
-  log.info("start", { msgLen: userMessage.length, mode: skillId || "auto" });
+  log.info("start", { msgLen: userMessage.length, mode: skillId || "auto", compact: getCompactConfig().enabled });
+
+  scheduleDelayedObservation(metadata?.conversationId, userMessage);
 
   let skill: Skill | null = null;
+  let needSnapshot: NeedSnapshot | undefined;
 
   if (skillId) {
     skill = registeredSkills.find((s) => s.id === skillId) || null;
@@ -276,8 +497,12 @@ export async function runAgentStream(
   }
 
   if (!skill) {
-    skill = await matchSkill(userMessage);
+    const match = await matchSkillWithNeed(userMessage, registeredSkills, history);
+    skill = match.skill;
+    needSnapshot = match.needSnapshot;
   }
+
+  const runMetadata = { ...metadata, needSnapshot };
 
   if (!skill) {
     const general: Skill = {
@@ -287,10 +512,10 @@ export async function runAgentStream(
       output: { type: "object", properties: {} },
       requiredTools: [],
     };
-    return executeSkillStream(general, userMessage, history, traceId, undefined, workspace);
+    return executeSkillStream(general, userMessage, history, traceId, workspace, summary, runMetadata);
   }
 
-  return executeSkillStream(skill, userMessage, history, traceId, undefined, workspace);
+  return executeSkillStream(skill, userMessage, history, traceId, workspace, summary, runMetadata);
 }
 
 export { matchSkill };
