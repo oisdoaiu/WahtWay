@@ -1,4 +1,5 @@
 import { Router, Request, Response } from "express";
+import { timingSafeEqual } from "crypto";
 import {
   addReport,
   addReview,
@@ -26,6 +27,34 @@ const router = Router();
 
 const STATUSES: SkillStatus[] = ["draft", "pending", "published", "rejected", "archived"];
 const VISIBILITIES: SkillVisibility[] = ["public", "unlisted"];
+
+function hasAdminAccess(req: Request): boolean {
+  const configuredToken = process.env.SKILL_HUB_ADMIN_TOKEN;
+  if (!configuredToken) return false;
+
+  const authorization = req.header("authorization");
+  if (!authorization?.startsWith("Bearer ")) return false;
+
+  const suppliedToken = authorization.slice("Bearer ".length);
+  const suppliedBuffer = Buffer.from(suppliedToken);
+  const configuredBuffer = Buffer.from(configuredToken);
+  return (
+    suppliedBuffer.length === configuredBuffer.length &&
+    timingSafeEqual(suppliedBuffer, configuredBuffer)
+  );
+}
+
+function requireAdmin(req: Request, res: Response): boolean {
+  if (!process.env.SKILL_HUB_ADMIN_TOKEN) {
+    res.status(503).json({ error: "管理员令牌尚未配置" });
+    return false;
+  }
+  if (!hasAdminAccess(req)) {
+    res.status(401).json({ error: "需要管理员令牌" });
+    return false;
+  }
+  return true;
+}
 
 function respondError(res: Response, err: unknown): void {
   const message = err instanceof Error ? err.message : "Unknown error";
@@ -121,6 +150,7 @@ router.get("/:skillId/download", (req: Request, res: Response) => {
 });
 
 router.post("/", (req: Request, res: Response) => {
+  if (!requireAdmin(req, res)) return;
   try {
     const body = req.body || {};
     const manifest = sanitizeSkillManifest(body.manifest || body);
@@ -146,6 +176,7 @@ router.post("/", (req: Request, res: Response) => {
 });
 
 router.post("/:skillId/versions", (req: Request, res: Response) => {
+  if (!requireAdmin(req, res)) return;
   try {
     const body = req.body || {};
     const manifest = sanitizeSkillManifest(body.manifest || body);
@@ -166,6 +197,7 @@ router.post("/:skillId/versions", (req: Request, res: Response) => {
 });
 
 router.patch("/:skillId", (req: Request, res: Response) => {
+  if (!requireAdmin(req, res)) return;
   try {
     const body = req.body || {};
     const record = updateSkillMetadata(req.params.skillId, {
@@ -183,6 +215,7 @@ router.patch("/:skillId", (req: Request, res: Response) => {
 });
 
 router.delete("/:skillId", (req: Request, res: Response) => {
+  if (!requireAdmin(req, res)) return;
   try {
     const record = archiveSkill(req.params.skillId);
     res.json({ success: true, skill: summarizeSkill(record) });

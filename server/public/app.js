@@ -1,6 +1,7 @@
 const state = {
   skills: [],
   selected: null,
+  adminToken: sessionStorage.getItem("skillHubAdminToken") || "",
 };
 
 const els = {
@@ -220,6 +221,12 @@ async function downloadSelected() {
 
 function openUpload() {
   els.uploadMsg.textContent = "";
+  if (!state.adminToken) {
+    const token = window.prompt("请输入管理员令牌");
+    if (!token) return;
+    state.adminToken = token;
+    sessionStorage.setItem("skillHubAdminToken", token);
+  }
   els.uploadModal.classList.remove("hidden");
   els.manifestInput.focus();
 }
@@ -263,7 +270,10 @@ async function submitUpload(event) {
   try {
     const created = await requestJson("/api/skills", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${state.adminToken}`,
+      },
       body: JSON.stringify(body),
     });
     closeUpload();
@@ -272,6 +282,10 @@ async function submitUpload(event) {
     await loadSkills();
     await selectSkill(created.skill.skillId);
   } catch (err) {
+    if (err.message === "需要管理员令牌") {
+      state.adminToken = "";
+      sessionStorage.removeItem("skillHubAdminToken");
+    }
     els.uploadMsg.textContent = err.message;
   } finally {
     submitBtn.disabled = false;
