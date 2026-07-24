@@ -1199,7 +1199,7 @@ function CreateSkillModal({ show, onClose, onSaved, prefill, skillToEdit }: { sh
   useEffect(() => {
     if (show && skillToEdit) {
       setStep("edit");
-      setEditSkill({...skillToEdit, whenToUse: skillToEdit.whenToUse || "", allowedTools: (skillToEdit.allowedTools || []).join(", ")});
+      setEditSkill({...skillToEdit, whenToUse: skillToEdit.whenToUse || "", allowedTools: [...(skillToEdit.allowedTools || [])]});
     }
     if (show && prefill && !skillToEdit) setSkillDesc(prefill);
     if (!show) { setSkillDesc(""); setStep(skillToEdit ? "edit" : "describe"); }
@@ -1207,6 +1207,13 @@ function CreateSkillModal({ show, onClose, onSaved, prefill, skillToEdit }: { sh
   const [generating, setGenerating] = useState(false);
   const [editSkill, setEditSkill] = useState<Record<string, any> | null>(null);
   const [msg, setMsg] = useState("");
+  const [toolCatalog, setToolCatalog] = useState<Array<{ name: string; description: string; source: "builtin" | "external" | "mcp"; risk: "read" | "write" | "destructive"; permission: "auto" | "confirm" | "disabled" }>>([]);
+  const [toolSearch, setToolSearch] = useState("");
+  useEffect(() => {
+    if (!show) return;
+    fetch("/api/skills/tools/catalog").then((response) => response.json())
+      .then((data) => setToolCatalog(data.tools || [])).catch(() => setToolCatalog([]));
+  }, [show]);
   if (!show) return null;
 
   const handleGenerate = async () => {
@@ -1215,7 +1222,7 @@ function CreateSkillModal({ show, onClose, onSaved, prefill, skillToEdit }: { sh
     try {
       const res = await fetch("/api/skills/generate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ description: skillDesc }) });
       const data = await res.json();
-      if (data.skill) { setEditSkill(data.skill); setStep("edit"); }
+      if (data.skill) { setEditSkill({ ...data.skill, allowedTools: Array.isArray(data.skill.allowedTools) ? data.skill.allowedTools : [] }); setStep("edit"); }
       else setMsg("生成失败: " + (data.error || "未知错误"));
     } catch (err: any) { setMsg("请求失败: " + err.message); }
     finally { setGenerating(false); }
@@ -1228,6 +1235,7 @@ function CreateSkillModal({ show, onClose, onSaved, prefill, skillToEdit }: { sh
       if (typeof skill.requiredTools === "string") skill.requiredTools = [];
       if (typeof skill.input === "string") skill.input = JSON.parse(skill.input);
       if (typeof skill.output === "string") skill.output = JSON.parse(skill.output);
+      skill.allowedTools = Array.isArray(skill.allowedTools) ? skill.allowedTools : [];
       const res = await fetch("/api/skills/save", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(skill) });
       const data = await res.json();
       if (data.success) { onSaved(); handleClose(); } else setMsg("保存失败: " + (data.error || "未知错误"));
@@ -1238,6 +1246,18 @@ function CreateSkillModal({ show, onClose, onSaved, prefill, skillToEdit }: { sh
   const descLength = String(editSkill?.description || "").length;
   const systemPromptLength = String(editSkill?.systemPrompt || "").length;
   const whenToUseLength = String(editSkill?.whenToUse || "").length;
+  const selectedTools: string[] = Array.isArray(editSkill?.allowedTools) ? editSkill.allowedTools : [];
+  const catalogNames = new Set(toolCatalog.map((tool) => tool.name));
+  const unavailableTools = selectedTools.filter((name) => !catalogNames.has(name));
+  const visibleTools = toolCatalog.filter((tool) => {
+    const query = toolSearch.trim().toLowerCase();
+    return !query || tool.name.toLowerCase().includes(query) || tool.description.toLowerCase().includes(query);
+  });
+  const toggleTool = (name: string) => {
+    if (!editSkill) return;
+    const next = selectedTools.includes(name) ? selectedTools.filter((item) => item !== name) : [...selectedTools, name];
+    setEditSkill({ ...editSkill, allowedTools: next });
+  };
 
   return (
     <div className="modal-overlay" onClick={handleClose}>
@@ -1275,6 +1295,22 @@ function CreateSkillModal({ show, onClose, onSaved, prefill, skillToEdit }: { sh
                 <label className="field-label"><span>触发场景 (whenToUse)</span><span className={`field-count ${whenToUseLength > 120 ? "over" : ""}`}>{whenToUseLength}/120</span></label>
                 <p className="field-hint">说明什么时候该用、什么时候不该用，可减少误触发。</p>
                 <textarea rows={2} placeholder="例如：用户想制定学习计划时触发；不要在文件操作或闲聊时触发。" value={editSkill.whenToUse || ""} onChange={e => setEditSkill({ ...editSkill, whenToUse: e.target.value })} />
+
+                <label className="field-label"><span>允许使用的工具</span><span className="field-count">已选 {selectedTools.length}</span></label>
+                <p className="field-hint">空白名单表示 Skill 可见全部工具；危险或需确认的工具仍由后端审批。</p>
+                <div className="skill-tool-selector">
+                  <input className="skill-tool-search" value={toolSearch} onChange={(event) => setToolSearch(event.target.value)} placeholder="搜索工具名称或描述" />
+                  {selectedTools.length === 0 && <div className="skill-tool-unrestricted">当前未限制工具范围</div>}
+                  {unavailableTools.map((name) => <label className="skill-tool-option unavailable" key={name}><input type="checkbox" checked onChange={() => toggleTool(name)} /><span><strong>{name}</strong><small>当前不可用，保存时仍会保留</small></span><em>失效</em></label>)}
+                  <div className="skill-tool-options">
+                    {visibleTools.map((tool) => <label className={`skill-tool-option risk-${tool.risk}`} key={tool.name}>
+                      <input type="checkbox" checked={selectedTools.includes(tool.name)} onChange={() => toggleTool(tool.name)} />
+                      <span><strong>{tool.name}</strong><small>{tool.description}</small></span>
+                      <em>{tool.source} · {tool.risk}{tool.permission === "confirm" ? " · 需确认" : ""}</em>
+                    </label>)}
+                    {visibleTools.length === 0 && <div className="skill-tool-empty">没有匹配的工具</div>}
+                  </div>
+                </div>
               </div>
             )}
             <div className="modal-actions"><button onClick={handleClose}>取消</button><button className="primary" onClick={handleSave}>保存</button></div>

@@ -12,6 +12,10 @@ import { randomUUID } from "crypto";
 import * as fs from "fs";
 import * as path from "path";
 import { createAiClient, getCurrentModel } from "../ai-settings";
+import { formatLlmError } from "../llm-errors";
+import { getAllTools } from "../tools/registry";
+import { listExternalTools } from "../external-tools/repository";
+import { listPublicMcpServers } from "../mcp/runtime";
 
 const router = Router();
 const DEFAULT_SKILL_HUB_URL = "https://wahtway-production.up.railway.app";
@@ -78,6 +82,48 @@ interface HistorySnapshot {
 const historySnapshots = new Map<string, HistorySnapshot>();
 const HISTORY_SNAPSHOT_TTL_MS = 10 * 60 * 1000;
 
+export interface SkillToolCatalogItem {
+  name: string;
+  description: string;
+  source: "builtin" | "external" | "mcp";
+  risk: "read" | "write" | "destructive";
+  permission: "auto" | "confirm" | "disabled";
+  available: boolean;
+}
+
+function builtinRisk(name: string): SkillToolCatalogItem["risk"] {
+  if (/delete|command|execute|move|write|create|copy|fill-template/i.test(name)) return "destructive";
+  if (/update|organize|summarize/i.test(name)) return "write";
+  return "read";
+}
+
+export function buildSkillToolCatalog(): SkillToolCatalogItem[] {
+  const external = new Map(listExternalTools().map((tool) => [`external-${tool.id}`, tool]));
+  const mcp = new Map<string, any>();
+  for (const server of listPublicMcpServers()) {
+    for (const tool of server.status.tools) mcp.set(tool.registeredName, tool);
+  }
+  return getAllTools().map((tool) => {
+    const mcpTool = mcp.get(tool.name);
+    if (mcpTool) return {
+      name: tool.name, description: tool.description, source: "mcp" as const,
+      risk: mcpTool.risk, permission: mcpTool.permission || "confirm", available: true,
+    };
+    const externalTool = external.get(tool.name);
+    if (externalTool) return {
+      name: tool.name, description: tool.description, source: "external" as const,
+      risk: externalTool.permission === "write" ? "write" as const : "read" as const,
+      permission: externalTool.permission === "write" ? "confirm" as const : "auto" as const,
+      available: true,
+    };
+    const risk = builtinRisk(tool.name);
+    return {
+      name: tool.name, description: tool.description, source: "builtin" as const, risk,
+      permission: risk === "destructive" ? "confirm" as const : "auto" as const, available: true,
+    };
+  }).sort((left, right) => left.source.localeCompare(right.source) || left.name.localeCompare(right.name));
+}
+
 function redactOperation(text: string): string {
   return text
     .replace(/(?:https?:\/\/|www\.)[^\s"'`]+/gi, "[链接]")
@@ -136,6 +182,10 @@ router.get("/", (_req: Request, res: Response) => {
   res.json({ skills });
 });
 
+router.get("/tools/catalog", (_req: Request, res: Response) => {
+  res.json({ tools: buildSkillToolCatalog() });
+});
+
 // POST /api/skills/learn-from-history/preview — 创建用户可检查的一次性历史快照
 router.post("/learn-from-history/preview", (_req: Request, res: Response) => {
   const operations = getRecentUserOperations();
@@ -180,7 +230,7 @@ ${operations.map((operation, index) => `${index + 1}. ${operation}`).join("\n")}
 
   try {
     const response = await getClient().chat.completions.create({
-      model: MODEL,
+      model: getCurrentModel(),
       messages: [
         { role: "system", content: "只输出合法 JSON，不输出其他内容。" },
         { role: "user", content: prompt },
