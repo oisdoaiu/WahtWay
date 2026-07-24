@@ -1,0 +1,94 @@
+name: Sync to GitLab
+
+on:
+  workflow_dispatch:
+  schedule:
+    # GitHub Actions uses UTC. This runs at 00:00 Asia/Shanghai (UTC+8).
+    - cron: "0 16 * * *"
+
+permissions:
+  contents: read
+
+jobs:
+  sync:
+    name: Mirror main to GitLab
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out main
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Push current commit to GitLab
+        env:
+          GITLAB_REPOSITORY_URL: ${{ vars.GITLAB_REPOSITORY_URL }}
+          GITLAB_PUSH_TOKEN: ${{ secrets.GITLAB_PUSH_TOKEN }}
+        run: |
+          if [ -z "$GITLAB_REPOSITORY_URL" ] || [ -z "$GITLAB_PUSH_TOKEN" ]; then
+            echo "Set GITLAB_REPOSITORY_URL and GITLAB_PUSH_TOKEN before enabling GitLab synchronization."
+            exit 1
+          fi
+
+          AUTHORIZATION=$(printf 'oauth2:%s' "$GITLAB_PUSH_TOKEN" | base64 --wrap=0)
+          git -c http.extraHeader="Authorization: Basic $AUTHORIZATION" \
+            push "$GITLAB_REPOSITORY_URL" HEAD:refs/heads/main
+
+  notify-feishu-on-failure:
+    name: Notify Feishu on failure
+    needs: sync
+    if: always() && needs.sync.result == 'failure'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Send failure notification to Feishu
+        env:
+          WEBHOOK: ${{ secrets.FEISHU_WEBHOOK }}
+          REPOSITORY: ${{ github.repository }}
+          EVENT_NAME: ${{ github.event_name }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          if [ -z "$WEBHOOK" ]; then
+            echo "FEISHU_WEBHOOK is not configured; skipping notification."
+            exit 0
+          fi
+
+          PAYLOAD=$(jq -n \
+            --arg repository "$REPOSITORY" \
+            --arg eventName "$EVENT_NAME" \
+            --arg runUrl "$RUN_URL" \
+            '{
+              msg_type: "interactive",
+              card: {
+                header: {
+                  template: "red",
+                  title: { tag: "plain_text", content: "GitLab 同步失败" }
+                },
+                elements: [
+                  {
+                    tag: "div",
+                    text: {
+                      tag: "lark_md",
+                      content: ("**项目：** " + $repository + "\n**触发方式：** " + $eventName + "\n同步任务未完成，请查看构建日志。")
+                    }
+                  },
+                  {
+                    tag: "action",
+                    actions: [
+                      {
+                        tag: "button",
+                        text: { tag: "plain_text", content: "查看同步日志" },
+                        type: "danger",
+                        url: $runUrl
+                      }
+                    ]
+                  }
+                ]
+              }
+            }')
+
+          curl --fail-with-body --request POST "$WEBHOOK" \
+            --header "Content-Type: application/json" \
+            --data "$PAYLOAD"

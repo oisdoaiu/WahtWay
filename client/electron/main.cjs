@@ -4,6 +4,19 @@ const path = require("path");
 const fs = require("fs");
 let mainWindow = null;
 
+function resolveDataDir() {
+  if (process.env.WAHTWAY_DATA_DIR && process.env.WAHTWAY_DATA_DIR.trim()) {
+    return path.resolve(process.env.WAHTWAY_DATA_DIR.trim());
+  }
+
+  const portableDir = process.env.PORTABLE_EXECUTABLE_DIR?.trim();
+  if (portableDir) {
+    return path.join(path.resolve(portableDir), "WahtWay-data");
+  }
+
+  return path.join(app.getPath("userData"), "data");
+}
+
 // 加载 .env
 function loadEnv() {
   const envPath = app.isPackaged
@@ -26,6 +39,42 @@ function loadEnv() {
   console.warn("⚠️ 未找到 .env，请配置 API Key");
 }
 
+function writePortFile(port) {
+  try {
+    const beDir = path.join(__dirname, "..", "be");
+    fs.writeFileSync(path.join(beDir, ".port"), String(port), "utf-8");
+  } catch {}
+}
+
+function waitForPortFile(timeoutMs = 15000) {
+  const beDir = path.join(__dirname, "..", "be");
+  const portFile = path.join(beDir, ".port");
+  const start = Date.now();
+
+  return new Promise((resolve) => {
+    const poll = () => {
+      try {
+        if (fs.existsSync(portFile)) {
+          const port = parseInt(fs.readFileSync(portFile, "utf-8").trim(), 10);
+          if (Number.isFinite(port) && port > 0) {
+            resolve(port);
+            return;
+          }
+        }
+      } catch {}
+
+      if (Date.now() - start >= timeoutMs) {
+        resolve(3000);
+        return;
+      }
+
+      setTimeout(poll, 100);
+    };
+
+    poll();
+  });
+}
+
 // IPC: 打开文件选择对话框
 ipcMain.handle("open-file-dialog", async () => {
   const result = await dialog.showOpenDialog(mainWindow, {
@@ -44,13 +93,47 @@ ipcMain.handle("open-folder-dialog", async () => {
   return result.canceled ? "" : result.filePaths[0] || "";
 });
 
+// 全局函数：渲染 HTML 为图片（供 Express 后端调用）
+global.renderHTMLSlides = async (htmlSlides) => {
+  return await renderHTMLSlidesImpl(htmlSlides);
+};
+
+async function renderHTMLSlidesImpl(htmlSlides) {
+  if (!Array.isArray(htmlSlides) || htmlSlides.length === 0) return [];
+  const results = [];
+  for (let i = 0; i < htmlSlides.length; i++) {
+    try {
+      const win = new BrowserWindow({
+        width: 1280, height: 720, show: false,
+        webPreferences: { nodeIntegration: false, contextIsolation: true },
+      });
+      const html = "<!DOCTYPE html><html><head><meta charset='utf-8'><style>" +
+        "*{margin:0;padding:0;box-sizing:border-box}" +
+        "body{width:1280px;height:720px;overflow:hidden;font-family:'Microsoft YaHei','PingFang SC',sans-serif}" +
+        "</style></head><body>" + htmlSlides[i] + "</body></html>";
+      await win.loadURL("data:text/html;charset=utf-8," + encodeURIComponent(html));
+      await new Promise(r => setTimeout(r, 500)); // 等渲染完成
+      const image = await win.webContents.capturePage();
+      results.push(image.toDataURL());
+      win.close();
+    } catch (e) {
+      results.push("");
+    }
+  }
+  return results;
+}
+
+
 app.whenReady().then(async () => {
   loadEnv();
-  process.env.WAHTWAY_DATA_DIR = path.join(app.getPath("userData"), "data");
+  process.env.WAHTWAY_DATA_DIR = resolveDataDir();
 
   // require 后端（asar: false 直接文件访问）
   const beDir = path.join(__dirname, "..", "be");
   const distPath = path.join(beDir, "dist", "index.js");
+  try {
+    fs.unlinkSync(path.join(beDir, ".port"));
+  } catch {}
 
   if (fs.existsSync(distPath)) {
     try {
@@ -69,7 +152,7 @@ app.whenReady().then(async () => {
       const pub = path.join(__dirname, "..", "dist");
       srv.use(express.static(pub));
       srv.get("*", (_r, res) => res.sendFile(path.join(pub, "index.html")));
-      srv.listen(3000);
+      srv.listen(3000, () => writePortFile(3000));
     }
   }
 
@@ -84,16 +167,8 @@ app.whenReady().then(async () => {
   });
 
   // 等 Express 就绪，读取实际端口
-  let port = 3000;
-  setTimeout(() => {
-    try {
-      const portFile = require("path").join(__dirname, "..", "be", ".port");
-      if (require("fs").existsSync(portFile)) {
-        port = parseInt(require("fs").readFileSync(portFile, "utf-8").trim()) || 3000;
-      }
-    } catch {}
-    mainWindow.loadURL(`http://localhost:${port}`);
-  }, 1500);
+  const port = await waitForPortFile();
+  mainWindow.loadURL(`http://localhost:${port}`);
   mainWindow.setMenuBarVisibility(false);
 
   // 修复焦点丢失：页面加载完成后强制聚焦

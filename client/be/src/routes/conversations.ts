@@ -4,6 +4,7 @@
 import { Router, Request, Response } from "express";
 import OpenAI from "openai";
 import { resolveModel } from "../models";
+import { createAiClient, getCurrentModel } from "../ai-settings";
 import { getConversationsDir } from "../runtime-data";
 import * as fs from "fs";
 import * as path from "path";
@@ -18,10 +19,7 @@ function getConversationPath(id: string): string | null {
 }
 
 function getAIClient(): OpenAI {
-  return new OpenAI({
-    apiKey: process.env.DEEPSEEK_API_KEY,
-    baseURL: process.env.DEEPSEEK_BASE_URL || "https://api.deepseek.com",
-  });
+  return createAiClient();
 }
 
 function listFiles(): string[] {
@@ -110,7 +108,7 @@ router.post("/:id/summarize", async (req: Request, res: Response) => {
     const firstMsg = data.messages?.find((m: any) => m.role === "user")?.content?.slice(0, 200);
     if (!firstMsg) { res.json({ title: data.title }); return; }
     const resp = await getAIClient().chat.completions.create({
-      model: resolveModel(process.env.DEEPSEEK_MODEL),
+      model: resolveModel(getCurrentModel()),
       messages: [{ role: "user", content: `用不超过15个字给这段对话起一个标题，直接输出标题：${firstMsg}` }],
       max_tokens: 30, temperature: 0.3,
     });

@@ -3,6 +3,11 @@ import * as os from "os";
 import * as path from "path";
 
 function getDefaultDataDir(): string {
+  const portableDir = process.env.PORTABLE_EXECUTABLE_DIR?.trim();
+  if (portableDir) {
+    return path.join(path.resolve(portableDir), "WahtWay-data");
+  }
+
   if (process.platform === "win32") {
     const appData = process.env.APPDATA || path.join(os.homedir(), "AppData", "Roaming");
     return path.join(appData, "WahtWay", "data");
@@ -28,6 +33,30 @@ export function getConversationsDir(): string {
 
 export function getLogsDir(): string {
   return path.join(dataDir, "logs");
+}
+
+export function getExternalToolsDir(): string {
+  return path.join(dataDir, "external-tools");
+}
+
+export function getMcpServersDir(): string {
+  return path.join(dataDir, "mcp-servers");
+}
+
+export function getSkillLearningDir(): string {
+  return path.join(dataDir, "skill-learning");
+}
+
+export function getAgentRunsDir(): string {
+  return path.join(dataDir, "agent-runs");
+}
+
+export function getSkillRunsDir(): string {
+  return path.join(getSkillLearningDir(), "runs");
+}
+
+export function getSkillLearningStatesDir(): string {
+  return path.join(getSkillLearningDir(), "skills");
 }
 
 export function migrateLegacyConversations(): void {

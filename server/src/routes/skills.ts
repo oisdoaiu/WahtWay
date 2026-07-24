@@ -1,4 +1,5 @@
 import { Router, Request, Response } from "express";
+import { AuthenticatedRequest, requireAuth } from "../auth/middleware";
 import {
   addReport,
   addReview,
@@ -56,6 +57,21 @@ function parseStatus(value: unknown): SkillStatus {
     return value as SkillStatus;
   }
   return process.env.REQUIRE_SKILL_REVIEW === "true" ? "pending" : "published";
+}
+
+function canManageSkill(req: Request, skillId: string): boolean {
+  const user = (req as AuthenticatedRequest).authUser;
+  const record = getSkill(skillId);
+  if (!record || record.status === "archived") return false;
+  return user.role === "admin" || record.authorUserId === user.id;
+}
+
+function assertCanManageSkill(req: Request, res: Response, skillId: string): boolean {
+  if (!canManageSkill(req, skillId)) {
+    res.status(403).json({ error: "没有权限管理这个 Skill" });
+    return false;
+  }
+  return true;
 }
 
 router.get("/", (req: Request, res: Response) => {
@@ -120,15 +136,17 @@ router.get("/:skillId/download", (req: Request, res: Response) => {
   }
 });
 
-router.post("/", (req: Request, res: Response) => {
+router.post("/", requireAuth, (req: Request, res: Response) => {
   try {
     const body = req.body || {};
+    const user = (req as AuthenticatedRequest).authUser;
     const manifest = sanitizeSkillManifest(body.manifest || body);
     const record = createSkill({
       manifest,
       version: sanitizeVersion(body.version),
       changelog: sanitizeChangelog(body.changelog),
-      authorName: sanitizeOptionalText(body.authorName, "authorName", 80),
+      authorUserId: user.id,
+      authorName: user.displayName || user.username,
       category: sanitizeOptionalText(body.category, "category", 40),
       tags: sanitizeTags(body.tags || manifest.keywords?.slice(0, 6) || []),
       visibility: parseVisibility(body.visibility),
@@ -145,8 +163,9 @@ router.post("/", (req: Request, res: Response) => {
   }
 });
 
-router.post("/:skillId/versions", (req: Request, res: Response) => {
+router.post("/:skillId/versions", requireAuth, (req: Request, res: Response) => {
   try {
+    if (!assertCanManageSkill(req, res, req.params.skillId)) return;
     const body = req.body || {};
     const manifest = sanitizeSkillManifest(body.manifest || body);
     const record = addSkillVersion(
@@ -165,14 +184,18 @@ router.post("/:skillId/versions", (req: Request, res: Response) => {
   }
 });
 
-router.patch("/:skillId", (req: Request, res: Response) => {
+router.patch("/:skillId", requireAuth, (req: Request, res: Response) => {
   try {
+    if (!assertCanManageSkill(req, res, req.params.skillId)) return;
     const body = req.body || {};
+    const user = (req as AuthenticatedRequest).authUser;
     const record = updateSkillMetadata(req.params.skillId, {
-      status: typeof body.status === "string" && STATUSES.includes(body.status) ? body.status : undefined,
+      status:
+        user.role === "admin" && typeof body.status === "string" && STATUSES.includes(body.status)
+          ? body.status
+          : undefined,
       visibility:
         typeof body.visibility === "string" && VISIBILITIES.includes(body.visibility) ? body.visibility : undefined,
-      authorName: body.authorName === undefined ? undefined : sanitizeOptionalText(body.authorName, "authorName", 80),
       category: body.category === undefined ? undefined : sanitizeOptionalText(body.category, "category", 40),
       tags: body.tags === undefined ? undefined : sanitizeTags(body.tags),
     });
@@ -182,8 +205,9 @@ router.patch("/:skillId", (req: Request, res: Response) => {
   }
 });
 
-router.delete("/:skillId", (req: Request, res: Response) => {
+router.delete("/:skillId", requireAuth, (req: Request, res: Response) => {
   try {
+    if (!assertCanManageSkill(req, res, req.params.skillId)) return;
     const record = archiveSkill(req.params.skillId);
     res.json({ success: true, skill: summarizeSkill(record) });
   } catch (err) {
@@ -195,7 +219,10 @@ router.post("/:skillId/review", (req: Request, res: Response) => {
   try {
     const body = req.body || {};
     const comment = sanitizeOptionalText(body.comment, "comment", 500);
-    const record = addReview(req.params.skillId, Number(body.rating), comment);
+    const reviewerId = typeof body.reviewerId === "string" && body.reviewerId.trim()
+      ? body.reviewerId.trim().slice(0, 100)
+      : undefined;
+    const record = addReview(req.params.skillId, Number(body.rating), comment, reviewerId);
     res.status(201).json({ success: true, skill: summarizeSkill(record) });
   } catch (err) {
     respondError(res, err);

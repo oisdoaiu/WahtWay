@@ -3,6 +3,7 @@
 
 import { exec } from "child_process";
 import { ToolDef } from "../types";
+import { resolveToolPath } from "./workspace";
 
 // ---- 权限规则 ----
 
@@ -122,9 +123,11 @@ export const runCommandTool: ToolDef = {
     },
     required: ["command"],
   },
-  execute: async (args) => {
+  execute: async (args, context) => {
     const cmd = String(args.command);
-    const cwd = args.cwd ? String(args.cwd) : require("os").homedir();
+    const cwd = args.cwd
+      ? resolveToolPath(args.cwd, context)
+      : context?.workspace || require("os").homedir();
 
     // 只读命令直接执行
     if (isReadonly(cmd)) {

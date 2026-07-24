@@ -4,10 +4,11 @@
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
-import OpenAI from "openai";
 import AdmZip from "adm-zip";
 import { resolveModel } from "../models";
+import { createAiClient, getCurrentModel } from "../ai-settings";
 import { ToolDef } from "../types";
+import { resolveToolPath } from "./workspace";
 
 /** 列出目录下的文件和子目录 */
 export const listFilesTool: ToolDef = {
@@ -27,8 +28,8 @@ export const listFilesTool: ToolDef = {
     },
     required: ["directory"],
   },
-  execute: async (args) => {
-    const dir = String(args.directory);
+  execute: async (args, context) => {
+    const dir = resolveToolPath(args.directory, context);
     if (!fs.existsSync(dir)) return `目录不存在: ${dir}`;
     try { if (!fs.statSync(dir).isDirectory()) return `不是目录: ${dir}`; }
     catch (e: any) { return `PERMISSION_REQUIRED::权限不足: ${e.message}::${dir}`; }
@@ -69,8 +70,8 @@ export const readFileTool: ToolDef = {
     },
     required: ["path"],
   },
-  execute: async (args) => {
-    const filePath = String(args.path);
+  execute: async (args, context) => {
+    const filePath = resolveToolPath(args.path, context);
     if (!fs.existsSync(filePath)) return `文件不存在: ${filePath}`;
 
     try {
@@ -102,8 +103,8 @@ export const searchFilesTool: ToolDef = {
     },
     required: ["directory", "pattern"],
   },
-  execute: async (args) => {
-    const dir = String(args.directory);
+  execute: async (args, context) => {
+    const dir = resolveToolPath(args.directory, context);
     const pattern = String(args.pattern).toLowerCase();
     if (!fs.existsSync(dir)) return `目录不存在: ${dir}`;
 
@@ -149,8 +150,8 @@ export const fileInfoTool: ToolDef = {
     },
     required: ["path"],
   },
-  execute: async (args) => {
-    const filePath = String(args.path);
+  execute: async (args, context) => {
+    const filePath = resolveToolPath(args.path, context);
     if (!fs.existsSync(filePath)) return `路径不存在: ${filePath}`;
 
     const stat = fs.statSync(filePath);
@@ -241,9 +242,9 @@ export const moveFileTool: ToolDef = {
     },
     required: ["source", "destination"],
   },
-  execute: async (args) => {
-    const src = String(args.source);
-    const dst = String(args.destination);
+  execute: async (args, context) => {
+    const src = resolveToolPath(args.source, context);
+    const dst = resolveToolPath(args.destination, context);
     if (!fs.existsSync(src)) return `源文件不存在: ${src}`;
     const err = isPathSafe(src) || isPathSafe(dst);
     if (err) return `PERMISSION_REQUIRED::${err}::${src}`;
@@ -275,9 +276,9 @@ export const copyFileTool: ToolDef = {
     },
     required: ["source", "destination"],
   },
-  execute: async (args) => {
-    const src = String(args.source);
-    const dst = String(args.destination);
+  execute: async (args, context) => {
+    const src = resolveToolPath(args.source, context);
+    const dst = resolveToolPath(args.destination, context);
     if (!fs.existsSync(src)) return `源文件不存在: ${src}`;
     const err = isPathSafe(dst);
     if (err) return `PERMISSION_REQUIRED::${err}::`;
@@ -306,8 +307,8 @@ export const newFolderTool: ToolDef = {
     },
     required: ["path"],
   },
-  execute: async (args) => {
-    const dirPath = String(args.path);
+  execute: async (args, context) => {
+    const dirPath = resolveToolPath(args.path, context);
     const err = isPathSafe(dirPath);
     if (err) return `PERMISSION_REQUIRED::${err}::`;
 
@@ -334,8 +335,8 @@ export const writeFileTool: ToolDef = {
     },
     required: ["path", "content"],
   },
-  execute: async (args) => {
-    const filePath = String(args.path);
+  execute: async (args, context) => {
+    const filePath = resolveToolPath(args.path, context);
     const content = String(args.content);
     const err = isPathSafe(filePath);
     if (err) return `PERMISSION_REQUIRED::${err}::`;
@@ -364,8 +365,8 @@ export const deleteFileTool: ToolDef = {
     },
     required: ["path"],
   },
-  execute: async (args) => {
-    const filePath = String(args.path);
+  execute: async (args, context) => {
+    const filePath = resolveToolPath(args.path, context);
     if (!fs.existsSync(filePath)) return `文件不存在: ${filePath}`;
     const err = isPathSafe(filePath);
     if (err) return `PERMISSION_REQUIRED::${err}::`;
@@ -395,8 +396,8 @@ export const summarizeFileTool: ToolDef = {
     },
     required: ["path", "task"],
   },
-  execute: async (args) => {
-    const filePath = String(args.path);
+  execute: async (args, context) => {
+    const filePath = resolveToolPath(args.path, context);
     const task = String(args.task);
     if (!fs.existsSync(filePath)) return `文件不存在: ${filePath}`;
     try {
@@ -405,12 +406,9 @@ export const summarizeFileTool: ToolDef = {
       const content = fs.readFileSync(filePath, "utf-8").slice(0, maxLen);
       const truncated = stat.size > maxLen ? "（文件过大，仅读取前 30KB）\n" : "";
 
-      const client = new OpenAI({
-        apiKey: process.env.DEEPSEEK_API_KEY,
-        baseURL: process.env.DEEPSEEK_BASE_URL || "https://api.deepseek.com",
-      });
+      const client = createAiClient();
       const response = await client.chat.completions.create({
-        model: resolveModel(process.env.DEEPSEEK_MODEL),
+        model: resolveModel(getCurrentModel()),
         messages: [
           { role: "system", content: `你是文件处理助手。对用户提供的文件内容执行：${task}。简洁输出结果。` },
           { role: "user", content: `文件: ${path.basename(filePath)}\n\n${truncated}${content}` },
@@ -439,8 +437,8 @@ export const parseFileTool: ToolDef = {
     },
     required: ["path"],
   },
-  execute: async (args) => {
-    const fp = String(args.path);
+  execute: async (args, context) => {
+    const fp = resolveToolPath(args.path, context);
     if (!fs.existsSync(fp)) return "文件不存在: " + fp;
     const ext = path.extname(fp).toLowerCase();
     try {

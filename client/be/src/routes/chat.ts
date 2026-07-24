@@ -4,14 +4,33 @@ import { Router, Request, Response } from "express";
 import { runAgentStream, setModel, getCurrentModel } from "../agent";
 import { createTraceId, logger } from "../logger";
 import { formatLlmError } from "../llm-errors";
+import { normalizeWorkspace } from "../tools/workspace";
 
 const router = Router();
 
 router.post("/", async (req: Request, res: Response) => {
-  const { message, history, model, skillId, workspace, summary } = req.body;
+  const {
+    message,
+    history,
+    model,
+    skillId,
+    workspace,
+    summary,
+    conversationId,
+    userMessageId,
+    assistantMessageId,
+  } = req.body;
 
   if (!message || typeof message !== "string") {
     res.status(400).json({ error: "请提供 message 字段" });
+    return;
+  }
+
+  let resolvedWorkspace: string | undefined;
+  try {
+    resolvedWorkspace = normalizeWorkspace(workspace);
+  } catch (error: any) {
+    res.status(400).json({ error: error.message || "工作区无效" });
     return;
   }
 
@@ -28,7 +47,11 @@ router.post("/", async (req: Request, res: Response) => {
   res.flushHeaders();
 
   try {
-    const stream = await runAgentStream(message, history, traceId, model, skillId, workspace, typeof summary === "string" ? summary : "");
+    const stream = await runAgentStream(message, history, traceId, model, skillId, resolvedWorkspace, typeof summary === "string" ? summary : "", {
+      conversationId: typeof conversationId === "string" ? conversationId : undefined,
+      userMessageId: typeof userMessageId === "string" ? userMessageId : undefined,
+      assistantMessageId: typeof assistantMessageId === "string" ? assistantMessageId : undefined,
+    });
 
     for await (const event of stream) {
       res.write(`data: ${JSON.stringify(event)}\n\n`);
