@@ -9,6 +9,7 @@ import fs from "fs";
 import chatRouter from "./routes/chat";
 import skillsRouter from "./routes/skills";
 import conversationsRouter from "./routes/conversations";
+import memoryRouter from "./routes/memory";
 import externalToolsRouter from "./routes/external-tools";
 import aiConfigRouter from "./routes/ai-config";
 import mcpRouter from "./routes/mcp";
@@ -18,9 +19,10 @@ import { registerTool } from "./tools/registry";
 import { registerFileTools, approvePath } from "./tools/file-tools";
 import { todoUpdateTool, clearTodo } from "./tools/todo-tool";
 import { runCommandTool, approveAndExecute, clearApprovedCommands } from "./tools/command-tool";
+import { resolveModel } from "./models";
+import { getConversationsDir, getMemoryDir, getSkillLearningDir, migrateLegacyConversations } from "./runtime-data";
 import { refreshExternalTools } from "./external-tools/registry";
 import { autoStartMcpServers, stopAllMcpServers } from "./mcp/runtime";
-import { getConversationsDir, getSkillLearningDir, migrateLegacyConversations } from "./runtime-data";
 import { readPptTool, createPptTool, fillTemplateTool } from "./tools/pptx-tools";
 import {
   getAiSettings,
@@ -60,6 +62,7 @@ if (fs.existsSync(publicDir)) {
 app.use("/api/chat", chatRouter);
 app.use("/api/skills", skillsRouter);
 app.use("/api/conversations", conversationsRouter);
+app.use("/api/memory", memoryRouter);
 app.use("/api/ai-config", aiConfigRouter);
 app.use("/api/external-tools", externalToolsRouter);
 app.use("/api/mcp", mcpRouter);
@@ -112,6 +115,8 @@ app.post("/api/reset", (_req, res) => {
     }
     const learningDir = getSkillLearningDir();
     if (fs.existsSync(learningDir)) fs.rmSync(learningDir, { recursive: true, force: true });
+    const memoryDir = getMemoryDir();
+    if (fs.existsSync(memoryDir)) fs.rmSync(memoryDir, { recursive: true, force: true });
     initSkills();
     res.json({ success: true });
   } catch (err: any) {

@@ -54,6 +54,7 @@ export interface AgentRunMetadata {
   userMessageId?: string;
   assistantMessageId?: string;
   needSnapshot?: NeedSnapshot;
+  contextSections?: string[];
 }
 
 function toolPolicy(workspace?: string): string {
@@ -75,11 +76,10 @@ ${workspaceInfo}
 - 用户说"看看桌面"、"回收站里有什么"、"找一下报告"——和呼吸一样自然地调用
 - 只有"你好"、"谢谢"、"再见"这种纯社交场合才不操作文件
 
-## 你的记忆能力
-- 你可以在 ${require("os").homedir()}\\.wahtway-notes\\ 目录下读写 .md 笔记文件
-- 遇到复杂任务时，先写笔记记录分析结果，下次对话可以直接读笔记，不用重复扫描
-- 用户信息、偏好、之前做过什么都可以记在笔记里，形成长期记忆
-- 用 write-file 记笔记，用 read-file 读笔记`.trim();
+## 记忆与隐私
+- 对话历史和长期记忆由 WahtWay 后端提供，不能自行把用户信息写入文件作为长期记忆
+- 不要把密码、密钥、token、验证码或其他敏感信息保存到文件
+- 只有用户明确要求创建任务笔记或文件时，才使用 write-file 写入用户指定的内容`.trim();
 }
 
 async function* agenticLoopStream(
@@ -89,6 +89,7 @@ async function* agenticLoopStream(
   traceId?: string,
   allowedTools?: string[],
   workspace?: string,
+  contextSections: string[] = [],
   summary?: string,
   metadata?: AgentRunMetadata,
   checkpoint?: AgentRunCheckpoint,
@@ -108,6 +109,10 @@ async function* agenticLoopStream(
   const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = checkpoint
     ? (checkpoint.messages as OpenAI.Chat.Completions.ChatCompletionMessageParam[])
     : [{ role: "system", content: systemPrompt + "\n\n" + toolPolicy(workspace) }];
+
+  for (const section of contextSections) {
+    messages.push({ role: "system", content: section });
+  }
 
   if (!checkpoint && history) {
     if (cfg.enabled) {
@@ -323,7 +328,7 @@ async function* agenticLoopStream(
 
         messages.push({
           role: "tool",
-          tool_call_id: tc.id,
+          tool_call_id: tc.id || `call_${toolCalls.indexOf(tc)}`,
           content: result,
         } as any);
       }
@@ -422,6 +427,7 @@ export async function* executeSkillStream(
       traceId,
       skill.allowedTools,
       workspace,
+      metadata?.contextSections ?? [],
       summary,
       metadata
     )) {

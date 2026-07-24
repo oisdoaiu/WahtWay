@@ -140,6 +140,18 @@ interface SkillMeta {
   };
 }
 
+type MemoryMode = "off" | "manual" | "all";
+
+interface MemoryItem {
+  id: string;
+  content: string;
+  category: "preference" | "profile" | "project" | "instruction" | "other";
+  enabled: boolean;
+  source: "manual" | "suggested";
+  sourceConversationId: string | null;
+  updatedAt: string;
+  lastUsedAt: string | null;
+}
 interface ExternalToolConfig {
   id: string;
   name: string;
@@ -156,13 +168,15 @@ interface ExternalToolConfig {
   timeoutMs: number;
   maxResponseBytes: number;
   secretNames: string[];
+
 }
 
 // ---- 对话面板 ----
 
-function ChatPanel({ conversationId, onTitleChange, onCreateSkill, aiSettings, onAiSettingsChange, onOpenAiSettings }: { showModal: boolean; conversationId: string; onTitleChange: (title: string) => void; onCreateSkill: (prefill?: string) => void; aiSettings: AiSettingsView | null; onAiSettingsChange: (patch: Partial<AiSettingsView> & { apiKey?: string }) => void; onOpenAiSettings: () => void; }) {
+function ChatPanel({ conversationId, memoryMode, onMemoryModeChange, onTitleChange, onCreateSkill, aiSettings, onAiSettingsChange, onOpenAiSettings }: { showModal: boolean; conversationId: string; memoryMode: MemoryMode; onMemoryModeChange: (mode: MemoryMode) => void; onTitleChange: (title: string) => void; onCreateSkill: (prefill?: string) => void; aiSettings: AiSettingsView | null; onAiSettingsChange: (patch: Partial<AiSettingsView> & { apiKey?: string }) => void; onOpenAiSettings: () => void; }) {
   const [, setTick] = useState(0);
   const messages = getMessages(conversationId);
+  const msg = messages[messages.length - 1];
   const streaming = isStreaming(conversationId);
   const [input, setInput] = useState("");
   const [skillName, setSkillName] = useState<string | null>(null);
@@ -179,7 +193,11 @@ function ChatPanel({ conversationId, onTitleChange, onCreateSkill, aiSettings, o
   const [attachedFiles, setAttachedFiles] = useState<string[]>([]);
   const [showFileMenu, setShowFileMenu] = useState(false);
   const [workspace, setWorkspace] = useState(() => localStorage.getItem("wahtway-workspace") || "");
-    const abortRef = useRef<AbortController | null>(null);
+  const [memories, setMemories] = useState<MemoryItem[]>([]);
+  const [selectedMemoryIds, setSelectedMemoryIds] = useState<string[]>([]);
+  const [showMemoryPicker, setShowMemoryPicker] = useState(false);
+  const [memoryDraft, setMemoryDraft] = useState<{ content: string; messageId: string } | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
   const msgHistory = useRef<string[]>([]);
   const historyIdx = useRef(-1);
   const lastEventRef = useRef(Date.now());
@@ -193,6 +211,11 @@ function ChatPanel({ conversationId, onTitleChange, onCreateSkill, aiSettings, o
 
 
   useEffect(() => { loadSkills(); }, []);
+
+  useEffect(() => {
+    fetch("/api/memory").then(r => r.json()).then(d => setMemories(d.memories || [])).catch(() => setMemories([]));
+    setSelectedMemoryIds([]);
+  }, [conversationId]);
 
   // 订阅 store → 触发重渲染
   useEffect(() => { const unsub = subscribe(() => setTick((t) => t + 1)); return () => { unsub(); }; }, []);
@@ -216,30 +239,6 @@ function ChatPanel({ conversationId, onTitleChange, onCreateSkill, aiSettings, o
       .catch(() => {});
   }, [conversationId]);
 
-  // 保存函数
-  const saveNow = () => {
-    const msgs = getMessages(conversationId);
-    if (msgs.length === 0) return;
-    fetch(`/api/conversations/${conversationId}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ messages: msgs, summary: getSummary(conversationId) }),
-    }).catch(() => {});
-  };
-
-  // 流结束后立即保存
-  useEffect(() => {
-    if (!streaming && messages.length > 0) saveNow();
-  }, [streaming]);
-
-  // 定时兜底（编辑中）
-  const saveTimeout = useRef<NodeJS.Timeout>(undefined);
-  useEffect(() => {
-    clearTimeout(saveTimeout.current);
-    if (messages.length === 0 || streaming) return;
-    saveTimeout.current = setTimeout(saveNow, 2000);
-  }, [messages]);
-
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
@@ -260,9 +259,8 @@ function ChatPanel({ conversationId, onTitleChange, onCreateSkill, aiSettings, o
     const currentMessages = [...getMessages(conversationId)];
     if (currentMessages.length === 0) onTitleChange(text.slice(0, 15) + (text.length > 15 ? "…" : ""));
 
-    const history = currentMessages.map((m: any) => ({ role: m.role, content: m.content }));
-    const userMessageId = Date.now().toString();
-    const assistantMessageId = (Date.now() + 1).toString();
+    const userMessageId = crypto.randomUUID();
+    const assistantMessageId = crypto.randomUUID();
 
     // 合并附件路径到消息
     const fullText = attachedFiles.length > 0
@@ -288,8 +286,7 @@ function ChatPanel({ conversationId, onTitleChange, onCreateSkill, aiSettings, o
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          message: text,
-          history,
+          message: fullText,
           model,
           skillId: skillId || undefined,
           workspace: workspace || undefined,
@@ -297,6 +294,7 @@ function ChatPanel({ conversationId, onTitleChange, onCreateSkill, aiSettings, o
           conversationId,
           userMessageId,
           assistantMessageId,
+          selectedMemoryIds: memoryMode === "manual" ? selectedMemoryIds : undefined,
         }),
         signal: controller.signal,
       });
@@ -415,7 +413,7 @@ function ChatPanel({ conversationId, onTitleChange, onCreateSkill, aiSettings, o
       abortRef.current = null;
       setStreaming(conversationId, false);
     }
-  }, [input, streaming, conversationId, onTitleChange, attachedFiles, model, skillId, workspace]);
+  }, [input, streaming, conversationId, onTitleChange, attachedFiles, model, skillId, workspace, memoryMode, selectedMemoryIds]);
 
   const continueApproval = async (runId: string, action: "approve" | "reject") => {
     setPermBusy(true);
@@ -479,6 +477,7 @@ function ChatPanel({ conversationId, onTitleChange, onCreateSkill, aiSettings, o
       setPermBusy(false);
     }
   };
+
 
   const stopStreaming = () => {
     if (abortRef.current) {
@@ -694,6 +693,30 @@ function ChatPanel({ conversationId, onTitleChange, onCreateSkill, aiSettings, o
             <span className="mode-badge">{skillId ? `🧠 ${allSkills.find(s => s.id === skillId)?.name || "Skill"}` : "🤖 智能模式"}</span>
             <span className="mode-arrow">{showSkillPicker ? "▴" : "▾"}</span>
           </div>
+          <select className="memory-mode-select" value={memoryMode} onChange={e => onMemoryModeChange(e.target.value as MemoryMode)} title="长期记忆模式">
+            <option value="off">记忆关闭</option>
+            <option value="manual">手动记忆</option>
+            <option value="all">使用长期记忆</option>
+          </select>
+          {memoryMode === "manual" && (
+            <div className="memory-picker-wrapper">
+              <button className="memory-picker-button" onClick={() => setShowMemoryPicker(!showMemoryPicker)}>{selectedMemoryIds.length} 条记忆</button>
+              {showMemoryPicker && (
+                <div className="memory-picker-dropdown">
+                  {memories.filter(item => item.enabled).length === 0 && <div className="memory-picker-empty">暂无可用记忆</div>}
+                  {memories.filter(item => item.enabled).map(item => (
+                    <label key={item.id} className="memory-picker-item">
+                      <input type="checkbox" checked={selectedMemoryIds.includes(item.id)} onChange={() => setSelectedMemoryIds(ids => ids.includes(item.id) ? ids.filter(id => id !== item.id) : [...ids, item.id])} />
+                      <span>{item.content}</span>
+                    </label>
+                  ))}
+                </div>
+              )}
+              {msg && msg.content && !streaming && (
+                <button className="message-memory-button" title="保存为长期记忆" onClick={() => setMemoryDraft({ content: msg.content, messageId: msg.id })}>保存为记忆</button>
+              )}
+            </div>
+          )}
           {/* 文件上传按钮 */}
           <div className="file-add-wrapper">
             <button className="file-add-btn" onClick={() => setShowFileMenu(!showFileMenu)} title="添加文件">＋</button>
@@ -742,6 +765,32 @@ function ChatPanel({ conversationId, onTitleChange, onCreateSkill, aiSettings, o
           {streaming && <button className="stop-btn" onClick={stopStreaming}>⏹</button>}
         </div>
       </footer>
+
+      {memoryDraft && (
+        <div className="modal-overlay" onClick={() => setMemoryDraft(null)}>
+          <div className="modal" style={{ maxWidth: 520 }} onClick={e => e.stopPropagation()}>
+            <div className="modal-header"><h2>保存为长期记忆</h2><button className="modal-close" onClick={() => setMemoryDraft(null)}>×</button></div>
+            <div className="modal-body">
+              <textarea className="modal-textarea" rows={6} value={memoryDraft.content} onChange={e => setMemoryDraft({ ...memoryDraft, content: e.target.value })} />
+              <div className="modal-actions">
+                <button onClick={() => setMemoryDraft(null)}>取消</button>
+                <button className="primary" onClick={async () => {
+                  const response = await fetch("/api/memory", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ content: memoryDraft.content, sourceConversationId: conversationId, sourceMessageId: memoryDraft.messageId }),
+                  });
+                  const data = await response.json();
+                  if (!response.ok) { toast(data.error || "记忆保存失败", "error"); return; }
+                  setMemories(items => [data, ...items]);
+                  setMemoryDraft(null);
+                  toast("已保存为长期记忆");
+                }}>保存</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {permDialog && (
         <div className="modal-overlay" onClick={() => setPermDialog(null)}>
@@ -1321,6 +1370,94 @@ function CreateSkillModal({ show, onClose, onSaved, prefill, skillToEdit }: { sh
   );
 }
 
+function MemoryPanel() {
+  const [items, setItems] = useState<MemoryItem[]>([]);
+  const [content, setContent] = useState("");
+  const [category, setCategory] = useState<MemoryItem["category"]>("preference");
+  const [editingId, setEditingId] = useState<string | null>(null);
+
+  const load = () => fetch("/api/memory").then(r => r.json()).then(d => setItems(d.memories || []));
+  useEffect(() => { load().catch(() => setItems([])); }, []);
+
+  const save = async () => {
+    const value = content.trim();
+    if (!value) return;
+    const response = await fetch(editingId ? `/api/memory/${editingId}` : "/api/memory", {
+      method: editingId ? "PATCH" : "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ content: value, category }),
+    });
+    const data = await response.json();
+    if (!response.ok) { toast(data.error || "记忆保存失败", "error"); return; }
+    setContent("");
+    setEditingId(null);
+    await load();
+  };
+
+  const toggle = async (item: MemoryItem) => {
+    await fetch(`/api/memory/${item.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ enabled: !item.enabled }),
+    });
+    await load();
+  };
+
+  const remove = async (id: string) => {
+    await fetch(`/api/memory/${id}`, { method: "DELETE" });
+    if (editingId === id) { setEditingId(null); setContent(""); }
+    await load();
+  };
+
+  // 接受自动提取的 suggested 候选，转正为正式记忆
+  const accept = async (id: string) => {
+    try {
+      const response = await fetch(`/api/memory/suggestions/${id}/accept`, { method: "POST" });
+      if (!response.ok) return;
+      await load();
+    } catch {
+      /* 静默失败，下次刷新可重试 */
+    }
+  };
+
+  return (
+    <section className="memory-panel">
+      <header className="header"><h1>长期记忆</h1><span className="subtitle">由你控制的跨对话信息</span></header>
+      <div className="memory-editor">
+        <textarea value={content} onChange={e => setContent(e.target.value)} maxLength={2000} placeholder="例如：我偏好使用 TypeScript 示例" />
+        <select value={category} onChange={e => setCategory(e.target.value as MemoryItem["category"])}>
+          <option value="preference">偏好</option><option value="profile">个人资料</option><option value="project">项目</option><option value="instruction">长期要求</option><option value="other">其他</option>
+        </select>
+        <button onClick={save}>{editingId ? "保存修改" : "添加记忆"}</button>
+        {editingId && <button className="secondary" onClick={() => { setEditingId(null); setContent(""); }}>取消</button>}
+      </div>
+      <div className="memory-list">
+        {items.length === 0 && <div className="memory-empty">还没有长期记忆</div>}
+        {items.map(item => (
+          <article key={item.id} className={`memory-item-card ${item.enabled ? "" : "disabled"}`}>
+            <div className="memory-item-main">
+              <span className="memory-category">{item.category}</span>
+              {item.source === "suggested" && (
+                <span style={{ fontSize: 11, padding: "1px 6px", borderRadius: 4, background: item.enabled ? "#27ae60" : "#e67e22", color: "#fff", marginLeft: 6 }}>
+                  {item.enabled ? "AI 建议" : "待确认"}
+                </span>
+              )}
+              <p>{item.content}</p>
+            </div>
+            <div className="memory-item-actions">
+              <label><input type="checkbox" checked={item.enabled} onChange={() => toggle(item)} /> 启用</label>
+              {item.source === "suggested" && !item.enabled && (
+                <button className="primary" title="接受为长期记忆" onClick={() => accept(item.id)}>接受</button>
+              )}
+              <button title="编辑" onClick={() => { setEditingId(item.id); setContent(item.content); setCategory(item.category); }}>编辑</button>
+              <button className="danger" title="删除" onClick={() => remove(item.id)}>删除</button>
+            </div>
+          </article>
+        ))}
+      </div>
+    </section>
+  );
+}
 const EMPTY_EXTERNAL_TOOL = {
   id: "",
   name: "",
@@ -1479,6 +1616,7 @@ function ExternalToolsPanel() {
           </div>
         </div>
       )}
+
     </section>
   );
 }
@@ -1486,7 +1624,7 @@ function ExternalToolsPanel() {
 // ---- App 主入口 ----
 
 export default function App() {
-  const [view, setView] = useState<"chat" | "skills" | "external-tools" | "mcp">("chat");
+  const [view, setView] = useState<"chat" | "skills" | "memory" | "external-tools" | "mcp">("chat");
   const [showModal, setShowModal] = useState(false);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [showCmdPalette, setShowCmdPalette] = useState(false);
@@ -1607,7 +1745,7 @@ export default function App() {
   };
 
   const saveConvTitle = async (id: string, title: string) => {
-    await fetch(`/api/conversations/${id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title }) });
+    await fetch(`/api/conversations/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title }) });
   };
 
   const deleteConversation = async (id: string) => {
@@ -1624,8 +1762,19 @@ export default function App() {
   };
 
   const handleTitleChange = (title: string) => {
-    fetch(`/api/conversations/${conversationId}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title }) }).then(() => setConvVersion(v => v + 1));
+    fetch(`/api/conversations/${conversationId}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title }) }).then(() => setConvVersion(v => v + 1));
   };
+
+  const handleMemoryModeChange = async (mode: MemoryMode) => {
+    await fetch(`/api/conversations/${conversationId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ memoryMode: mode }),
+    });
+    setConversations(items => items.map(item => item.id === conversationId ? { ...item, memoryMode: mode } : item));
+  };
+
+  const activeConversation = conversations.find(item => item.id === conversationId);
 
   return (
     <div className={`app ${theme}`}>
@@ -1635,6 +1784,7 @@ export default function App() {
         <div className="sidebar-nav">
           <button className={`nav-item ${view === "chat" ? "active" : ""}`} onClick={() => setView("chat")}><span className="nav-icon">💬</span><span>对话</span></button>
           <button className={`nav-item ${view === "skills" ? "active" : ""}`} onClick={() => setView("skills")}><span className="nav-icon">🧠</span><span>Skill 库</span></button>
+          <button className={`nav-item ${view === "memory" ? "active" : ""}`} onClick={() => setView("memory")}><span className="nav-icon">◉</span><span>长期记忆</span></button>
           <button className={`nav-item ${view === "external-tools" ? "active" : ""}`} onClick={() => setView("external-tools")}><span className="nav-icon">🔌</span><span>外部工具</span></button>
           <button className={`nav-item ${view === "mcp" ? "active" : ""}`} onClick={() => setView("mcp")}><span className="nav-icon">◫</span><span>MCP</span></button>
         </div>
@@ -1669,9 +1819,11 @@ export default function App() {
       </nav>
       <div className="main-content">
         {view === "chat" ? (
-          conversationId ? <ChatPanel showModal={showModal} conversationId={conversationId} onTitleChange={handleTitleChange} onCreateSkill={(prefill) => { setPrefillSkillDesc(prefill || ""); setShowModal(true); }} aiSettings={aiSettings} onAiSettingsChange={(patch) => { void saveAiSettings(patch).catch((error: any) => toast(error.message || "保存 AI 配置失败", "error")); }} onOpenAiSettings={() => setShowAiSettings(true)} /> : <div className="welcome"><h2>🤔 Waht?</h2></div>
+          conversationId ? <ChatPanel showModal={showModal} conversationId={conversationId} memoryMode={activeConversation?.memoryMode || "off"} onMemoryModeChange={handleMemoryModeChange} onTitleChange={handleTitleChange} onCreateSkill={(prefill) => { setPrefillSkillDesc(prefill || ""); setShowModal(true); }} aiSettings={aiSettings} onAiSettingsChange={(patch) => { void saveAiSettings(patch).catch((error: any) => toast(error.message || "保存 AI 配置失败", "error")); }} onOpenAiSettings={() => setShowAiSettings(true)} /> : <div className="welcome"><h2>🤔 Waht?</h2></div>
         ) : view === "skills" ? (
-          <SkillsPanel onCreateSkill={() => setShowModal(true)} onEditSkill={openEditSkill} onLearnFromHistory={(s) => { setSkillToEdit(s); setShowModal(true); }} skillsVersion={skillsVersion} />
+          <SkillsPanel onCreateSkill={() => setShowModal(true)} onEditSkill={openEditSkill} skillsVersion={skillsVersion} />
+        ) : view === "memory" ? (
+          <MemoryPanel />
         ) : view === "external-tools" ? (
           <ExternalToolsPanel />
         ) : (
@@ -2004,4 +2156,3 @@ function DebugPanel() {
     </div>
   );
 }
-
