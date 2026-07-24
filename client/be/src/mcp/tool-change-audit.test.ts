@@ -64,6 +64,20 @@ describe("MCP tool change audit", () => {
     });
   });
 
+  it("records annotation and effective safety changes", async () => {
+    const audit = await import("./tool-change-audit");
+    const before = tool("safety", {
+      annotations: {}, risk: "write", riskSource: "default", idempotent: false,
+    });
+    const after = tool("safety", {
+      annotations: { destructiveHint: true }, risk: "destructive", riskSource: "server", idempotent: true,
+    });
+    const event = audit.buildToolChangeAuditEvent("fixture", 4, [before], [after], "safety_change");
+
+    expect(event!.source).toBe("safety_change");
+    expect(event!.modified[0].changedFields).toEqual(["annotations", "risk", "idempotent"]);
+  });
+
   it("persists events and filters them by server", async () => {
     const audit = await import("./tool-change-audit");
     const first = audit.buildToolChangeAuditEvent("first", 2, [], [tool("one")])!;

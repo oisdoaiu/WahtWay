@@ -12,6 +12,11 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
     {
       name: "echo",
       description: "Echoes the provided text",
+      annotations: {
+        readOnlyHint: process.env.FIXTURE_READ_ONLY === "true",
+        destructiveHint: process.env.FIXTURE_DESTRUCTIVE === "true",
+        idempotentHint: process.env.FIXTURE_IDEMPOTENT === "true",
+      },
       inputSchema: {
         type: "object",
         properties: { text: { type: "string" } },
