@@ -18,6 +18,7 @@ client/be/data/external-tools/
 client/be/data/mcp-servers/
 client/be/data/agent-runs/
 server/data/hub/
+client/tmp/
 
 # OS metadata
 .DS_Store

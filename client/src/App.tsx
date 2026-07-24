@@ -5,7 +5,7 @@ import { DEBUG, addDebugEvent, getDebugEvents, onDebugEvents, clearDebugEvents }
 import {
   getMessages, isStreaming, setMessages, appendMessage,
   appendToLast, patchMessage, setStreaming, subscribe,
-  getTodoItems, setTodoItems, updateLastMessage,
+  getTodoItems, setTodoItems, getSummary, setSummary, updateLastMessage,
 } from "./conversations";
 import { McpPanel } from "./McpPanel";
 import "./App.css";
@@ -202,7 +202,7 @@ function ChatPanel({ conversationId, onTitleChange, onCreateSkill, aiSettings, o
     if (getMessages(conversationId).length === 0 && !isStreaming(conversationId)) {
       fetch(`/api/conversations/${conversationId}`)
         .then((r) => r.json())
-        .then((d) => setMessages(conversationId, d.messages || []))
+        .then((d) => { setMessages(conversationId, d.messages || []); if (typeof d.summary === "string") setSummary(conversationId, d.summary); })
         .catch(() => setMessages(conversationId, []));
     }
     setSkillName(null);
@@ -223,7 +223,7 @@ function ChatPanel({ conversationId, onTitleChange, onCreateSkill, aiSettings, o
     fetch(`/api/conversations/${conversationId}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ messages: msgs }),
+      body: JSON.stringify({ messages: msgs, summary: getSummary(conversationId) }),
     }).catch(() => {});
   };
 
@@ -277,6 +277,7 @@ function ChatPanel({ conversationId, onTitleChange, onCreateSkill, aiSettings, o
     appendMessage(conversationId, { id: assistantMessageId, role: "assistant", content: "" });
     setToolCalls([]);
     setTodoItems(conversationId, []);
+    const currentSummary = getSummary(conversationId); // V0.21 无感压缩：带上已有摘要
 
     try {
       const controller = new AbortController();
@@ -292,6 +293,7 @@ function ChatPanel({ conversationId, onTitleChange, onCreateSkill, aiSettings, o
           model,
           skillId: skillId || undefined,
           workspace: workspace || undefined,
+          summary: currentSummary,
           conversationId,
           userMessageId,
           assistantMessageId,
@@ -383,7 +385,22 @@ function ChatPanel({ conversationId, onTitleChange, onCreateSkill, aiSettings, o
             else if (event.type === "delta") { lastEventRef.current = Date.now(); setThinkingStatus(""); appendToLast(conversationId, event.data); }
             else if (event.type === "stats") { lastEventRef.current = Date.now(); updateLastMessage(conversationId, msg => ({ ...msg, stats: event.data as any })); }
             else if (event.type === "error") { lastEventRef.current = Date.now(); setThinkingStatus(""); toast(String(event.data), "error"); appendToLast(conversationId, `\n\n❌ ${event.data}`); addDebugEvent("error", event.data); }
-            else if (event.type === "done") { lastEventRef.current = Date.now(); setThinkingStatus(""); if ((event.data as any)?.stats) updateLastMessage(conversationId, msg => ({ ...msg, stats: (event.data as any).stats })); addDebugEvent("done", "流结束"); }
+            else if (event.type === "done") {
+              lastEventRef.current = Date.now(); setThinkingStatus("");
+              if ((event.data as any)?.stats) updateLastMessage(conversationId, msg => ({ ...msg, stats: (event.data as any).stats }));
+              // V0.21 无感压缩：后端增量更新了摘要 → 存到 store 并持久化（UI 不渲染）
+              const ns = (event.data as any)?.newSummary;
+              if (typeof ns === "string" && ns) {
+                setSummary(conversationId, ns);
+                const msgs = getMessages(conversationId);
+                fetch(`/api/conversations/${conversationId}`, {
+                  method: "PUT",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ messages: msgs, summary: ns }),
+                }).catch(() => {});
+              }
+              addDebugEvent("done", "流结束");
+            }
           } catch { /* skip */ }
         }
       }
@@ -794,7 +811,7 @@ function ChatPanel({ conversationId, onTitleChange, onCreateSkill, aiSettings, o
 
 // ---- Skill 库面板 ----
 
-function SkillsPanel({ onCreateSkill, onEditSkill, skillsVersion }: { onCreateSkill: () => void; onEditSkill: (skillId: string) => void; skillsVersion: number }) {
+function SkillsPanel({ onCreateSkill, onEditSkill, onLearnFromHistory, skillsVersion }: { onCreateSkill: () => void; onEditSkill: (skill: SkillMeta) => void; onLearnFromHistory: (skill: SkillMeta) => void; skillsVersion: number }) {
   const [skills, setSkills] = useState<SkillMeta[]>([]);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<"local" | "hub">("local");
@@ -865,6 +882,8 @@ function SkillsPanel({ onCreateSkill, onEditSkill, skillsVersion }: { onCreateSk
   const [hubSort, setHubSort] = useState("latest");
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
   const [downloading, setDownloading] = useState<Set<string>>(new Set());
+  const [learning, setLearning] = useState(false);
+  const [historyPreview, setHistoryPreview] = useState<{ token: string; operations: string[]; sampleCount: number } | null>(null);
   const [reviewerId] = useState(() => {
     const key = "wahtway-reviewer-id";
     let value = localStorage.getItem(key);
@@ -918,6 +937,36 @@ function SkillsPanel({ onCreateSkill, onEditSkill, skillsVersion }: { onCreateSk
 
   const localIds = new Set(skills.map(s => s.id));
 
+  const learnFromHistory = async () => {
+    if (learning) return;
+    setLearning(true);
+    try {
+      const res = await fetch("/api/skills/learn-from-history/preview", { method: "POST" });
+      const data = await res.json();
+      if (!res.ok || !data.token || !Array.isArray(data.operations)) throw new Error(data.error || "无法创建历史预览");
+      setHistoryPreview(data);
+    } catch (err: any) {
+      toast(err.message || "归纳失败", "error");
+    } finally {
+      setLearning(false);
+    }
+  };
+
+  const confirmLearnFromHistory = async () => {
+    if (!historyPreview || learning) return;
+    setLearning(true);
+    try {
+      const res = await fetch("/api/skills/learn-from-history", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token: historyPreview.token }) });
+      const data = await res.json();
+      if (!res.ok || !data.skill) throw new Error(data.error || "未找到可复用的常用操作");
+      toast(data.reason || `已分析 ${data.sampleCount} 条历史操作`);
+      onLearnFromHistory(data.skill);
+    } catch (err: any) {
+      toast(err.message || "归纳失败", "error");
+    } finally {
+      setLearning(false);
+    }
+  };
   const rateSkill = async (skillId: string, rating: number) => {
     try {
       const response = await fetch(`/api/skills/hub/${encodeURIComponent(skillId)}/review`, {
@@ -939,7 +988,7 @@ function SkillsPanel({ onCreateSkill, onEditSkill, skillsVersion }: { onCreateSk
       <header className="header">
         <h1>Skill 库</h1>
         <span className="subtitle">{tab === "local" ? `${skills.length} 个本地技能` : "在线 Skill Hub"}</span>
-        {tab === "local" && <button className="create-btn" onClick={onCreateSkill}>+ 创建 Skill</button>}
+        {tab === "local" && <div className="skill-header-actions"><button className="history-skill-btn" onClick={learnFromHistory} disabled={learning}>{learning ? "归纳中..." : "从历史习惯生成"}</button><button className="create-btn" onClick={onCreateSkill}>+ 创建 Skill</button></div>}
       </header>
 
       <div className="skills-tabs">
@@ -956,7 +1005,7 @@ function SkillsPanel({ onCreateSkill, onEditSkill, skillsVersion }: { onCreateSk
                 <h3>🧠 {skill.name}</h3>
                 <code>{skill.id}</code>
                 <span className="skill-version-badge">v{skill.learning?.activeVersion || skill.version || 1}</span>
-                <button className="skill-edit-btn" title="编辑 Skill" onClick={() => onEditSkill(skill.id)}>✏️</button>
+                <button className="skill-edit-btn" title="编辑 Skill" onClick={() => onEditSkill(skill)}>✏️</button>
                 <button className="skill-delete-btn skill-delete-text" title="删除 Skill" onClick={(e) => { e.stopPropagation(); setDeleteConfirm(skill.id); }}>×</button>
               </div>
               <p className="skill-card-desc">{skill.description}</p>
@@ -1063,6 +1112,18 @@ function SkillsPanel({ onCreateSkill, onEditSkill, skillsVersion }: { onCreateSk
                 <button onClick={() => setDeleteConfirm(null)}>取消</button>
                 <button className="primary" style={{ background: "#c62828", color: "#fff" }} onClick={() => { deleteSkill(deleteConfirm); setDeleteConfirm(null); }}>确认删除</button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+      {historyPreview && (
+        <div className="modal-overlay" onClick={() => setHistoryPreview(null)}>
+          <div className="modal history-preview-modal" onClick={e => e.stopPropagation()}>
+            <div className="modal-header"><h2>确认发送历史摘要</h2><button className="modal-close" onClick={() => setHistoryPreview(null)}>×</button></div>
+            <div className="modal-body">
+              <p className="modal-hint">以下 {historyPreview.sampleCount} 条已脱敏内容将发送给当前模型服务，用于生成候选 Skill。确认后才会发送。</p>
+              <ol className="history-preview-list">{historyPreview.operations.map((operation, index) => <li key={index}>{operation}</li>)}</ol>
+              <div className="modal-actions"><button onClick={() => setHistoryPreview(null)} disabled={learning}>取消</button><button className="primary" onClick={confirmLearnFromHistory} disabled={learning}>{learning ? "归纳中..." : "确认发送"}</button></div>
             </div>
           </div>
         </div>
@@ -1228,14 +1289,14 @@ const EMPTY_EXTERNAL_TOOL = {
   id: "",
   name: "",
   description: "",
-  method: "GET" as const,
+  method: "GET" as "GET" | "POST" | "PUT" | "PATCH",
   url: "https://",
   headersText: "{}",
   parametersText: JSON.stringify({ type: "object", properties: {}, required: [] }, null, 2),
   queryText: "{}",
   bodyText: "null",
   responseDataPath: "",
-  permission: "read" as const,
+  permission: "read" as "read" | "write",
   enabled: true,
   timeoutMs: 10000,
   maxResponseBytes: 65536,
@@ -1466,9 +1527,9 @@ export default function App() {
       cancelled = true;
     };
   }, []);
-  const openEditSkill = async (skillId: string) => {
+  const openEditSkill = async (skill: SkillMeta) => {
     try {
-      const response = await fetch(`/api/skills/${skillId}`);
+      const response = await fetch(`/api/skills/${skill.id}`);
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "读取 Skill 详情失败");
       setSkillToEdit(data.skill || null);
@@ -1574,11 +1635,14 @@ export default function App() {
         {view === "chat" ? (
           conversationId ? <ChatPanel showModal={showModal} conversationId={conversationId} onTitleChange={handleTitleChange} onCreateSkill={(prefill) => { setPrefillSkillDesc(prefill || ""); setShowModal(true); }} aiSettings={aiSettings} onAiSettingsChange={(patch) => { void saveAiSettings(patch).catch((error: any) => toast(error.message || "保存 AI 配置失败", "error")); }} onOpenAiSettings={() => setShowAiSettings(true)} /> : <div className="welcome"><h2>🤔 Waht?</h2></div>
         ) : view === "skills" ? (
-          <SkillsPanel onCreateSkill={() => setShowModal(true)} onEditSkill={openEditSkill} skillsVersion={skillsVersion} />
+          <SkillsPanel onCreateSkill={() => setShowModal(true)} onEditSkill={openEditSkill} onLearnFromHistory={(s) => { setSkillToEdit(s); setShowModal(true); }} skillsVersion={skillsVersion} />
         ) : view === "external-tools" ? (
           <ExternalToolsPanel />
         ) : (
-          <McpPanel onNotify={(message, type = "info") => toast(message, type)} />
+          <>
+            <SkillsPanel onCreateSkill={() => setShowModal(true)} onEditSkill={(s) => { setSkillToEdit(s); setShowModal(true); }} onLearnFromHistory={(s) => { setSkillToEdit(s); setShowModal(true); }} skillsVersion={skillsVersion} />
+            <McpPanel onNotify={(message, type = "info") => toast(message, type)} />
+          </>
         )}
       </div>
       <CommandPalette show={showCmdPalette} onClose={() => setShowCmdPalette(false)} skills={appSkills}

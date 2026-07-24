@@ -187,6 +187,10 @@ if (fs.existsSync(publicDir)) {
 function startServer(port: number, maxRetries = 10) {
   const server = app.listen(port, () => {
     console.log(`🚀 WahtWay running on http://localhost:${port}`);
+    // V0.21 无感压缩配置
+    const compact = (process.env.COMPACT_ENABLED ?? "true").toLowerCase() !== "false";
+    const compactMode = (process.env.COMPACT_MODE || "rolling").toLowerCase();
+    console.log(`🗜️  上下文压缩: ${compact ? "开启" : "关闭"} (MODE=${compactMode}, RECENT_TURNS=${process.env.COMPACT_RECENT_TURNS || 6}, SUMMARY_EVERY=${process.env.COMPACT_SUMMARY_EVERY || 6})`);
     // 写入端口文件供 Electron 读取
     try {
       const pkgDir = path.resolve(__dirname, "..");

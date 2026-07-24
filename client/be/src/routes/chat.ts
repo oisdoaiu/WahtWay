@@ -15,6 +15,7 @@ router.post("/", async (req: Request, res: Response) => {
     model,
     skillId,
     workspace,
+    summary,
     conversationId,
     userMessageId,
     assistantMessageId,
@@ -46,7 +47,7 @@ router.post("/", async (req: Request, res: Response) => {
   res.flushHeaders();
 
   try {
-    const stream = await runAgentStream(message, history, traceId, model, skillId, resolvedWorkspace, {
+    const stream = await runAgentStream(message, history, traceId, model, skillId, resolvedWorkspace, typeof summary === "string" ? summary : "", {
       conversationId: typeof conversationId === "string" ? conversationId : undefined,
       userMessageId: typeof userMessageId === "string" ? userMessageId : undefined,
       assistantMessageId: typeof assistantMessageId === "string" ? assistantMessageId : undefined,

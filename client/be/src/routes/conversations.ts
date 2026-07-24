@@ -61,6 +61,7 @@ router.post("/", (req: Request, res: Response) => {
     id,
     title: "新对话",
     messages: [] as any[],
+    summary: "", // V0.21 无感压缩：早期对话的常驻摘要
     createdAt: now,
     updatedAt: now,
   };
@@ -82,7 +83,7 @@ router.delete("/:id", (req: Request, res: Response) => {
 
 // PUT 保存对话（聊天过程中自动保存）
 router.put("/:id", (req: Request, res: Response) => {
-  const { title, messages } = req.body;
+  const { title, messages, summary } = req.body;
   const filePath = getConversationPath(req.params.id);
   if (!filePath) return res.status(400).json({ error: "无效的对话 ID" });
   if (!fs.existsSync(filePath)) {
@@ -91,6 +92,7 @@ router.put("/:id", (req: Request, res: Response) => {
   const data = JSON.parse(fs.readFileSync(filePath, "utf-8"));
   if (title) data.title = title;
   if (messages) data.messages = messages;
+  if (typeof summary === "string") data.summary = summary; // V0.21 无感压缩摘要
   data.updatedAt = Date.now();
   fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
   res.json({ success: true });
