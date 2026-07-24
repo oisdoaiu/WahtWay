@@ -12,7 +12,6 @@ import {
   getMcpStatus,
   listPublicMcpServers,
   resolveEffectiveMcpToolPermission,
-  resolveMcpToolPermission,
   resolveMcpToolSafety,
   restartMcpServer,
   startMcpServer,
