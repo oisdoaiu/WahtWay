@@ -19,6 +19,7 @@ export interface Skill {
   output: JSONSchema;
   requiredTools: string[];
   allowedTools?: string[];
+  mcpBindings?: McpSkillBinding[];
   whenToUse?: string;
   keywords?: string[];
   modeCategory?: string;
@@ -26,6 +27,12 @@ export interface Skill {
   modeIcon?: string;
   welcomeMessage?: string;
   modeExamples?: string[];
+}
+
+export interface McpSkillBinding {
+  serverId: string;
+  toolName: string;
+  registeredName: string;
 }
 
 export type SkillStatus = "draft" | "pending" | "published" | "rejected" | "archived";
@@ -109,6 +116,7 @@ export interface SkillListItem {
   output: JSONSchema;
   requiredTools: string[];
   allowedTools?: string[];
+  mcpBindings?: McpSkillBinding[];
   whenToUse?: string;
   keywords?: string[];
   modeCategory?: string;

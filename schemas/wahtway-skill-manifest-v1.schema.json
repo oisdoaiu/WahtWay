@@ -48,6 +48,20 @@
     "allowedTools": {
       "$ref": "#/$defs/stringArray50"
     },
+    "mcpBindings": {
+      "type": "array",
+      "maxItems": 20,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["serverId", "toolName", "registeredName"],
+        "properties": {
+          "serverId": { "type": "string", "minLength": 2, "maxLength": 63 },
+          "toolName": { "type": "string", "minLength": 1, "maxLength": 256 },
+          "registeredName": { "type": "string", "minLength": 1, "maxLength": 80 }
+        }
+      }
+    },
     "whenToUse": {
       "type": "string",
       "maxLength": 1000
