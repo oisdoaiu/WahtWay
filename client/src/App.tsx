@@ -1008,7 +1008,7 @@ function ChatPanel({ conversationId, memoryMode, modeSkillId, onMemoryModeChange
 
 // ---- Skill 库面板 ----
 
-function SkillsPanel({ onCreateSkill, onEditSkill, onLearnFromHistory, onOpenMcp, skillsVersion }: { onCreateSkill: () => void; onEditSkill: (skill: SkillMeta) => void; onLearnFromHistory?: (skill: SkillMeta) => void; onOpenMcp: () => void; skillsVersion: number }) {
+function SkillsPanel({ onCreateSkill, onEditSkill, onLearnFromHistory, onOpenMcp, skillsVersion }: { onCreateSkill: () => void; onEditSkill: (skill: SkillMeta) => void; onLearnFromHistory?: (skill: SkillMeta) => void; onOpenMcp: (skillId: string) => void; skillsVersion: number }) {
   const [skills, setSkills] = useState<SkillMeta[]>([]);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<"local" | "hub">("local");
@@ -1454,7 +1454,7 @@ function SkillsPanel({ onCreateSkill, onEditSkill, onLearnFromHistory, onOpenMcp
               {skill.dependencyHealth && skill.dependencyHealth.status !== "healthy" && (
                 <div className={`skill-dependency-message status-${skill.dependencyHealth.status}`}>
                   <span>{skill.dependencyHealth.issues[0]?.message || "Skill 依赖状态异常"}</span>
-                  {skill.dependencyHealth.issues.some(issue => issue.code.startsWith("mcp_")) && <button onClick={onOpenMcp}>查看 MCP</button>}
+                  {skill.dependencyHealth.issues.some(issue => issue.code.startsWith("mcp_")) && <button onClick={() => onOpenMcp(skill.id)}>修复 MCP</button>}
                 </div>
               )}
               {skill.learning && (
@@ -2115,6 +2115,7 @@ function ExternalToolsPanel() {
 
 export default function App() {
   const [view, setView] = useState<"chat" | "skills" | "memory" | "external-tools" | "mcp">("chat");
+  const [mcpRepairSkillId, setMcpRepairSkillId] = useState("");
   const [showModal, setShowModal] = useState(false);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [showCmdPalette, setShowCmdPalette] = useState(false);
@@ -2289,7 +2290,7 @@ export default function App() {
           <button className={`nav-item ${view === "skills" ? "active" : ""}`} onClick={() => setView("skills")}><span className="nav-icon">🧠</span><span>Skill 库</span></button>
           <button className={`nav-item ${view === "memory" ? "active" : ""}`} onClick={() => setView("memory")}><span className="nav-icon">◉</span><span>长期记忆</span></button>
           <button className={`nav-item ${view === "external-tools" ? "active" : ""}`} onClick={() => setView("external-tools")}><span className="nav-icon">🔌</span><span>外部工具</span></button>
-          <button className={`nav-item ${view === "mcp" ? "active" : ""}`} onClick={() => setView("mcp")}><span className="nav-icon">◫</span><span>MCP</span></button>
+          <button className={`nav-item ${view === "mcp" ? "active" : ""}`} onClick={() => { setMcpRepairSkillId(""); setView("mcp"); }}><span className="nav-icon">◫</span><span>MCP</span></button>
         </div>
         {view === "chat" && (
           <div className="conv-list">
@@ -2322,15 +2323,15 @@ export default function App() {
       </nav>
       <div className="main-content">
         {view === "chat" ? (
-          conversationId ? <ChatPanel showModal={showModal} conversationId={conversationId} memoryMode={activeConversation?.memoryMode || "off"} modeSkillId={activeConversation?.modeSkillId || ""} onMemoryModeChange={handleMemoryModeChange} onModeChange={handleModeChange} onTitleChange={handleTitleChange} onCreateSkill={(prefill) => { setPrefillSkillDesc(prefill || ""); setShowModal(true); }} onOpenMcp={() => setView("mcp")} aiSettings={aiSettings} onAiSettingsChange={(patch) => { void saveAiSettings(patch).catch((error: any) => toast(error.message || "保存 AI 配置失败", "error")); }} onOpenAiSettings={() => setShowAiSettings(true)} /> : <div className="welcome"><h2>🤔 Waht?</h2></div>
+          conversationId ? <ChatPanel showModal={showModal} conversationId={conversationId} memoryMode={activeConversation?.memoryMode || "off"} modeSkillId={activeConversation?.modeSkillId || ""} onMemoryModeChange={handleMemoryModeChange} onModeChange={handleModeChange} onTitleChange={handleTitleChange} onCreateSkill={(prefill) => { setPrefillSkillDesc(prefill || ""); setShowModal(true); }} onOpenMcp={() => { setMcpRepairSkillId(""); setView("mcp"); }} aiSettings={aiSettings} onAiSettingsChange={(patch) => { void saveAiSettings(patch).catch((error: any) => toast(error.message || "保存 AI 配置失败", "error")); }} onOpenAiSettings={() => setShowAiSettings(true)} /> : <div className="welcome"><h2>🤔 Waht?</h2></div>
         ) : view === "skills" ? (
-          <SkillsPanel onCreateSkill={() => setShowModal(true)} onEditSkill={openEditSkill} onOpenMcp={() => setView("mcp")} skillsVersion={skillsVersion} />
+          <SkillsPanel onCreateSkill={() => setShowModal(true)} onEditSkill={openEditSkill} onOpenMcp={(skillId) => { setMcpRepairSkillId(skillId); setView("mcp"); }} skillsVersion={skillsVersion} />
         ) : view === "memory" ? (
           <MemoryPanel />
         ) : view === "external-tools" ? (
           <ExternalToolsPanel />
         ) : (
-          <McpPanel onNotify={(message, type = "info") => toast(message, type)} />
+          <McpPanel repairSkillId={mcpRepairSkillId} onNotify={(message, type = "info") => toast(message, type)} />
         )}
       </div>
       <CommandPalette show={showCmdPalette} onClose={() => setShowCmdPalette(false)} skills={appSkills}
