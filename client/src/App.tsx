@@ -126,6 +126,11 @@ interface SkillMeta {
   output: { type: string; properties?: Record<string, unknown> };
   requiredTools: string[];
   keywords?: string[];
+  modeCategory?: string;
+  modeColor?: string;
+  modeIcon?: string;
+  welcomeMessage?: string;
+  modeExamples?: string[];
   version?: number;
   origin?: "builtin" | "custom" | "hub" | "learned";
   learning?: {
@@ -138,6 +143,44 @@ interface SkillMeta {
     lastImprovedAt?: string;
     lastInsight?: string;
   };
+}
+
+const DEFAULT_MODE_COLOR = "#1a73e8";
+const DEFAULT_MODE_ICON = "🧠";
+
+const smartMode: SkillMeta = {
+  id: "",
+  name: "智能模式",
+  description: "自动理解你的问题，并在需要时匹配合适的 Skill。",
+  input: { type: "object" },
+  output: { type: "object" },
+  requiredTools: [],
+  keywords: ["普通对话", "自动匹配"],
+  modeCategory: "通用",
+  modeColor: "#1a73e8",
+  modeIcon: "🤖",
+  welcomeMessage: "我会先理解你的需求，再自动选择合适的 Skill。直接说你想做什么就行。",
+  modeExamples: ["帮我整理今天的学习和作业安排", "解释这段代码为什么报错", "帮我规划一份课程答辩 PPT"],
+};
+
+function getModeColor(skill?: Pick<SkillMeta, "modeColor"> | null): string {
+  return skill?.modeColor && /^#[0-9a-fA-F]{6}$/.test(skill.modeColor) ? skill.modeColor : DEFAULT_MODE_COLOR;
+}
+
+function getModeIcon(skill?: Pick<SkillMeta, "modeIcon"> | null): string {
+  return skill?.modeIcon || DEFAULT_MODE_ICON;
+}
+
+function getModeCategory(skill: SkillMeta): string {
+  return skill.modeCategory || "常用";
+}
+
+function skillMatchesQuery(skill: SkillMeta, query: string): boolean {
+  if (!query) return true;
+  return [skill.name, skill.description, skill.modeCategory, skill.whenToUse, ...(skill.keywords || [])]
+    .join(" ")
+    .toLowerCase()
+    .includes(query.toLowerCase());
 }
 
 type MemoryMode = "off" | "manual" | "all";
@@ -173,7 +216,7 @@ interface ExternalToolConfig {
 
 // ---- 对话面板 ----
 
-function ChatPanel({ conversationId, memoryMode, onMemoryModeChange, onTitleChange, onCreateSkill, aiSettings, onAiSettingsChange, onOpenAiSettings }: { showModal: boolean; conversationId: string; memoryMode: MemoryMode; onMemoryModeChange: (mode: MemoryMode) => void; onTitleChange: (title: string) => void; onCreateSkill: (prefill?: string) => void; aiSettings: AiSettingsView | null; onAiSettingsChange: (patch: Partial<AiSettingsView> & { apiKey?: string }) => void; onOpenAiSettings: () => void; }) {
+function ChatPanel({ conversationId, memoryMode, modeSkillId, onMemoryModeChange, onModeChange, onTitleChange, onCreateSkill, aiSettings, onAiSettingsChange, onOpenAiSettings }: { showModal: boolean; conversationId: string; memoryMode: MemoryMode; modeSkillId: string; onMemoryModeChange: (mode: MemoryMode) => void; onModeChange: (skillId: string) => void; onTitleChange: (title: string) => void; onCreateSkill: (prefill?: string) => void; aiSettings: AiSettingsView | null; onAiSettingsChange: (patch: Partial<AiSettingsView> & { apiKey?: string }) => void; onOpenAiSettings: () => void; }) {
   const [, setTick] = useState(0);
   const messages = getMessages(conversationId);
   const msg = messages[messages.length - 1];
@@ -183,7 +226,6 @@ function ChatPanel({ conversationId, memoryMode, onMemoryModeChange, onTitleChan
   const [thinkingStatus, setThinkingStatus] = useState("");
   const [toolCalls, setToolCalls] = useState<{name: string; startTime: number}[]>([]);
   const toolTimersRef = useRef<Map<string, number>>(new Map());
-  const [skillId, setSkillId] = useState<string>("");
   const [showSkillPicker, setShowSkillPicker] = useState(false);
   const [skillSearch, setSkillSearch] = useState("");
   const [allSkills, setAllSkills] = useState<SkillMeta[]>([]);
@@ -205,6 +247,25 @@ function ChatPanel({ conversationId, memoryMode, onMemoryModeChange, onTitleChan
   const provider = aiSettings?.provider || "deepseek";
   const model = aiSettings?.model || DEFAULT_MODEL;
   const modelOptions = aiSettings?.modelOptions?.length ? aiSettings.modelOptions : AI_PROVIDER_PRESETS[provider].modelOptions;
+  const skillId = modeSkillId;
+  const selectedSkill = allSkills.find(s => s.id === skillId) || null;
+  const activeMode = selectedSkill || smartMode;
+  const filteredSkills = allSkills.filter(s => skillMatchesQuery(s, skillSearch));
+  const groupedSkills = filteredSkills.reduce<Record<string, SkillMeta[]>>((groups, skill) => {
+    const category = getModeCategory(skill);
+    groups[category] = groups[category] || [];
+    groups[category].push(skill);
+    return groups;
+  }, {});
+  const activeModeStyle = {
+    "--mode-color": getModeColor(activeMode),
+  } as { [key: string]: string };
+  const selectMode = (nextSkillId: string) => {
+    onModeChange(nextSkillId);
+    setSkillName(nextSkillId ? allSkills.find((skill) => skill.id === nextSkillId)?.name || null : null);
+    setShowSkillPicker(false);
+    setSkillSearch("");
+  };
 
   // 加载 Skill 列表（下拉用）
   const loadSkills = () => fetch("/api/skills").then(r => r.json()).then(d => setAllSkills(d.skills || []));
@@ -630,7 +691,18 @@ function ChatPanel({ conversationId, memoryMode, onMemoryModeChange, onTitleChan
       </header>
       <main className="chat-area">
         {messages.length === 0 && (
-          <div className="welcome"><h2>🤔 Waht?</h2><p>问点什么吧，何以委帮你搞定。</p></div>
+          <div className="welcome mode-welcome" style={activeModeStyle}>
+            <div className="mode-welcome-icon">{getModeIcon(activeMode)}</div>
+            <h2>{activeMode.name}</h2>
+            <p>{activeMode.welcomeMessage || activeMode.description}</p>
+            {(activeMode.modeExamples || []).length > 0 && (
+              <div className="mode-examples">
+                {activeMode.modeExamples!.map((example) => (
+                  <button key={example} onClick={() => setInput(example)}>{example}</button>
+                ))}
+              </div>
+            )}
+          </div>
         )}
         {messages.map((msg: any, idx: number) => (
           <div key={msg.id} className={`message ${msg.role}`}>
@@ -689,8 +761,9 @@ function ChatPanel({ conversationId, memoryMode, onMemoryModeChange, onTitleChan
         onDrop={handleDrop}>
         {dragOver && <div className="drop-hint">📂 松开以填入文件路径</div>}
         <div className="input-toolbar">
-          <div className="mode-selector" onClick={() => { setShowSkillPicker(!showSkillPicker); loadSkills(); }}>
-            <span className="mode-badge">{skillId ? `🧠 ${allSkills.find(s => s.id === skillId)?.name || "Skill"}` : "🤖 智能模式"}</span>
+          <div className="mode-selector" style={activeModeStyle} onClick={() => { setShowSkillPicker(!showSkillPicker); loadSkills(); }}>
+            <span className="mode-dot">{getModeIcon(activeMode)}</span>
+            <span className="mode-badge">{activeMode.name}</span>
             <span className="mode-arrow">{showSkillPicker ? "▴" : "▾"}</span>
           </div>
           <select className="memory-mode-select" value={memoryMode} onChange={e => onMemoryModeChange(e.target.value as MemoryMode)} title="长期记忆模式">
@@ -727,22 +800,39 @@ function ChatPanel({ conversationId, memoryMode, onMemoryModeChange, onTitleChan
             )}
           </div>
           {showSkillPicker && (
-            <div className="skill-picker-dropdown">
-              <input className="skill-search-input" placeholder="搜索 Skill…" value={skillSearch}
-                onChange={(e) => setSkillSearch(e.target.value)} autoFocus />
-              <div className="skill-picker-item" onClick={() => { setSkillId(""); setSkillName(null); setShowSkillPicker(false); setSkillSearch(""); }}>
-                💬 普通对话（自动匹配）
+            <div className="skill-picker-dropdown mode-picker">
+              <div className="mode-picker-heading">
+                <strong>切换模式</strong>
+                <span>通用 / 学习 / 开发 / 办公</span>
               </div>
-              {allSkills.filter(s => !skillSearch || [s.name, s.description, ...(s.keywords||[])].join(" ").toLowerCase().includes(skillSearch.toLowerCase()))
-                .map(s => (
-                  <div key={s.id} className={`skill-picker-item ${skillId === s.id ? "active" : ""}`}
-                    onClick={() => { setSkillId(s.id); setSkillName(s.name); setShowSkillPicker(false); setSkillSearch(""); }}>
-                    🧠 {s.name}
-                    <span className="skill-picker-desc">{s.description}</span>
+              <input className="skill-search-input" placeholder="搜索模式或 Skill…" value={skillSearch}
+                onChange={(e) => setSkillSearch(e.target.value)} autoFocus />
+              <div className="skill-picker-list">
+                <div className={`skill-picker-item mode-item ${!skillId ? "active" : ""}`} style={{ "--mode-color": getModeColor(smartMode) } as { [key: string]: string }} onClick={() => selectMode("")}>
+                  <span className="mode-item-icon">{smartMode.modeIcon}</span>
+                  <span className="mode-item-copy">
+                    <strong>{smartMode.name}</strong>
+                    <span className="skill-picker-desc">{smartMode.description}</span>
+                  </span>
+                </div>
+                {Object.entries(groupedSkills).map(([category, skills]) => (
+                  <div key={category} className="mode-group">
+                    <div className="mode-group-title">{category}</div>
+                    {skills.map(s => (
+                      <div key={s.id} className={`skill-picker-item mode-item ${skillId === s.id ? "active" : ""}`} style={{ "--mode-color": getModeColor(s) } as { [key: string]: string }}
+                        onClick={() => selectMode(s.id)}>
+                        <span className="mode-item-icon">{getModeIcon(s)}</span>
+                        <span className="mode-item-copy">
+                          <strong>{s.name}</strong>
+                          <span className="skill-picker-desc">{s.welcomeMessage || s.description}</span>
+                        </span>
+                      </div>
+                    ))}
                   </div>
                 ))}
-              {skillSearch && allSkills.filter(s => [s.name, s.description, ...(s.keywords||[])].join(" ").toLowerCase().includes(skillSearch.toLowerCase())).length === 0 && (
-                <div className="skill-picker-empty">没有匹配的技能，<span className="skill-picker-create" onClick={() => { setShowSkillPicker(false); onCreateSkill(skillSearch); }}>创建一个？</span></div>
+              </div>
+              {skillSearch && filteredSkills.length === 0 && (
+                <div className="skill-picker-empty">没有匹配的模式，<span className="skill-picker-create" onClick={() => { setShowSkillPicker(false); onCreateSkill(skillSearch); }}>创建一个？</span></div>
               )}
             </div>
           )}
@@ -1248,7 +1338,16 @@ function CreateSkillModal({ show, onClose, onSaved, prefill, skillToEdit }: { sh
   useEffect(() => {
     if (show && skillToEdit) {
       setStep("edit");
-      setEditSkill({...skillToEdit, whenToUse: skillToEdit.whenToUse || "", allowedTools: [...(skillToEdit.allowedTools || [])]});
+      setEditSkill({
+        ...skillToEdit,
+        whenToUse: skillToEdit.whenToUse || "",
+        modeCategory: skillToEdit.modeCategory || "",
+        modeColor: skillToEdit.modeColor || "",
+        modeIcon: skillToEdit.modeIcon || "",
+        welcomeMessage: skillToEdit.welcomeMessage || "",
+        modeExamples: Array.isArray(skillToEdit.modeExamples) ? skillToEdit.modeExamples.join("\n") : "",
+        allowedTools: [...(skillToEdit.allowedTools || [])],
+      });
     }
     if (show && prefill && !skillToEdit) setSkillDesc(prefill);
     if (!show) { setSkillDesc(""); setStep(skillToEdit ? "edit" : "describe"); }
@@ -1271,7 +1370,18 @@ function CreateSkillModal({ show, onClose, onSaved, prefill, skillToEdit }: { sh
     try {
       const res = await fetch("/api/skills/generate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ description: skillDesc }) });
       const data = await res.json();
-      if (data.skill) { setEditSkill({ ...data.skill, allowedTools: Array.isArray(data.skill.allowedTools) ? data.skill.allowedTools : [] }); setStep("edit"); }
+      if (data.skill) {
+        setEditSkill({
+          ...data.skill,
+          modeCategory: data.skill.modeCategory || "",
+          modeColor: data.skill.modeColor || "",
+          modeIcon: data.skill.modeIcon || "",
+          welcomeMessage: data.skill.welcomeMessage || "",
+          modeExamples: Array.isArray(data.skill.modeExamples) ? data.skill.modeExamples.join("\n") : "",
+          allowedTools: Array.isArray(data.skill.allowedTools) ? data.skill.allowedTools : [],
+        });
+        setStep("edit");
+      }
       else setMsg("生成失败: " + (data.error || "未知错误"));
     } catch (err: any) { setMsg("请求失败: " + err.message); }
     finally { setGenerating(false); }
@@ -1285,6 +1395,14 @@ function CreateSkillModal({ show, onClose, onSaved, prefill, skillToEdit }: { sh
       if (typeof skill.input === "string") skill.input = JSON.parse(skill.input);
       if (typeof skill.output === "string") skill.output = JSON.parse(skill.output);
       skill.allowedTools = Array.isArray(skill.allowedTools) ? skill.allowedTools : [];
+      for (const key of ["modeCategory", "modeColor", "modeIcon", "welcomeMessage"]) {
+        if (typeof skill[key] === "string") skill[key] = skill[key].trim();
+        if (!skill[key]) delete skill[key];
+      }
+      if (typeof skill.modeExamples === "string") {
+        skill.modeExamples = skill.modeExamples.split("\n").map((item: string) => item.trim()).filter(Boolean).slice(0, 4);
+      }
+      if (!Array.isArray(skill.modeExamples) || skill.modeExamples.length === 0) delete skill.modeExamples;
       const res = await fetch("/api/skills/save", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(skill) });
       const data = await res.json();
       if (data.success) { onSaved(); handleClose(); } else setMsg("保存失败: " + (data.error || "未知错误"));
@@ -1295,6 +1413,7 @@ function CreateSkillModal({ show, onClose, onSaved, prefill, skillToEdit }: { sh
   const descLength = String(editSkill?.description || "").length;
   const systemPromptLength = String(editSkill?.systemPrompt || "").length;
   const whenToUseLength = String(editSkill?.whenToUse || "").length;
+  const welcomeLength = String(editSkill?.welcomeMessage || "").length;
   const selectedTools: string[] = Array.isArray(editSkill?.allowedTools) ? editSkill.allowedTools : [];
   const catalogNames = new Set(toolCatalog.map((tool) => tool.name));
   const unavailableTools = selectedTools.filter((name) => !catalogNames.has(name));
@@ -1336,6 +1455,26 @@ function CreateSkillModal({ show, onClose, onSaved, prefill, skillToEdit }: { sh
                 <label className="field-label"><span>描述</span><span className={`field-count ${descLength > 50 ? "over" : ""}`}>{descLength}/50</span></label>
                 <p className="field-hint">用于 Skill 卡片和匹配，建议 50 字以内，突出“能帮用户做什么”。</p>
                 <input value={editSkill.description || ""} onChange={e => setEditSkill({ ...editSkill, description: e.target.value })} />
+
+                <label>模式分类</label>
+                <p className="field-hint">用于聊天页模式切换分组，例如学习、开发、办公。</p>
+                <input value={editSkill.modeCategory || ""} onChange={e => setEditSkill({ ...editSkill, modeCategory: e.target.value })} placeholder="学习" />
+
+                <label>模式颜色</label>
+                <p className="field-hint">用于模式按钮和欢迎页，填写 6 位十六进制颜色，例如 <code>#1a73e8</code>。</p>
+                <input value={editSkill.modeColor || ""} onChange={e => setEditSkill({ ...editSkill, modeColor: e.target.value })} placeholder="#1a73e8" />
+
+                <label>模式图标</label>
+                <p className="field-hint">用于模式切换按钮，建议填写一个简短符号或 emoji。</p>
+                <input value={editSkill.modeIcon || ""} onChange={e => setEditSkill({ ...editSkill, modeIcon: e.target.value })} placeholder="🧠" />
+
+                <label className="field-label"><span>欢迎语</span><span className={`field-count ${welcomeLength > 80 ? "over" : ""}`}>{welcomeLength}/80</span></label>
+                <p className="field-hint">用户切换到这个模式、且当前对话为空时展示。</p>
+                <textarea rows={2} value={editSkill.welcomeMessage || ""} onChange={e => setEditSkill({ ...editSkill, welcomeMessage: e.target.value })} placeholder="告诉用户这个模式最适合输入什么。" />
+
+                <label>快捷示例</label>
+                <p className="field-hint">空白对话页显示的可点击示例，每行一条，最多 4 条。</p>
+                <textarea rows={3} value={editSkill.modeExamples || ""} onChange={e => setEditSkill({ ...editSkill, modeExamples: e.target.value })} placeholder={"帮我完成...\n帮我分析..."} />
 
                 <label className="field-label"><span>System Prompt</span><span className="field-count">{systemPromptLength} 字</span></label>
                 <p className="field-hint">给模型看的核心指令，建议写清角色、输入要求、输出格式和边界。</p>
@@ -1774,6 +1913,19 @@ export default function App() {
     setConversations(items => items.map(item => item.id === conversationId ? { ...item, memoryMode: mode } : item));
   };
 
+  const handleModeChange = async (modeSkillId: string) => {
+    const response = await fetch(`/api/conversations/${conversationId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ modeSkillId }),
+    });
+    if (!response.ok) {
+      toast("保存模式选择失败", "error");
+      return;
+    }
+    setConversations(items => items.map(item => item.id === conversationId ? { ...item, modeSkillId } : item));
+  };
+
   const activeConversation = conversations.find(item => item.id === conversationId);
 
   return (
@@ -1819,7 +1971,7 @@ export default function App() {
       </nav>
       <div className="main-content">
         {view === "chat" ? (
-          conversationId ? <ChatPanel showModal={showModal} conversationId={conversationId} memoryMode={activeConversation?.memoryMode || "off"} onMemoryModeChange={handleMemoryModeChange} onTitleChange={handleTitleChange} onCreateSkill={(prefill) => { setPrefillSkillDesc(prefill || ""); setShowModal(true); }} aiSettings={aiSettings} onAiSettingsChange={(patch) => { void saveAiSettings(patch).catch((error: any) => toast(error.message || "保存 AI 配置失败", "error")); }} onOpenAiSettings={() => setShowAiSettings(true)} /> : <div className="welcome"><h2>🤔 Waht?</h2></div>
+          conversationId ? <ChatPanel showModal={showModal} conversationId={conversationId} memoryMode={activeConversation?.memoryMode || "off"} modeSkillId={activeConversation?.modeSkillId || ""} onMemoryModeChange={handleMemoryModeChange} onModeChange={handleModeChange} onTitleChange={handleTitleChange} onCreateSkill={(prefill) => { setPrefillSkillDesc(prefill || ""); setShowModal(true); }} aiSettings={aiSettings} onAiSettingsChange={(patch) => { void saveAiSettings(patch).catch((error: any) => toast(error.message || "保存 AI 配置失败", "error")); }} onOpenAiSettings={() => setShowAiSettings(true)} /> : <div className="welcome"><h2>🤔 Waht?</h2></div>
         ) : view === "skills" ? (
           <SkillsPanel onCreateSkill={() => setShowModal(true)} onEditSkill={openEditSkill} skillsVersion={skillsVersion} />
         ) : view === "memory" ? (

@@ -178,6 +178,11 @@ router.get("/", (_req: Request, res: Response) => {
     output: s.output,
     requiredTools: s.requiredTools,
     keywords: s.keywords,
+    modeCategory: s.modeCategory,
+    modeColor: s.modeColor,
+    modeIcon: s.modeIcon,
+    welcomeMessage: s.welcomeMessage,
+    modeExamples: s.modeExamples,
   }));
   res.json({ skills });
 });
@@ -222,7 +227,7 @@ router.post("/learn-from-history", async (req: Request, res: Response) => {
 返回严格 JSON，不要 Markdown：
 {
   "reason": "一句话说明识别到的重复模式和依据数量",
-  "skill": { "id": "kebab-case", "name": "中文名称", "description": "一句话描述", "systemPrompt": "详细可执行的系统提示词", "input": { "type": "object", "properties": { "request": { "type": "string", "description": "用户本次需求" } }, "required": ["request"] }, "output": { "type": "object", "properties": {} }, "requiredTools": [], "keywords": ["至少5个关键词"] }
+  "skill": { "id": "kebab-case", "name": "中文名称", "description": "一句话描述", "systemPrompt": "详细可执行的系统提示词", "input": { "type": "object", "properties": { "request": { "type": "string", "description": "用户本次需求" } }, "required": ["request"] }, "output": { "type": "object", "properties": {} }, "requiredTools": [], "keywords": ["至少5个关键词"], "modeCategory": "学习/开发/办公/生活/创作/其他之一", "modeColor": "#1a73e8", "modeIcon": "一个简短符号或 emoji", "welcomeMessage": "用户切换到此模式时看到的一句话提示，80字以内" }
 }
 
 历史操作：
@@ -318,7 +323,11 @@ router.post("/generate", async (req: Request, res: Response) => {
     "properties": {}
   },
   "requiredTools": [],
-  "keywords": ["关键", "词", "列表", "用于匹配用户意图", "5-15个"]
+  "keywords": ["关键", "词", "列表", "用于匹配用户意图", "5-15个"],
+  "modeCategory": "学习/开发/办公/生活/创作/其他之一",
+  "modeColor": "#1a73e8",
+  "modeIcon": "一个简短符号或 emoji",
+  "welcomeMessage": "用户切换到此模式时看到的一句话提示，80字以内"
 }
 \`\`\`
 
@@ -329,6 +338,7 @@ router.post("/generate", async (req: Request, res: Response) => {
 4. output 简单写即可，不必太复杂
 5. 只输出 JSON，不要有任何其他文字
 6. JSON 必须合法，不要有注释、不要用 markdown 代码块包裹
+7. modeCategory、modeColor、modeIcon、welcomeMessage 用于聊天页模式切换，必须简洁、适合展示
 
 用户描述：${description}`;
 

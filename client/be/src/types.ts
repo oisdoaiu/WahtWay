@@ -24,6 +24,11 @@ export interface Skill {
   allowedTools?: string[];
   whenToUse?: string;
   keywords?: string[];  // V0.3 关键词匹配
+  modeCategory?: string;
+  modeColor?: string;
+  modeIcon?: string;
+  welcomeMessage?: string;
+  modeExamples?: string[];
   version?: number;
   origin?: "builtin" | "custom" | "hub" | "learned";
 }

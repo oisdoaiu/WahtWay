@@ -40,6 +40,15 @@
     "write-file"
   ],
   "whenToUse": "仅当用户贴出代码片段或报错信息，要求解释、分析、debug、优化代码逻辑时触发。用户说写一段代码、编写程序是编程任务，不要触发。",
+  "modeCategory": "开发",
+  "modeColor": "#f59e0b",
+  "modeIcon": "💻",
+  "welcomeMessage": "贴代码、报错或文件路径，我会按逻辑、问题、修复方案和知识点来讲清楚。",
+  "modeExamples": [
+    "这段 JavaScript 为什么会报错？",
+    "帮我逐行解释这段 Python 代码",
+    "这个登录接口有什么安全问题？"
+  ],
   "keywords": [
     "代码",
     "bug",

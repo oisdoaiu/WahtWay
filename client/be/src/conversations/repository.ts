@@ -30,6 +30,7 @@ export interface StoredConversation {
   summaryThroughMessageId: string | null;
   summaryUpdatedAt: string | null;
   memoryMode: MemoryMode;
+  modeSkillId: string;
   schemaVersion: 1;
 }
 
@@ -73,6 +74,9 @@ function normalizeConversation(raw: any, id: string): StoredConversation {
     summaryThroughMessageId: typeof raw?.summaryThroughMessageId === "string" ? raw.summaryThroughMessageId : null,
     summaryUpdatedAt: typeof raw?.summaryUpdatedAt === "string" ? raw.summaryUpdatedAt : null,
     memoryMode: raw?.memoryMode === "manual" || raw?.memoryMode === "all" ? raw.memoryMode : "off",
+    modeSkillId: typeof raw?.modeSkillId === "string" && /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(raw.modeSkillId)
+      ? raw.modeSkillId
+      : "",
     schemaVersion: 1,
   };
 }
@@ -130,6 +134,7 @@ export function createConversation(input: { title?: unknown; memoryMode?: unknow
     summaryThroughMessageId: null,
     summaryUpdatedAt: null,
     memoryMode: input.memoryMode === "manual" || input.memoryMode === "all" ? input.memoryMode : "off",
+    modeSkillId: "",
     schemaVersion: 1,
   };
   atomicWrite(conversationPath(id), conversation);
@@ -144,13 +149,16 @@ export function saveConversation(conversation: StoredConversation): StoredConver
 
 export function updateConversation(
   id: string,
-  patch: Partial<Pick<StoredConversation, "title" | "memoryMode" | "summary" | "summaryThroughMessageId" | "summaryUpdatedAt">>
+  patch: Partial<Pick<StoredConversation, "title" | "memoryMode" | "modeSkillId" | "summary" | "summaryThroughMessageId" | "summaryUpdatedAt">>
 ): StoredConversation | null {
   const conversation = readConversation(id);
   if (!conversation) return null;
   if (typeof patch.title === "string" && patch.title.trim()) conversation.title = patch.title.trim().slice(0, 80);
   if (patch.memoryMode === "off" || patch.memoryMode === "manual" || patch.memoryMode === "all") {
     conversation.memoryMode = patch.memoryMode;
+  }
+  if (typeof patch.modeSkillId === "string" && (patch.modeSkillId === "" || /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(patch.modeSkillId))) {
+    conversation.modeSkillId = patch.modeSkillId;
   }
   if (patch.summary === null || typeof patch.summary === "string") conversation.summary = patch.summary;
   if (patch.summaryThroughMessageId === null || typeof patch.summaryThroughMessageId === "string") {
