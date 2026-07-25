@@ -257,7 +257,6 @@ function ChatPanel({ conversationId, memoryMode, modeSkillId, onMemoryModeChange
     groups[category].push(skill);
     return groups;
   }, {});
-  const featuredSkills = allSkills.slice(0, 4);
   const activeModeStyle = {
     "--mode-color": getModeColor(activeMode),
   } as { [key: string]: string };
@@ -808,18 +807,6 @@ function ChatPanel({ conversationId, memoryMode, modeSkillId, onMemoryModeChange
               </div>
               <input className="skill-search-input" placeholder="搜索模式或 Skill…" value={skillSearch}
                 onChange={(e) => setSkillSearch(e.target.value)} autoFocus />
-              <div className="mode-quick-row">
-                <button className={`mode-chip ${!skillId ? "active" : ""}`} style={{ "--mode-color": getModeColor(smartMode) } as { [key: string]: string }} onClick={() => selectMode("")}>
-                  <span>{smartMode.modeIcon}</span>
-                  <b>{smartMode.name}</b>
-                </button>
-                {featuredSkills.map(s => (
-                  <button key={s.id} className={`mode-chip ${skillId === s.id ? "active" : ""}`} style={{ "--mode-color": getModeColor(s) } as { [key: string]: string }} onClick={() => selectMode(s.id)}>
-                    <span>{getModeIcon(s)}</span>
-                    <b>{s.name}</b>
-                  </button>
-                ))}
-              </div>
               <div className="skill-picker-list">
                 <div className={`skill-picker-item mode-item ${!skillId ? "active" : ""}`} style={{ "--mode-color": getModeColor(smartMode) } as { [key: string]: string }} onClick={() => selectMode("")}>
                   <span className="mode-item-icon">{smartMode.modeIcon}</span>
