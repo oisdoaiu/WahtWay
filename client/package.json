@@ -10,7 +10,10 @@
     "build:fe": "vite build",
     "build:be": "cd be && esbuild src/index.ts --bundle --platform=node --outfile=dist/index.js --external:pdf-parse --external:pdfjs-dist --external:mammoth --external:pptxgenjs",
     "build": "npm run build:fe && npm run build:be",
-    "dist": "npm run build && electron-builder --win portable",
+    "dist": "npm run build && npm run package:win",
+    "package:win": "electron-builder --win --publish never",
+    "package:linux": "electron-builder --linux --publish never",
+    "package:mac": "electron-builder --mac --publish never",
     "preview": "vite preview"
   },
   "build": {
@@ -19,6 +22,7 @@
     "directories": {
       "output": "release"
     },
+    "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
     "files": [
       "electron/**/*",
       "be/dist/**/*",
@@ -29,7 +33,17 @@
     ],
     "win": {
       "target": "portable",
-      "sign": null
+      "sign": null,
+      "signAndEditExecutable": false
+    },
+    "linux": {
+      "target": "AppImage",
+      "category": "Utility"
+    },
+    "mac": {
+      "target": "dmg",
+      "category": "public.app-category.productivity",
+      "identity": null
     },
     "nsis": {
       "oneClick": false

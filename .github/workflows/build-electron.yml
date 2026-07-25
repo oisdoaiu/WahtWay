@@ -1,0 +1,97 @@
+name: Build Electron Packages
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    tags: ["v*"]
+    paths:
+      - "client/**"
+      - ".github/workflows/build-electron.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: electron-packages-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  package:
+    name: Package ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Windows
+            os: windows-latest
+            script: package:win
+            artifact: Windows
+            path: client/release/*.exe
+            cache_path: |
+              ~/AppData/Local/electron/Cache
+              ~/AppData/Local/electron-builder/Cache
+          - name: Linux
+            os: ubuntu-latest
+            script: package:linux
+            artifact: Linux
+            path: client/release/*.AppImage
+            cache_path: |
+              ~/.cache/electron
+              ~/.cache/electron-builder
+          - name: macOS
+            os: macos-latest
+            script: package:mac
+            artifact: macOS
+            path: client/release/*.dmg
+            cache_path: |
+              ~/Library/Caches/electron
+              ~/Library/Caches/electron-builder
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            client/package-lock.json
+            client/be/package-lock.json
+
+      - name: Cache Electron binaries
+        uses: actions/cache@v4
+        with:
+          path: ${{ matrix.cache_path }}
+          key: electron-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('client/package-lock.json') }}
+
+      - name: Install client dependencies
+        run: npm ci
+        working-directory: client
+
+      - name: Install embedded API dependencies
+        run: npm ci
+        working-directory: client/be
+
+      - name: Build client and embedded API
+        run: npm run build
+        working-directory: client
+
+      - name: Package ${{ matrix.name }} application
+        run: npm run ${{ matrix.script }}
+        working-directory: client
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+
+      - name: Upload ${{ matrix.name }} package
+        uses: actions/upload-artifact@v4
+        with:
+          name: WahtWay-${{ matrix.artifact }}-${{ runner.arch }}
+          path: ${{ matrix.path }}
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14
