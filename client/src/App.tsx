@@ -1098,7 +1098,13 @@ function SkillsPanel({ onCreateSkill, onEditSkill, onLearnFromHistory, onOpenMcp
   const [repoView, setRepoView] = useState(false);  // 子视图：仓库浏览
   const [repoUrl, setRepoUrl] = useState("");
   const [scanning, setScanning] = useState(false);
-  const [scanResult, setScanResult] = useState<{ repo?: any; candidates?: any[]; message?: string } | null>(null);
+  const [scanResult, setScanResult] = useState<{
+    repo?: any;
+    candidates?: any[];
+    oversized?: any[];
+    rateLimited?: boolean;
+    message?: string;
+  } | null>(null);
   const [selectedSkillIds, setSelectedSkillIds] = useState<Set<string>>(new Set());
   const [batchImporting, setBatchImporting] = useState(false);
 
