@@ -169,6 +169,14 @@ const bindingIssues = (view: SkillBindingView) => view.health.issues.filter((iss
   && (!issue.toolName || issue.toolName === view.binding.toolName),
 );
 
+const bindingDependencyStatus = (view: SkillBindingView): DependencyStatus => {
+  if (view.resolvedBinding) return view.resolvedBinding.status;
+  const issues = bindingIssues(view);
+  if (issues.some((issue) => issue.severity === "blocking")) return "unavailable";
+  if (issues.length > 0) return "degraded";
+  return "healthy";
+};
+
 export function McpPanel({ onNotify }: { onNotify: (message: string, type?: "info" | "error") => void }) {
   const [servers, setServers] = useState<McpServer[]>([]);
   const [editing, setEditing] = useState<EditorState | null>(null);
@@ -406,14 +414,15 @@ export function McpPanel({ onNotify }: { onNotify: (message: string, type?: "inf
     <div className="mcp-bound-skill-list">
       {bindings.map((view) => {
         const issues = bindingIssues(view);
+        const status = bindingDependencyStatus(view);
         return (
           <div
-            className={`mcp-bound-skill dependency-${view.health.status}`}
+            className={`mcp-bound-skill dependency-${status}`}
             key={`${view.skillId}:${view.binding.serverId}:${view.binding.toolName}`}
           >
             <span className="mcp-bound-skill-name">{view.skillName}</span>
-            <span className={`mcp-dependency-badge status-${view.health.status}`}>
-              {DEPENDENCY_LABELS[view.health.status]}
+            <span className={`mcp-dependency-badge status-${status}`}>
+              {DEPENDENCY_LABELS[status]}
             </span>
             {issues.length > 0 && <span className="mcp-bound-skill-issue">{issues.map((issue) => issue.message).join("；")}</span>}
           </div>
@@ -462,7 +471,7 @@ export function McpPanel({ onNotify }: { onNotify: (message: string, type?: "inf
         {servers.length === 0 && <div className="mcp-empty">还没有配置 MCP Server</div>}
         {servers.map((server) => {
           const serverBindings = bindingsForServer(server.id);
-          const affectedBindings = serverBindings.filter((view) => !view.health.runnable);
+          const affectedBindings = serverBindings.filter((view) => bindingDependencyStatus(view) !== "healthy");
           const linkedSkillCount = new Set(serverBindings.map((view) => view.skillId)).size;
           const affectedSkillCount = new Set(affectedBindings.map((view) => view.skillId)).size;
           return (
