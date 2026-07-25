@@ -177,6 +177,8 @@ router.get("/", (_req: Request, res: Response) => {
     input: s.input,
     output: s.output,
     requiredTools: s.requiredTools,
+    allowedTools: s.allowedTools,
+    mcpBindings: s.mcpBindings,
     keywords: s.keywords,
     modeCategory: s.modeCategory,
     modeColor: s.modeColor,
@@ -189,6 +191,50 @@ router.get("/", (_req: Request, res: Response) => {
 
 router.get("/tools/catalog", (_req: Request, res: Response) => {
   res.json({ tools: buildSkillToolCatalog() });
+});
+
+export function buildMcpAssistantSkill(serverId: string, tool: any): Skill {
+  const base = `mcp-${serverId}-${tool.name}-assistant`.toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 64).replace(/-+$/g, "");
+  return {
+    id: base,
+    name: `${tool.name} 助手`,
+    description: `使用 ${tool.name} MCP 工具完成相关任务`,
+    systemPrompt: `你是 ${tool.name} MCP 工具的专用助手。\n\n你的主要职责是理解用户目标，并在需要时调用 ${tool.registeredName} 完成任务。不要假装已经执行工具；必须以真实工具结果为依据。工具需要审批时，清楚说明即将进行的操作并等待用户决定。工具不可用或执行失败时，说明原因并提供可行的下一步。\n\n工具说明：${tool.description}\n输入结构：${JSON.stringify(tool.inputSchema)}`,
+    input: { type: "object", properties: { request: { type: "string", description: "用户希望 MCP 工具完成的任务" } }, required: ["request"] },
+    output: { type: "object", properties: {} },
+    requiredTools: [],
+    allowedTools: [tool.registeredName],
+    mcpBindings: [{ serverId, toolName: tool.name, registeredName: tool.registeredName }],
+    whenToUse: `用户的请求需要使用 ${tool.name} MCP 工具时使用；普通闲聊或与该工具无关时不要使用。`,
+    keywords: [tool.name, serverId, "MCP", "工具助手", "自动化"],
+    modeCategory: "工具",
+    modeColor: tool.risk === "destructive" ? "#c62828" : tool.risk === "write" ? "#856404" : "#1a73e8",
+    modeIcon: "🔧",
+    welcomeMessage: `告诉我你希望 ${tool.name} 工具完成什么任务。`,
+    modeExamples: [`使用 ${tool.name} 完成任务`],
+    origin: "custom",
+  };
+}
+
+router.post("/mcp-assistant", (req: Request, res: Response) => {
+  const serverId = typeof req.body?.serverId === "string" ? req.body.serverId : "";
+  const toolName = typeof req.body?.toolName === "string" ? req.body.toolName : "";
+  const server = listPublicMcpServers().find((item) => item.id === serverId);
+  if (!server) return res.status(404).json({ error: "MCP Server 不存在" });
+  const tool = server.status.tools.find((item) => item.name === toolName);
+  if (!tool) return res.status(404).json({ error: "MCP 工具当前不可用" });
+  if (tool.permission === "disabled") return res.status(400).json({ error: "已禁用的 MCP 工具不能创建助手" });
+  const skill = buildMcpAssistantSkill(serverId, tool);
+  if (registeredSkills.some((item) => item.id === skill.id)) {
+    return res.status(409).json({ error: "该 MCP 工具已经存在对应助手", skillId: skill.id });
+  }
+  try {
+    saveSkill(skill);
+    res.status(201).json({ success: true, skill });
+  } catch (error: any) {
+    res.status(400).json({ error: error.message });
+  }
 });
 
 // POST /api/skills/learn-from-history/preview — 创建用户可检查的一次性历史快照

@@ -139,6 +139,17 @@ export function sanitizeSkillManifest(value: unknown): Skill {
     keywords: normalizeStringArray(value.keywords, "keywords", MAX_KEYWORDS, 40),
   };
   if (Array.isArray(value.allowedTools)) skill.allowedTools = normalizeStringArray(value.allowedTools, "allowedTools", 50, 80);
+  if (Array.isArray(value.mcpBindings)) {
+    if (value.mcpBindings.length > 20) throw new SkillValidationError("mcpBindings 不能超过 20 项");
+    skill.mcpBindings = value.mcpBindings.map((binding, index) => {
+      assertObject(binding, `mcpBindings[${index}]`);
+      return {
+        serverId: stringField(binding, "serverId", 2, 63),
+        toolName: stringField(binding, "toolName", 1, 256),
+        registeredName: stringField(binding, "registeredName", 1, 80),
+      };
+    });
+  }
   if (typeof value.whenToUse === "string" && value.whenToUse.trim()) skill.whenToUse = value.whenToUse.trim().slice(0, 1000);
   if (typeof value.modeCategory === "string" && value.modeCategory.trim()) skill.modeCategory = value.modeCategory.trim().slice(0, 40);
   if (typeof value.modeColor === "string" && /^#[0-9a-fA-F]{6}$/.test(value.modeColor.trim())) skill.modeColor = value.modeColor.trim();
