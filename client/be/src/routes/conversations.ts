@@ -34,6 +34,7 @@ router.patch("/:id", (req: Request, res: Response) => {
   const conversation = updateConversation(req.params.id, {
     title: req.body?.title,
     memoryMode: req.body?.memoryMode,
+    modeSkillId: req.body?.modeSkillId,
   });
   if (!conversation) return res.status(404).json({ error: "对话不存在" });
   res.json(conversation);

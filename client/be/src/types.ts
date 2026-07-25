@@ -28,6 +28,7 @@ export interface Skill {
   modeColor?: string;
   modeIcon?: string;
   welcomeMessage?: string;
+  modeExamples?: string[];
   version?: number;
   origin?: "builtin" | "custom" | "hub" | "learned";
 }

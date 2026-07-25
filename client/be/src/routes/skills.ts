@@ -182,6 +182,7 @@ router.get("/", (_req: Request, res: Response) => {
     modeColor: s.modeColor,
     modeIcon: s.modeIcon,
     welcomeMessage: s.welcomeMessage,
+    modeExamples: s.modeExamples,
   }));
   res.json({ skills });
 });

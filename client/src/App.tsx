@@ -130,6 +130,7 @@ interface SkillMeta {
   modeColor?: string;
   modeIcon?: string;
   welcomeMessage?: string;
+  modeExamples?: string[];
   version?: number;
   origin?: "builtin" | "custom" | "hub" | "learned";
   learning?: {
@@ -159,6 +160,7 @@ const smartMode: SkillMeta = {
   modeColor: "#1a73e8",
   modeIcon: "🤖",
   welcomeMessage: "我会先理解你的需求，再自动选择合适的 Skill。直接说你想做什么就行。",
+  modeExamples: ["帮我整理今天的学习和作业安排", "解释这段代码为什么报错", "帮我规划一份课程答辩 PPT"],
 };
 
 function getModeColor(skill?: Pick<SkillMeta, "modeColor"> | null): string {
@@ -214,7 +216,7 @@ interface ExternalToolConfig {
 
 // ---- 对话面板 ----
 
-function ChatPanel({ conversationId, memoryMode, onMemoryModeChange, onTitleChange, onCreateSkill, aiSettings, onAiSettingsChange, onOpenAiSettings }: { showModal: boolean; conversationId: string; memoryMode: MemoryMode; onMemoryModeChange: (mode: MemoryMode) => void; onTitleChange: (title: string) => void; onCreateSkill: (prefill?: string) => void; aiSettings: AiSettingsView | null; onAiSettingsChange: (patch: Partial<AiSettingsView> & { apiKey?: string }) => void; onOpenAiSettings: () => void; }) {
+function ChatPanel({ conversationId, memoryMode, modeSkillId, onMemoryModeChange, onModeChange, onTitleChange, onCreateSkill, aiSettings, onAiSettingsChange, onOpenAiSettings }: { showModal: boolean; conversationId: string; memoryMode: MemoryMode; modeSkillId: string; onMemoryModeChange: (mode: MemoryMode) => void; onModeChange: (skillId: string) => void; onTitleChange: (title: string) => void; onCreateSkill: (prefill?: string) => void; aiSettings: AiSettingsView | null; onAiSettingsChange: (patch: Partial<AiSettingsView> & { apiKey?: string }) => void; onOpenAiSettings: () => void; }) {
   const [, setTick] = useState(0);
   const messages = getMessages(conversationId);
   const msg = messages[messages.length - 1];
@@ -224,7 +226,6 @@ function ChatPanel({ conversationId, memoryMode, onMemoryModeChange, onTitleChan
   const [thinkingStatus, setThinkingStatus] = useState("");
   const [toolCalls, setToolCalls] = useState<{name: string; startTime: number}[]>([]);
   const toolTimersRef = useRef<Map<string, number>>(new Map());
-  const [skillId, setSkillId] = useState<string>("");
   const [showSkillPicker, setShowSkillPicker] = useState(false);
   const [skillSearch, setSkillSearch] = useState("");
   const [allSkills, setAllSkills] = useState<SkillMeta[]>([]);
@@ -246,6 +247,7 @@ function ChatPanel({ conversationId, memoryMode, onMemoryModeChange, onTitleChan
   const provider = aiSettings?.provider || "deepseek";
   const model = aiSettings?.model || DEFAULT_MODEL;
   const modelOptions = aiSettings?.modelOptions?.length ? aiSettings.modelOptions : AI_PROVIDER_PRESETS[provider].modelOptions;
+  const skillId = modeSkillId;
   const selectedSkill = allSkills.find(s => s.id === skillId) || null;
   const activeMode = selectedSkill || smartMode;
   const filteredSkills = allSkills.filter(s => skillMatchesQuery(s, skillSearch));
@@ -259,6 +261,12 @@ function ChatPanel({ conversationId, memoryMode, onMemoryModeChange, onTitleChan
   const activeModeStyle = {
     "--mode-color": getModeColor(activeMode),
   } as { [key: string]: string };
+  const selectMode = (nextSkillId: string) => {
+    onModeChange(nextSkillId);
+    setSkillName(nextSkillId ? allSkills.find((skill) => skill.id === nextSkillId)?.name || null : null);
+    setShowSkillPicker(false);
+    setSkillSearch("");
+  };
 
   // 加载 Skill 列表（下拉用）
   const loadSkills = () => fetch("/api/skills").then(r => r.json()).then(d => setAllSkills(d.skills || []));
@@ -688,6 +696,13 @@ function ChatPanel({ conversationId, memoryMode, onMemoryModeChange, onTitleChan
             <div className="mode-welcome-icon">{getModeIcon(activeMode)}</div>
             <h2>{activeMode.name}</h2>
             <p>{activeMode.welcomeMessage || activeMode.description}</p>
+            {(activeMode.modeExamples || []).length > 0 && (
+              <div className="mode-examples">
+                {activeMode.modeExamples!.map((example) => (
+                  <button key={example} onClick={() => setInput(example)}>{example}</button>
+                ))}
+              </div>
+            )}
           </div>
         )}
         {messages.map((msg: any, idx: number) => (
@@ -794,19 +809,19 @@ function ChatPanel({ conversationId, memoryMode, onMemoryModeChange, onTitleChan
               <input className="skill-search-input" placeholder="搜索模式或 Skill…" value={skillSearch}
                 onChange={(e) => setSkillSearch(e.target.value)} autoFocus />
               <div className="mode-quick-row">
-                <button className={`mode-chip ${!skillId ? "active" : ""}`} style={{ "--mode-color": getModeColor(smartMode) } as { [key: string]: string }} onClick={() => { setSkillId(""); setSkillName(null); setShowSkillPicker(false); setSkillSearch(""); }}>
+                <button className={`mode-chip ${!skillId ? "active" : ""}`} style={{ "--mode-color": getModeColor(smartMode) } as { [key: string]: string }} onClick={() => selectMode("")}>
                   <span>{smartMode.modeIcon}</span>
                   <b>{smartMode.name}</b>
                 </button>
                 {featuredSkills.map(s => (
-                  <button key={s.id} className={`mode-chip ${skillId === s.id ? "active" : ""}`} style={{ "--mode-color": getModeColor(s) } as { [key: string]: string }} onClick={() => { setSkillId(s.id); setSkillName(s.name); setShowSkillPicker(false); setSkillSearch(""); }}>
+                  <button key={s.id} className={`mode-chip ${skillId === s.id ? "active" : ""}`} style={{ "--mode-color": getModeColor(s) } as { [key: string]: string }} onClick={() => selectMode(s.id)}>
                     <span>{getModeIcon(s)}</span>
                     <b>{s.name}</b>
                   </button>
                 ))}
               </div>
               <div className="skill-picker-list">
-                <div className={`skill-picker-item mode-item ${!skillId ? "active" : ""}`} style={{ "--mode-color": getModeColor(smartMode) } as { [key: string]: string }} onClick={() => { setSkillId(""); setSkillName(null); setShowSkillPicker(false); setSkillSearch(""); }}>
+                <div className={`skill-picker-item mode-item ${!skillId ? "active" : ""}`} style={{ "--mode-color": getModeColor(smartMode) } as { [key: string]: string }} onClick={() => selectMode("")}>
                   <span className="mode-item-icon">{smartMode.modeIcon}</span>
                   <span className="mode-item-copy">
                     <strong>{smartMode.name}</strong>
@@ -818,7 +833,7 @@ function ChatPanel({ conversationId, memoryMode, onMemoryModeChange, onTitleChan
                     <div className="mode-group-title">{category}</div>
                     {skills.map(s => (
                       <div key={s.id} className={`skill-picker-item mode-item ${skillId === s.id ? "active" : ""}`} style={{ "--mode-color": getModeColor(s) } as { [key: string]: string }}
-                        onClick={() => { setSkillId(s.id); setSkillName(s.name); setShowSkillPicker(false); setSkillSearch(""); }}>
+                        onClick={() => selectMode(s.id)}>
                         <span className="mode-item-icon">{getModeIcon(s)}</span>
                         <span className="mode-item-copy">
                           <strong>{s.name}</strong>
@@ -1343,6 +1358,7 @@ function CreateSkillModal({ show, onClose, onSaved, prefill, skillToEdit }: { sh
         modeColor: skillToEdit.modeColor || "",
         modeIcon: skillToEdit.modeIcon || "",
         welcomeMessage: skillToEdit.welcomeMessage || "",
+        modeExamples: Array.isArray(skillToEdit.modeExamples) ? skillToEdit.modeExamples.join("\n") : "",
         allowedTools: [...(skillToEdit.allowedTools || [])],
       });
     }
@@ -1374,6 +1390,7 @@ function CreateSkillModal({ show, onClose, onSaved, prefill, skillToEdit }: { sh
           modeColor: data.skill.modeColor || "",
           modeIcon: data.skill.modeIcon || "",
           welcomeMessage: data.skill.welcomeMessage || "",
+          modeExamples: Array.isArray(data.skill.modeExamples) ? data.skill.modeExamples.join("\n") : "",
           allowedTools: Array.isArray(data.skill.allowedTools) ? data.skill.allowedTools : [],
         });
         setStep("edit");
@@ -1395,6 +1412,10 @@ function CreateSkillModal({ show, onClose, onSaved, prefill, skillToEdit }: { sh
         if (typeof skill[key] === "string") skill[key] = skill[key].trim();
         if (!skill[key]) delete skill[key];
       }
+      if (typeof skill.modeExamples === "string") {
+        skill.modeExamples = skill.modeExamples.split("\n").map((item: string) => item.trim()).filter(Boolean).slice(0, 4);
+      }
+      if (!Array.isArray(skill.modeExamples) || skill.modeExamples.length === 0) delete skill.modeExamples;
       const res = await fetch("/api/skills/save", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(skill) });
       const data = await res.json();
       if (data.success) { onSaved(); handleClose(); } else setMsg("保存失败: " + (data.error || "未知错误"));
@@ -1463,6 +1484,10 @@ function CreateSkillModal({ show, onClose, onSaved, prefill, skillToEdit }: { sh
                 <label className="field-label"><span>欢迎语</span><span className={`field-count ${welcomeLength > 80 ? "over" : ""}`}>{welcomeLength}/80</span></label>
                 <p className="field-hint">用户切换到这个模式、且当前对话为空时展示。</p>
                 <textarea rows={2} value={editSkill.welcomeMessage || ""} onChange={e => setEditSkill({ ...editSkill, welcomeMessage: e.target.value })} placeholder="告诉用户这个模式最适合输入什么。" />
+
+                <label>快捷示例</label>
+                <p className="field-hint">空白对话页显示的可点击示例，每行一条，最多 4 条。</p>
+                <textarea rows={3} value={editSkill.modeExamples || ""} onChange={e => setEditSkill({ ...editSkill, modeExamples: e.target.value })} placeholder={"帮我完成...\n帮我分析..."} />
 
                 <label className="field-label"><span>System Prompt</span><span className="field-count">{systemPromptLength} 字</span></label>
                 <p className="field-hint">给模型看的核心指令，建议写清角色、输入要求、输出格式和边界。</p>
@@ -1901,6 +1926,19 @@ export default function App() {
     setConversations(items => items.map(item => item.id === conversationId ? { ...item, memoryMode: mode } : item));
   };
 
+  const handleModeChange = async (modeSkillId: string) => {
+    const response = await fetch(`/api/conversations/${conversationId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ modeSkillId }),
+    });
+    if (!response.ok) {
+      toast("保存模式选择失败", "error");
+      return;
+    }
+    setConversations(items => items.map(item => item.id === conversationId ? { ...item, modeSkillId } : item));
+  };
+
   const activeConversation = conversations.find(item => item.id === conversationId);
 
   return (
@@ -1946,7 +1984,7 @@ export default function App() {
       </nav>
       <div className="main-content">
         {view === "chat" ? (
-          conversationId ? <ChatPanel showModal={showModal} conversationId={conversationId} memoryMode={activeConversation?.memoryMode || "off"} onMemoryModeChange={handleMemoryModeChange} onTitleChange={handleTitleChange} onCreateSkill={(prefill) => { setPrefillSkillDesc(prefill || ""); setShowModal(true); }} aiSettings={aiSettings} onAiSettingsChange={(patch) => { void saveAiSettings(patch).catch((error: any) => toast(error.message || "保存 AI 配置失败", "error")); }} onOpenAiSettings={() => setShowAiSettings(true)} /> : <div className="welcome"><h2>🤔 Waht?</h2></div>
+          conversationId ? <ChatPanel showModal={showModal} conversationId={conversationId} memoryMode={activeConversation?.memoryMode || "off"} modeSkillId={activeConversation?.modeSkillId || ""} onMemoryModeChange={handleMemoryModeChange} onModeChange={handleModeChange} onTitleChange={handleTitleChange} onCreateSkill={(prefill) => { setPrefillSkillDesc(prefill || ""); setShowModal(true); }} aiSettings={aiSettings} onAiSettingsChange={(patch) => { void saveAiSettings(patch).catch((error: any) => toast(error.message || "保存 AI 配置失败", "error")); }} onOpenAiSettings={() => setShowAiSettings(true)} /> : <div className="welcome"><h2>🤔 Waht?</h2></div>
         ) : view === "skills" ? (
           <SkillsPanel onCreateSkill={() => setShowModal(true)} onEditSkill={openEditSkill} skillsVersion={skillsVersion} />
         ) : view === "memory" ? (

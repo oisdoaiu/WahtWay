@@ -281,6 +281,33 @@ body {
   line-height: 1.7;
 }
 
+.mode-examples {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  max-width: 500px;
+  margin: 22px auto 0;
+}
+
+.mode-examples button {
+  max-width: 100%;
+  border: 1px solid color-mix(in srgb, var(--mode-color) 25%, #e8e8e8);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--mode-color) 7%, white);
+  color: #444;
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1.4;
+  padding: 8px 10px;
+}
+
+.mode-examples button:hover {
+  background: color-mix(in srgb, var(--mode-color) 15%, white);
+  border-color: var(--mode-color);
+  color: var(--mode-color);
+}
+
 /* --- Messages --- */
 .message {
   display: flex;
@@ -1647,6 +1674,7 @@ body {
 }
 .app.dark .header h1 { color: #cdd6f4; }
 .app.dark .mode-welcome h2 { color: #cdd6f4; }
+.app.dark .mode-examples button { background: color-mix(in srgb, var(--mode-color) 18%, #313244); border-color: color-mix(in srgb, var(--mode-color) 42%, #45475a); color: #cdd6f4; }
 .app.dark .mode-welcome-icon,
 .app.dark .mode-dot,
 .app.dark .mode-item-icon,
