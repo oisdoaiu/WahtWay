@@ -19,6 +19,7 @@
 - `mcp_server_not_running`：用户点击后启动 Server。
 - `mcp_server_disabled`：用户点击后先启用，再启动；启动失败时保留已启用状态并展示错误。
 - `mcp_tool_disabled`：用户确认后将该工具权限改为 `confirm`，不自动设置为 `auto`。
+- `mcp_tool_not_allowed`：将当前 binding 注册名显式补入非空 Skill 工具白名单。
 - `mcp_tool_unregistered`：用户点击后重启 Server。
 - `mcp_registered_name_changed`：进入 binding diff 确认。
 - `mcp_tool_missing` / `mcp_server_missing`：由用户从候选列表选择替代工具。
@@ -67,6 +68,7 @@
     "serverId": "new-server",
     "toolName": "new-tool"
   },
+  "expectedToolListRevision": 7,
   "promptPolicy": "replace-exact"
 }
 ```
@@ -80,7 +82,7 @@
 
 `PATCH /api/skills/:id/mcp-bindings/:index`
 
-请求体与预览相同，并额外携带预览返回的目标 `toolListRevision`。成功返回新 revision、最新 dependency health 和 audit event。
+请求体与预览相同。成功返回新 revision、最新 dependency health 和 audit event。
 
 ### 修复记录
 
