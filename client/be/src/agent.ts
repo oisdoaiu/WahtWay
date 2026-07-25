@@ -488,8 +488,6 @@ export async function runAgentStream(
   const log = logger(traceId || "no-trace", "agent");
   log.info("start", { msgLen: userMessage.length, mode: skillId || "auto", compact: getCompactConfig().enabled });
 
-  scheduleDelayedObservation(metadata?.conversationId, userMessage);
-
   let skill: Skill | null = null;
   let needSnapshot: NeedSnapshot | undefined;
 
@@ -517,10 +515,12 @@ export async function runAgentStream(
       output: { type: "object", properties: {} },
       requiredTools: [],
     };
+    scheduleDelayedObservation(metadata?.conversationId, userMessage);
     return executeSkillStream(general, userMessage, history, traceId, workspace, summary, runMetadata);
   }
 
   assertSkillDependencies(skill);
+  scheduleDelayedObservation(metadata?.conversationId, userMessage);
   return executeSkillStream(skill, userMessage, history, traceId, workspace, summary, runMetadata);
 }
 
