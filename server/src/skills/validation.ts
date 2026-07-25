@@ -138,6 +138,10 @@ export function sanitizeSkillManifest(value: unknown): Skill {
     requiredTools,
     keywords: normalizeStringArray(value.keywords, "keywords", MAX_KEYWORDS, 40),
   };
+  if (typeof value.modeCategory === "string" && value.modeCategory.trim()) skill.modeCategory = value.modeCategory.trim().slice(0, 40);
+  if (typeof value.modeColor === "string" && /^#[0-9a-fA-F]{6}$/.test(value.modeColor.trim())) skill.modeColor = value.modeColor.trim();
+  if (typeof value.modeIcon === "string" && value.modeIcon.trim()) skill.modeIcon = value.modeIcon.trim().slice(0, 8);
+  if (typeof value.welcomeMessage === "string" && value.welcomeMessage.trim()) skill.welcomeMessage = value.welcomeMessage.trim().slice(0, 160);
 
   const jsonBytes = Buffer.byteLength(JSON.stringify(skill), "utf-8");
   if (jsonBytes > MAX_JSON_BYTES) {

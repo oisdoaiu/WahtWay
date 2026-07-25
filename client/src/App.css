@@ -253,6 +253,34 @@ body {
   color: #bbb;
 }
 
+.mode-welcome {
+  max-width: 520px;
+  margin: 70px auto 0;
+  color: var(--mode-color);
+}
+
+.mode-welcome-icon {
+  width: 64px;
+  height: 64px;
+  margin: 0 auto 12px;
+  display: grid;
+  place-items: center;
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--mode-color) 12%, white);
+  font-size: 34px;
+}
+
+.mode-welcome h2 {
+  font-size: 32px;
+  color: #1a1a1a;
+}
+
+.mode-welcome p {
+  max-width: 460px;
+  margin: 0 auto;
+  line-height: 1.7;
+}
+
 /* --- Messages --- */
 .message {
   display: flex;
@@ -973,18 +1001,34 @@ body {
 .memory-item-actions label { font-size: 12px; color: #666; }
 .memory-item-actions button { border: 1px solid #ddd; border-radius: 6px; background: #fff; padding: 5px 9px; cursor: pointer; }
 .memory-item-actions button.danger { color: #c62828; }
-.mode-selector { display: inline-flex; align-items: center; gap: 4px; padding: 4px 10px; background: #f0f0f0; border-radius: 10px; cursor: pointer; font-size: 12px; user-select: none; }
-.mode-selector:hover { background: #e0e0e0; }
-.mode-badge { font-weight: 500; }
+.mode-selector { display: inline-flex; align-items: center; gap: 6px; min-height: 32px; padding: 5px 11px; background: color-mix(in srgb, var(--mode-color) 10%, white); border: 1px solid color-mix(in srgb, var(--mode-color) 28%, white); border-radius: 999px; color: var(--mode-color); cursor: pointer; font-size: 12px; user-select: none; }
+.mode-selector:hover { background: color-mix(in srgb, var(--mode-color) 16%, white); }
+.mode-dot { display: inline-grid; place-items: center; width: 20px; height: 20px; border-radius: 999px; background: #fff; }
+.mode-badge { font-weight: 700; }
 .mode-arrow { color: #999; font-size: 10px; }
-.skill-picker-dropdown { position: absolute; bottom: 100%; left: 0; width: 280px; max-height: 240px; overflow-y: auto; background: #fff; border: 1px solid #e0e0e0; border-radius: 12px; box-shadow: 0 4px 16px rgba(0,0,0,0.1); z-index: 50; margin-bottom: 4px; }
+.skill-picker-dropdown { position: absolute; bottom: 100%; left: 0; width: 360px; max-height: min(520px, 70vh); overflow-y: auto; background: #fff; border: 1px solid #e0e0e0; border-radius: 12px; box-shadow: 0 12px 34px rgba(0,0,0,0.14); z-index: 50; margin-bottom: 6px; }
 .skill-search-input { width: 100%; padding: 10px 14px; border: none; border-bottom: 1px solid #eee; font-size: 13px; outline: none; border-radius: 12px 12px 0 0; }
 .skill-picker-item { padding: 10px 14px; cursor: pointer; font-size: 13px; border-bottom: 1px solid #f5f5f5; display: flex; flex-direction: column; }
 .skill-picker-item:hover { background: #f5f8ff; }
-.skill-picker-item.active { background: #e8f4fd; color: #1a73e8; }
+.skill-picker-item.active { background: color-mix(in srgb, var(--mode-color) 10%, white); color: var(--mode-color); }
 .skill-picker-desc { font-size: 11px; color: #999; margin-top: 2px; }
 .skill-picker-empty { padding: 14px; font-size: 12px; color: #999; text-align: center; }
 .skill-picker-empty a { color: #1a73e8; cursor: pointer; }
+.mode-picker-heading { padding: 14px 14px 10px; display: flex; flex-direction: column; gap: 3px; }
+.mode-picker-heading strong { color: #222; font-size: 15px; }
+.mode-picker-heading span { color: #888; font-size: 12px; }
+.mode-quick-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; padding: 10px 12px; border-bottom: 1px solid #f0f0f0; }
+.mode-chip { min-width: 0; min-height: 58px; padding: 8px; display: flex; align-items: center; gap: 8px; border: 1px solid color-mix(in srgb, var(--mode-color) 22%, #e8e8e8); border-radius: 8px; background: #fff; color: #333; cursor: pointer; text-align: left; }
+.mode-chip:hover, .mode-chip.active { background: color-mix(in srgb, var(--mode-color) 11%, white); color: var(--mode-color); }
+.mode-chip span { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 8px; background: color-mix(in srgb, var(--mode-color) 13%, white); flex: none; }
+.mode-chip b { min-width: 0; font-size: 12px; line-height: 1.3; overflow: hidden; text-overflow: ellipsis; }
+.skill-picker-list { padding: 4px 0; }
+.mode-group-title { padding: 10px 14px 5px; color: #888; font-size: 11px; font-weight: 700; }
+.mode-item { display: grid; grid-template-columns: 34px minmax(0, 1fr); gap: 10px; align-items: center; }
+.mode-item-icon { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 9px; background: color-mix(in srgb, var(--mode-color) 12%, white); }
+.mode-item-copy { min-width: 0; display: flex; flex-direction: column; }
+.mode-item-copy strong { font-size: 13px; color: #333; }
+.mode-item.active .mode-item-copy strong { color: var(--mode-color); }
 .input-row { display: flex; gap: 10px; }
 
 .input-area { flex-direction: column; }
@@ -1529,6 +1573,15 @@ body {
     padding: 10px 12px;
   }
 
+  .skill-picker-dropdown {
+    left: 0;
+    width: min(360px, calc(100vw - 24px));
+  }
+
+  .mode-quick-row {
+    grid-template-columns: 1fr;
+  }
+
   .skills-tabs {
     padding: 0 12px;
   }
@@ -1593,12 +1646,21 @@ body {
   }
 }
 .app.dark .header h1 { color: #cdd6f4; }
-.app.dark .mode-badge { background: #45475a; color: #cdd6f4; }
+.app.dark .mode-welcome h2 { color: #cdd6f4; }
+.app.dark .mode-welcome-icon,
+.app.dark .mode-dot,
+.app.dark .mode-item-icon,
+.app.dark .mode-chip span { background: color-mix(in srgb, var(--mode-color) 24%, #313244); }
+.app.dark .mode-badge { background: transparent; color: inherit; }
 .app.dark .workspace-badge, .app.dark .workspace-clear { background: #45475a; color: #cdd6f4; }
 .app.dark .workspace-badge:hover, .app.dark .workspace-clear:hover { background: #585b70; }
-.app.dark .mode-selector { background: #313244; }
+.app.dark .mode-selector { background: color-mix(in srgb, var(--mode-color) 18%, #313244); border-color: color-mix(in srgb, var(--mode-color) 38%, #45475a); }
 .app.dark .memory-mode-select, .app.dark .memory-editor select, .app.dark .memory-editor textarea { background: #313244; color: #cdd6f4; border-color: #45475a; }
-.app.dark .memory-picker-dropdown, .app.dark .memory-item-actions button { background: #313244; color: #cdd6f4; border-color: #45475a; }
+.app.dark .memory-picker-dropdown, .app.dark .skill-picker-dropdown, .app.dark .memory-item-actions button { background: #313244; color: #cdd6f4; border-color: #45475a; }
+.app.dark .mode-picker-heading strong, .app.dark .mode-item-copy strong { color: #cdd6f4; }
+.app.dark .skill-search-input { background: #313244; color: #cdd6f4; border-color: #45475a; }
+.app.dark .mode-chip { background: #313244; color: #cdd6f4; border-color: #45475a; }
+.app.dark .mode-chip:hover, .app.dark .mode-chip.active, .app.dark .skill-picker-item.active { background: color-mix(in srgb, var(--mode-color) 20%, #313244); }
 .app.dark .memory-picker-item:hover { background: #45475a; }
 .app.dark .memory-editor, .app.dark .memory-item-card { border-color: #313244; }
 .app.dark .memory-item-actions label { color: #a6adc8; }

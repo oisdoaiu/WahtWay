@@ -23,6 +23,10 @@
     "search-files"
   ],
   "whenToUse": "用户需要创建PPT、制作演示文稿、美化PPT、套用模板、生成幻灯片时触发。",
+  "modeCategory": "办公创作",
+  "modeColor": "#7c3aed",
+  "modeIcon": "📊",
+  "welcomeMessage": "告诉我主题、页数、受众和是否有模板，我可以帮你规划并生成 PPT。",
   "keywords": [
     "PPT", "ppt", "演示文稿", "幻灯片", "slides", "美化", "模板",
     "presentation", "做PPT", "生成PPT", "制作PPT", "汇报", "答辩", "pre"

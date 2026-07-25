@@ -19,6 +19,10 @@ export interface Skill {
   output: JSONSchema;
   requiredTools: string[];
   keywords?: string[];
+  modeCategory?: string;
+  modeColor?: string;
+  modeIcon?: string;
+  welcomeMessage?: string;
 }
 
 export type SkillStatus = "draft" | "pending" | "published" | "rejected" | "archived";
@@ -102,6 +106,10 @@ export interface SkillListItem {
   output: JSONSchema;
   requiredTools: string[];
   keywords?: string[];
+  modeCategory?: string;
+  modeColor?: string;
+  modeIcon?: string;
+  welcomeMessage?: string;
   authorName?: string;
   category?: string;
   tags: string[];
