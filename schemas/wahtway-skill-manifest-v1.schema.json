@@ -1,0 +1,169 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://wahtway.local/schemas/wahtway-skill-manifest-v1.schema.json",
+  "title": "WahtWay Skill Manifest v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "name",
+    "description",
+    "systemPrompt",
+    "input",
+    "output",
+    "requiredTools",
+    "keywords"
+  ],
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+      "minLength": 3,
+      "maxLength": 64
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 80
+    },
+    "description": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 500
+    },
+    "systemPrompt": {
+      "type": "string",
+      "minLength": 20,
+      "maxLength": 20000
+    },
+    "input": {
+      "$ref": "#/$defs/jsonSchema"
+    },
+    "output": {
+      "$ref": "#/$defs/jsonSchema"
+    },
+    "requiredTools": {
+      "$ref": "#/$defs/stringArray20"
+    },
+    "allowedTools": {
+      "$ref": "#/$defs/stringArray50"
+    },
+    "whenToUse": {
+      "type": "string",
+      "maxLength": 1000
+    },
+    "keywords": {
+      "$ref": "#/$defs/keywords"
+    },
+    "modeCategory": {
+      "type": "string",
+      "maxLength": 40
+    },
+    "modeColor": {
+      "type": "string",
+      "pattern": "^#[0-9a-fA-F]{6}$"
+    },
+    "modeIcon": {
+      "type": "string",
+      "maxLength": 8
+    },
+    "welcomeMessage": {
+      "type": "string",
+      "maxLength": 160
+    },
+    "modeExamples": {
+      "type": "array",
+      "maxItems": 4,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 80
+      }
+    },
+    "version": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "origin": {
+      "type": "string",
+      "enum": ["builtin", "custom", "hub", "learned"]
+    }
+  },
+  "$defs": {
+    "jsonSchema": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 40
+        },
+        "properties": {
+          "type": "object",
+          "maxProperties": 50,
+          "additionalProperties": {
+            "$ref": "#/$defs/jsonSchemaProperty"
+          }
+        },
+        "required": {
+          "$ref": "#/$defs/stringArray50"
+        }
+      }
+    },
+    "jsonSchemaProperty": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "description"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 40
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 300
+        },
+        "enum": {
+          "$ref": "#/$defs/stringArray50"
+        }
+      }
+    },
+    "stringArray20": {
+      "type": "array",
+      "maxItems": 20,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 80
+      }
+    },
+    "stringArray50": {
+      "type": "array",
+      "maxItems": 50,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 80
+      }
+    },
+    "keywords": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 30,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 40
+      }
+    }
+  }
+}
+

@@ -137,6 +137,8 @@ function syncSeedSkills(db: SkillHubDatabase): boolean {
       modeIcon: seedSkill.modeIcon,
       welcomeMessage: seedSkill.welcomeMessage,
       modeExamples: seedSkill.modeExamples,
+      allowedTools: seedSkill.allowedTools,
+      whenToUse: seedSkill.whenToUse,
     };
     if (JSON.stringify(current.manifest) === JSON.stringify(nextManifest)) continue;
 
@@ -196,6 +198,8 @@ function toListItem(record: SkillHubRecord): SkillListItem {
     input: current.manifest.input,
     output: current.manifest.output,
     requiredTools: current.manifest.requiredTools,
+    allowedTools: current.manifest.allowedTools,
+    whenToUse: current.manifest.whenToUse,
     keywords: current.manifest.keywords,
     modeCategory: current.manifest.modeCategory,
     modeColor: current.manifest.modeColor,

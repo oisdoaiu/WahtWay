@@ -13,6 +13,8 @@
   },
   "output": { "type": "object", "properties": {} },
   "requiredTools": [],
+  "allowedTools": [],
+  "whenToUse": "用户想整理待办、安排一天时间、判断任务优先级或拆分任务时触发。",
   "keywords": ["待办", "任务", "优先级", "时间管理", "安排", "计划", "截止日期", "效率"],
   "modeCategory": "生活",
   "modeColor": "#ea580c",

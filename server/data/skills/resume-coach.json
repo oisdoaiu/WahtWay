@@ -13,6 +13,8 @@
   },
   "output": { "type": "object", "properties": {} },
   "requiredTools": [],
+  "allowedTools": [],
+  "whenToUse": "用户需要写简历、优化项目经历、准备实习投递或提炼个人亮点时触发。",
   "keywords": ["简历", "实习", "校招", "项目经历", "自我介绍", "求职", "面试", "亮点"],
   "modeCategory": "办公创作",
   "modeColor": "#db2777",

@@ -13,6 +13,8 @@
   },
   "output": { "type": "object", "properties": {} },
   "requiredTools": [],
+  "allowedTools": [],
+  "whenToUse": "用户需要润色、改写、完善课程报告、实习总结、论文段落或正式中文表达时触发。",
   "keywords": ["润色", "报告", "论文", "实习总结", "课程设计", "改写", "摘要", "语病"],
   "modeCategory": "学习",
   "modeColor": "#2563eb",

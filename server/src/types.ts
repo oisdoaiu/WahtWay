@@ -18,6 +18,8 @@ export interface Skill {
   input: JSONSchema;
   output: JSONSchema;
   requiredTools: string[];
+  allowedTools?: string[];
+  whenToUse?: string;
   keywords?: string[];
   modeCategory?: string;
   modeColor?: string;
@@ -106,6 +108,8 @@ export interface SkillListItem {
   input: JSONSchema;
   output: JSONSchema;
   requiredTools: string[];
+  allowedTools?: string[];
+  whenToUse?: string;
   keywords?: string[];
   modeCategory?: string;
   modeColor?: string;
