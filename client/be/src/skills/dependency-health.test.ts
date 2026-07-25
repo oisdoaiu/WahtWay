@@ -88,6 +88,20 @@ describe("Skill dependency health", () => {
     })]);
   });
 
+  it("blocks a healthy MCP binding that the Skill whitelist excludes", () => {
+    const health = evaluateSkillDependencies(
+      skill({ allowedTools: ["different-tool"], mcpBindings: [binding] }),
+      [server()],
+      [binding.registeredName, "different-tool"]
+    );
+
+    expect(health).toMatchObject({ status: "unavailable", runnable: false });
+    expect(health.bindings[0]).toMatchObject({
+      status: "unavailable",
+      issueCodes: ["mcp_tool_not_allowed"],
+    });
+  });
+
   it.each([
     ["missing", [], "mcp_server_missing"],
     ["disabled", [server({ enabled: false })], "mcp_server_disabled"],

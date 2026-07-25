@@ -14,6 +14,7 @@ export type SkillDependencyIssueCode =
   | "mcp_server_not_running"
   | "mcp_tool_missing"
   | "mcp_tool_disabled"
+  | "mcp_tool_not_allowed"
   | "mcp_registered_name_changed"
   | "mcp_tool_unregistered";
 
@@ -88,6 +89,8 @@ export function evaluateSkillDependencies(
   const toolNames = new Set(registeredToolNames);
   const serverById = new Map(servers.map((server) => [server.id, server]));
   const bindingNames = new Set((skill.mcpBindings || []).map((binding) => binding.registeredName));
+  const hasToolWhitelist = Array.isArray(skill.allowedTools) && skill.allowedTools.length > 0;
+  const allowedTools = new Set(skill.allowedTools || []);
   const issues: SkillDependencyIssue[] = [];
   const bindings: SkillBindingHealth[] = [];
 
@@ -189,6 +192,18 @@ export function evaluateSkillDependencies(
       });
     }
 
+    if (hasToolWhitelist && !allowedTools.has(binding.registeredName)) {
+      addBindingIssue({
+        code: "mcp_tool_not_allowed",
+        severity: "blocking",
+        serverId: server.id,
+        serverState: server.status.state,
+        toolName: binding.toolName,
+        registeredName: binding.registeredName,
+        message: `MCP 工具「${binding.registeredName}」未包含在 Skill 工具白名单中`,
+      });
+    }
+
     bindings.push({
       ...binding,
       serverName: server.name,
@@ -201,8 +216,6 @@ export function evaluateSkillDependencies(
   }
 
   const requiredTools = new Set(skill.requiredTools || []);
-  const hasToolWhitelist = Array.isArray(skill.allowedTools) && skill.allowedTools.length > 0;
-  const allowedTools = new Set(skill.allowedTools || []);
 
   for (const toolName of requiredTools) {
     if (hasToolWhitelist && !allowedTools.has(toolName)) {
