@@ -2,12 +2,9 @@ name: Build Electron Packages
 
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-    tags: ["v*"]
-    paths:
-      - "client/**"
-      - ".github/workflows/build-electron.yml"
+  schedule:
+    # GitHub Actions uses UTC. This runs daily at 12:00 Asia/Shanghai (UTC+8).
+    - cron: "0 4 * * *"
 
 permissions:
   contents: read
@@ -95,3 +92,102 @@ jobs:
           if-no-files-found: error
           compression-level: 0
           retention-days: 14
+
+  notify-feishu:
+    name: Notify Feishu
+    needs: package
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Send package result to Feishu
+        env:
+          WEBHOOK: ${{ secrets.FEISHU_WEBHOOK }}
+          PACKAGE_RESULT: ${{ needs.package.result }}
+          EVENT_NAME: ${{ github.event_name }}
+          REPOSITORY: ${{ github.repository }}
+          COMMIT_SHA: ${{ github.sha }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          ACTOR: ${{ github.actor }}
+        run: |
+          if [ -z "$WEBHOOK" ]; then
+            echo "FEISHU_WEBHOOK is not configured; skipping notification."
+            exit 0
+          fi
+
+          case "$PACKAGE_RESULT" in
+            success)
+              STATUS="成功"
+              COLOR="green"
+              ;;
+            failure)
+              STATUS="失败"
+              COLOR="red"
+              ;;
+            cancelled)
+              STATUS="已取消"
+              COLOR="grey"
+              ;;
+            *)
+              STATUS="未完成"
+              COLOR="yellow"
+              ;;
+          esac
+
+          if [ "$EVENT_NAME" = "schedule" ]; then
+            CONTEXT="北京时间每日 12:00 定时构建"
+          else
+            CONTEXT="手动触发，操作人：${ACTOR}"
+          fi
+
+          PAYLOAD=$(jq -n \
+            --arg status "$STATUS" \
+            --arg color "$COLOR" \
+            --arg repository "$REPOSITORY" \
+            --arg commit "${COMMIT_SHA:0:7}" \
+            --arg context "$CONTEXT" \
+            --arg runUrl "$RUN_URL" \
+            '{
+              msg_type: "interactive",
+              card: {
+                header: {
+                  template: $color,
+                  title: { tag: "plain_text", content: ("Electron 多平台打包" + $status) }
+                },
+                elements: [
+                  {
+                    tag: "div",
+                    fields: [
+                      { is_short: true, text: { tag: "lark_md", content: "**Windows**\n`.exe`" } },
+                      { is_short: true, text: { tag: "lark_md", content: "**Linux**\n`.AppImage`" } },
+                      { is_short: true, text: { tag: "lark_md", content: "**macOS**\n`.dmg`" } },
+                      { is_short: true, text: { tag: "lark_md", content: "**产物保留**\n14 天" } }
+                    ]
+                  },
+                  { tag: "hr" },
+                  {
+                    tag: "div",
+                    text: {
+                      tag: "lark_md",
+                      content: ("**项目：** " + $repository + "\n**提交：** `" + $commit + "`\n**触发方式：** " + $context)
+                    }
+                  },
+                  {
+                    tag: "action",
+                    actions: [
+                      {
+                        tag: "button",
+                        text: { tag: "plain_text", content: "查看构建与下载产物" },
+                        type: "primary",
+                        url: $runUrl
+                      }
+                    ]
+                  }
+                ]
+              }
+            }')
+
+          curl --fail-with-body --request POST "$WEBHOOK" \
+            --header "Content-Type: application/json" \
+            --data "$PAYLOAD"

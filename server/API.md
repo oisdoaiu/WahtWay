@@ -4,11 +4,24 @@ Skill Hub 负责在线发布、发现、版本化下载 Skill。客户端仍然�
 
 启动服务后访问 `http://localhost:4000/` 可以打开简约管理界面。
 
+## 配置文件
+
+服务启动时会自动加载 `server/.env`。部署时可复制 `server/.env.example` 为 `.env` 并填写配置；`.env` 已被 Git 忽略，不会提交到仓库。
+
+```bash
+cd /opt/wahtway/server
+cp .env.example .env
+chmod 600 .env
+```
+
+使用 systemd 时只需保留 `WorkingDirectory=/opt/wahtway/server`，不需要为每个配置项写 `Environment=`。Node 服务默认使用 `.env` 中的 `PORT=4000`，Nginx 可代理到 `http://127.0.0.1:4000`。
+
 ## 环境变量
 
 - `PORT`: 服务端口，默认 `4000`
 - `SKILL_HUB_DATA_DIR`: Hub 持久化目录，默认 `server/data/hub`
 - `AUTH_TOKEN_SECRET`: token 签名密钥；未设置时服务端会在数据目录生成 `auth-secret.txt`
+- `SKILL_HUB_INVITE_CODES`: 注册邀请码，使用逗号分隔多个有效值。未配置时注册接口会拒绝所有请求。
 - `REQUIRE_SKILL_REVIEW`: 设置为 `true` 时，新上传 Skill 默认为 `pending`
 - `ALLOWED_SKILL_TOOLS`: 逗号分隔的工具白名单，默认不允许上传声明外部工具的 Skill
 
@@ -32,8 +45,15 @@ GET  /api/auth/me
 {
   "username": "alice",
   "displayName": "Alice",
-  "password": "password123"
+  "password": "password123",
+  "inviteCode": "your-invite-code"
 }
+```
+
+注册需要有效的邀请码，邀请码由服务端通过 `SKILL_HUB_INVITE_CODES` 配置，不会写入用户数据库。示例：
+
+```ini
+SKILL_HUB_INVITE_CODES=team-2026-a,team-2026-b
 ```
 
 登录和注册都会返回：
