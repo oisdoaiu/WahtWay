@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { buildHubDownloadUrl, buildHubListUrl, buildSkillToolCatalog } from "./skills";
+import { buildHubDownloadUrl, buildHubListUrl, buildMcpAssistantSkill, buildSkillToolCatalog } from "./skills";
 import { registerTool, unregisterTool } from "../tools/registry";
 
 const originalHubUrl = process.env.SKILL_HUB_URL;
@@ -46,5 +46,19 @@ describe("Skill tool catalog", () => {
       unregisterTool("catalog-read-fixture");
       unregisterTool("catalog-delete-fixture");
     }
+  });
+});
+
+describe("MCP Skill assistants", () => {
+  it("binds a generated Skill to exactly one MCP tool", () => {
+    const skill = buildMcpAssistantSkill("files", {
+      name: "read_file", registeredName: "mcp-files-read_file", description: "Reads a file",
+      inputSchema: { type: "object", properties: { path: { type: "string" } } }, risk: "read",
+    });
+
+    expect(skill.allowedTools).toEqual(["mcp-files-read_file"]);
+    expect(skill.requiredTools).toEqual([]);
+    expect(skill.mcpBindings).toEqual([{ serverId: "files", toolName: "read_file", registeredName: "mcp-files-read_file" }]);
+    expect(skill.systemPrompt).toContain("mcp-files-read_file");
   });
 });
