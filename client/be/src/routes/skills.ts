@@ -16,7 +16,7 @@ import { formatLlmError } from "../llm-errors";
 import { getAllTools } from "../tools/registry";
 import { listExternalTools } from "../external-tools/repository";
 import { listPublicMcpServers } from "../mcp/runtime";
-import { getSkillDependencyHealth } from "../skills/dependency-health";
+import { createSkillDependencySnapshot, getSkillDependencyHealth } from "../skills/dependency-health";
 
 const router = Router();
 const DEFAULT_SKILL_HUB_URL = "https://wahtway-production.up.railway.app";
@@ -171,6 +171,7 @@ function getRecentUserOperations(): string[] {
 
 // GET /api/skills — 已注册 Skill 列表（脱敏）
 router.get("/", (_req: Request, res: Response) => {
+  const dependencySnapshot = createSkillDependencySnapshot();
   const skills = registeredSkills.map((s) => ({
     id: s.id,
     name: s.name,
@@ -186,7 +187,7 @@ router.get("/", (_req: Request, res: Response) => {
     modeIcon: s.modeIcon,
     welcomeMessage: s.welcomeMessage,
     modeExamples: s.modeExamples,
-    dependencyHealth: getSkillDependencyHealth(s),
+    dependencyHealth: getSkillDependencyHealth(s, dependencySnapshot),
   }));
   res.json({ skills });
 });

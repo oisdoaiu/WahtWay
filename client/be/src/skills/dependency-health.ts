@@ -63,6 +63,12 @@ export interface SkillDependencyServerSnapshot {
   };
 }
 
+export interface SkillDependencySnapshot {
+  servers: SkillDependencyServerSnapshot[];
+  registeredToolNames: string[];
+  checkedAt: string;
+}
+
 function serverStateLabel(state: McpRuntimeState): string {
   switch (state) {
     case "starting": return "正在启动";
@@ -240,11 +246,23 @@ export function evaluateSkillDependencies(
   };
 }
 
-export function getSkillDependencyHealth(skill: Skill): SkillDependencyHealth {
+export function createSkillDependencySnapshot(): SkillDependencySnapshot {
+  return {
+    servers: listPublicMcpServers(),
+    registeredToolNames: getAllTools().map((tool) => tool.name),
+    checkedAt: new Date().toISOString(),
+  };
+}
+
+export function getSkillDependencyHealth(
+  skill: Skill,
+  snapshot = createSkillDependencySnapshot()
+): SkillDependencyHealth {
   return evaluateSkillDependencies(
     skill,
-    listPublicMcpServers(),
-    getAllTools().map((tool) => tool.name)
+    snapshot.servers,
+    snapshot.registeredToolNames,
+    snapshot.checkedAt
   );
 }
 
