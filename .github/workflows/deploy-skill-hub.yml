@@ -1,0 +1,67 @@
+name: Deploy Skill Hub
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "server/**"
+      - ".github/workflows/deploy-skill-hub.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build Skill Hub
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: server
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+      - run: npm ci
+      - run: npm run build
+
+  deploy:
+    name: Deploy To Personal Server
+    needs: build
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      DEPLOY_HOST: ${{ secrets.SKILL_HUB_DEPLOY_HOST }}
+      DEPLOY_USER: ${{ secrets.SKILL_HUB_DEPLOY_USER }}
+      DEPLOY_SSH_KEY: ${{ secrets.SKILL_HUB_DEPLOY_SSH_KEY }}
+      DEPLOY_SSH_KNOWN_HOSTS: ${{ secrets.SKILL_HUB_DEPLOY_SSH_KNOWN_HOSTS }}
+    steps:
+      - name: Configure SSH
+        run: |
+          test -n "$DEPLOY_HOST"
+          test -n "$DEPLOY_USER"
+          test -n "$DEPLOY_SSH_KEY"
+          test -n "$DEPLOY_SSH_KNOWN_HOSTS"
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/id_ed25519
+          printf '%s\n' "$DEPLOY_SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/id_ed25519
+
+      - name: Update and restart Skill Hub
+        run: |
+          ssh -i ~/.ssh/id_ed25519 -o BatchMode=yes -o StrictHostKeyChecking=yes "$DEPLOY_USER@$DEPLOY_HOST" 'bash -se' <<'REMOTE'
+            set -euo pipefail
+            cd /opt/wahtway
+            git pull --ff-only origin main
+            cd server
+            npm ci
+            npm run build
+            sudo systemctl restart wahtway-skill-hub
+            set -a
+            . ./.env
+            set +a
+            curl --fail --silent --show-error "http://127.0.0.1:${PORT:-4000}/api/health"
+          REMOTE

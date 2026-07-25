@@ -53,6 +53,8 @@ const els = {
   displayNameLabel: document.querySelector("#displayNameLabel"),
   authUsername: document.querySelector("#authUsername"),
   authDisplayName: document.querySelector("#authDisplayName"),
+  inviteCodeLabel: document.querySelector("#inviteCodeLabel"),
+  inviteCode: document.querySelector("#inviteCode"),
   authPassword: document.querySelector("#authPassword"),
   authMsg: document.querySelector("#authMsg"),
   submitAuthBtn: document.querySelector("#submitAuthBtn"),
@@ -377,6 +379,7 @@ function setAuthMode(mode) {
   els.authTitle.textContent = isRegister ? "注册" : "登录";
   els.submitAuthBtn.textContent = isRegister ? "注册" : "登录";
   els.displayNameLabel.classList.toggle("hidden", !isRegister);
+  els.inviteCodeLabel.classList.toggle("hidden", !isRegister);
   els.loginModeBtn.classList.toggle("active", !isRegister);
   els.registerModeBtn.classList.toggle("active", isRegister);
   els.authPassword.setAttribute("autocomplete", isRegister ? "new-password" : "current-password");
@@ -391,6 +394,7 @@ async function submitAuth(event) {
   const body = { username, password };
   if (state.authMode === "register") {
     body.displayName = els.authDisplayName.value.trim() || undefined;
+    body.inviteCode = els.inviteCode.value;
   }
 
   els.submitAuthBtn.disabled = true;
