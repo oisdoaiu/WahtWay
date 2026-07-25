@@ -2,24 +2,65 @@ name: Deploy Skill Hub
 
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths:
-      - "server/**"
-      - ".github/workflows/deploy-skill-hub.yml"
+  schedule:
+    # GitHub Actions uses UTC. This runs at 12:00 Asia/Shanghai (UTC+8).
+    - cron: "0 4 * * *"
 
 permissions:
   contents: read
+  actions: read
 
 jobs:
+  resolve-deployment:
+    name: Resolve Deployment Commit
+    runs-on: ubuntu-latest
+    outputs:
+      deploy_sha: ${{ steps.resolve.outputs.deploy_sha }}
+      source: ${{ steps.resolve.outputs.source }}
+    steps:
+      - id: resolve
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            deploy_sha="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/main" --jq '.object.sha')"
+            printf 'deploy_sha=%s\n' "$deploy_sha" >> "$GITHUB_OUTPUT"
+            printf 'source=%s\n' "手动部署 main 最新提交" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          ci_run="$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml/runs?event=schedule&status=completed&per_page=1" --jq '.workflow_runs[0] // empty')"
+          if [ -z "$ci_run" ]; then
+            echo "No completed scheduled CI run found."
+            exit 1
+          fi
+
+          ci_conclusion="$(jq -r '.conclusion' <<< "$ci_run")"
+          ci_created_at="$(jq -r '.created_at' <<< "$ci_run")"
+          ci_date="${ci_created_at%%T*}"
+          expected_date="$(date -u -d 'yesterday' +%F)"
+          if [ "$ci_conclusion" != "success" ] || [ "$ci_date" != "$expected_date" ]; then
+            echo "Latest nightly CI was not a successful run from ${expected_date}: conclusion=${ci_conclusion}, created_at=${ci_created_at}"
+            exit 1
+          fi
+
+          deploy_sha="$(jq -r '.head_sha' <<< "$ci_run")"
+          run_number="$(jq -r '.run_number' <<< "$ci_run")"
+          printf 'deploy_sha=%s\n' "$deploy_sha" >> "$GITHUB_OUTPUT"
+          printf 'source=%s\n' "前一晚成功 CI #${run_number}" >> "$GITHUB_OUTPUT"
+
   build:
     name: Build Skill Hub
+    needs: resolve-deployment
     runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: server
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.resolve-deployment.outputs.deploy_sha }}
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -30,7 +71,7 @@ jobs:
 
   deploy:
     name: Deploy To Personal Server
-    needs: build
+    needs: [resolve-deployment, build]
     runs-on: ubuntu-latest
     environment: production
     env:
@@ -38,6 +79,7 @@ jobs:
       DEPLOY_USER: ${{ secrets.SKILL_HUB_DEPLOY_USER }}
       DEPLOY_SSH_KEY: ${{ secrets.SKILL_HUB_DEPLOY_SSH_KEY }}
       DEPLOY_SSH_KNOWN_HOSTS: ${{ secrets.SKILL_HUB_DEPLOY_SSH_KNOWN_HOSTS }}
+      DEPLOY_SHA: ${{ needs.resolve-deployment.outputs.deploy_sha }}
     steps:
       - name: Configure SSH
         run: |
@@ -52,10 +94,11 @@ jobs:
 
       - name: Update and restart Skill Hub
         run: |
-          ssh -i ~/.ssh/id_ed25519 -o BatchMode=yes -o StrictHostKeyChecking=yes "$DEPLOY_USER@$DEPLOY_HOST" 'bash -se' <<'REMOTE'
+          ssh -i ~/.ssh/id_ed25519 -o BatchMode=yes -o StrictHostKeyChecking=yes "$DEPLOY_USER@$DEPLOY_HOST" "DEPLOY_SHA='$DEPLOY_SHA' bash -se" <<'REMOTE'
             set -euo pipefail
             cd /opt/wahtway
-            git pull --ff-only origin main
+            git fetch origin main
+            git checkout --detach "$DEPLOY_SHA"
             cd server
             npm ci
             npm run build
@@ -65,3 +108,80 @@ jobs:
             set +a
             curl --fail --silent --show-error "http://127.0.0.1:${PORT:-4000}/api/health"
           REMOTE
+
+  notify-feishu:
+    name: Notify Feishu
+    needs: [resolve-deployment, build, deploy]
+    if: always()
+    runs-on: ubuntu-latest
+    env:
+      WEBHOOK: ${{ secrets.FEISHU_WEBHOOK }}
+      TRIGGER: ${{ github.event_name }}
+      DEPLOY_SHA: ${{ needs.resolve-deployment.outputs.deploy_sha || '未解析' }}
+      DEPLOY_SOURCE: ${{ needs.resolve-deployment.outputs.source || '未通过前置检查' }}
+      RESOLVE_RESULT: ${{ needs.resolve-deployment.result }}
+      BUILD_RESULT: ${{ needs.build.result }}
+      DEPLOY_RESULT: ${{ needs.deploy.result }}
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+    steps:
+      - name: Send deployment result
+        run: |
+          if [ -z "$WEBHOOK" ]; then
+            echo "FEISHU_WEBHOOK is not configured; skipping notification."
+            exit 0
+          fi
+
+          if [ "$DEPLOY_RESULT" = "success" ]; then
+            STATUS="成功"
+            COLOR="green"
+          else
+            STATUS="失败"
+            COLOR="red"
+          fi
+
+          if [ "$TRIGGER" = "schedule" ]; then
+            TRIGGER_LABEL="每日 12:00 自动部署"
+          else
+            TRIGGER_LABEL="手动部署"
+          fi
+
+          PAYLOAD=$(jq -n \
+            --arg status "$STATUS" \
+            --arg color "$COLOR" \
+            --arg trigger "$TRIGGER_LABEL" \
+            --arg source "$DEPLOY_SOURCE" \
+            --arg sha "$DEPLOY_SHA" \
+            --arg resolve "$RESOLVE_RESULT" \
+            --arg build "$BUILD_RESULT" \
+            --arg deploy "$DEPLOY_RESULT" \
+            --arg runUrl "$RUN_URL" \
+            '{
+              msg_type: "interactive",
+              card: {
+                header: {
+                  template: $color,
+                  title: { tag: "plain_text", content: ("Skill Hub 部署" + $status) }
+                },
+                elements: [
+                  {
+                    tag: "div",
+                    fields: [
+                      { is_short: true, text: { tag: "lark_md", content: ("**触发方式**\\n" + $trigger) } },
+                      { is_short: true, text: { tag: "lark_md", content: ("**部署来源**\\n" + $source) } },
+                      { is_short: false, text: { tag: "lark_md", content: ("**提交**\\n`" + $sha + "`") } },
+                      { is_short: false, text: { tag: "lark_md", content: ("**检查结果**\\n解析：" + $resolve + " · 构建：" + $build + " · 部署：" + $deploy) } }
+                    ]
+                  },
+                  {
+                    tag: "action",
+                    actions: [
+                      { tag: "button", text: { tag: "plain_text", content: "查看部署日志" }, type: "primary", url: $runUrl }
+                    ]
+                  }
+                ]
+              }
+            }')
+
+          curl --fail-with-body --request POST "$WEBHOOK" \
+            --header "Content-Type: application/json" \
+            --data "$PAYLOAD"
