@@ -1036,6 +1036,8 @@ function SkillsPanel({ onCreateSkill, onEditSkill, onLearnFromHistory, skillsVer
   };
 
   // 扫描 GitHub 仓库
+  const [showTokenHelp, setShowTokenHelp] = useState(false);
+  const [repoView, setRepoView] = useState(false);  // 子视图：仓库浏览
   const [repoUrl, setRepoUrl] = useState("");
   const [scanning, setScanning] = useState(false);
   const [scanResult, setScanResult] = useState<{ repo?: any; candidates?: any[]; message?: string } | null>(null);
@@ -1048,21 +1050,66 @@ function SkillsPanel({ onCreateSkill, onEditSkill, onLearnFromHistory, skillsVer
     setScanResult(null);
     setSelectedSkillIds(new Set());
     try {
-      const r = await fetch("/api/skills/scan-repo", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ repoUrl: repoUrl.trim() }) });
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 90000);
+      const r = await fetch("/api/skills/scan-repo", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ repoUrl: repoUrl.trim() }), signal: ctrl.signal });
+      clearTimeout(timer);
       const d = await r.json().catch(() => ({} as any));
       if (!r.ok) throw new Error(d.error || `HTTP ${r.status}`);
-      setScanResult(d);
+      // 需要摘要的先把描述改成"读取中…"
+      const needSummary = (d.candidates || []).filter((c: any) => c.pendingSummary);
+      const displayData = needSummary.length > 0
+        ? { ...d, candidates: d.candidates.map((c: any) => c.pendingSummary ? { ...c, description: "读取中…" } : c) }
+        : d;
+      setScanResult(displayData);
       // 默认全选
       if (d.candidates?.length > 0) setSelectedSkillIds(new Set(d.candidates.map((c: any) => c.id)));
+      // 异步生成中文简介
+      if (needSummary.length > 0) summarizeCandidates(d);
     } catch (err: any) { toast(`扫描失败: ${err.message}`, "error"); }
     setScanning(false);
+  };
+
+  const [deepSummarizing, setDeepSummarizing] = useState(false);
+
+  const summarizeCandidates = async (scanData: any, mode: "fast" | "deep" = "fast") => {
+    const items = (scanData.candidates || []).filter((c: any) => mode === "deep" ? true : c.pendingSummary);
+    if (items.length === 0) return;
+    if (mode === "deep") setDeepSummarizing(true);
+    try {
+      const r = await fetch("/api/skills/summarize", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ items, mode }) });
+      const d = await r.json().catch(() => ({} as any));
+      if (d.summaries?.length > 0) {
+        setScanResult((prev: any) => {
+          if (!prev) return prev;
+          const updated = prev.candidates.map((c: any) => {
+            const s = d.summaries.find((s: any) => s.id === c.id);
+            return s ? { ...c, description: s.summary, welcomeMessage: s.welcomeMessage, pendingSummary: false } : c;
+          });
+          return { ...prev, candidates: updated };
+        });
+      }
+    } catch { /* ignore */ }
+    if (mode === "deep") setDeepSummarizing(false);
   };
 
   const doBatchImport = async () => {
     if (selectedSkillIds.size === 0 || !scanResult?.repo?.url) return;
     setBatchImporting(true);
     try {
-      const r = await fetch("/api/skills/batch-import", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ repoUrl: scanResult.repo.url, skillIds: [...selectedSkillIds] }) });
+      const pathMap: Record<string, string> = {};
+      for (const c of (scanResult.candidates || [])) { if (selectedSkillIds.has(c.id)) pathMap[c.id] = c.path; }
+      if (scanResult.oversized) {
+        for (const f of scanResult.oversized) { if (selectedSkillIds.has(f.id)) pathMap[f.id] = f.path; }
+      }
+      const descMap: Record<string, string> = {};
+      const welcomeMap: Record<string, string> = {};
+      for (const c of (scanResult.candidates || [])) {
+        if (!selectedSkillIds.has(c.id)) continue;
+        if (c.description && c.description !== "读取中…") descMap[c.id] = c.description;
+        if (c.welcomeMessage) welcomeMap[c.id] = c.welcomeMessage;
+      }
+      const r = await fetch("/api/skills/batch-import", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ repoUrl: scanResult.repo.url, skillIds: [...selectedSkillIds], skillPaths: pathMap, descriptions: descMap, welcomeMessages: welcomeMap }) });
       const d = await r.json().catch(() => ({} as any));
       if (!r.ok) throw new Error(d.error || `HTTP ${r.status}`);
       if (d.installed?.length) toast(`✅ 已安装 ${d.installed.length} 个: ${d.installed.join(", ")}`);
@@ -1070,6 +1117,35 @@ function SkillsPanel({ onCreateSkill, onEditSkill, onLearnFromHistory, skillsVer
       setScanResult(null); setRepoUrl(""); fetchSkills(); fetchHub();
     } catch (err: any) { toast(`安装失败: ${err.message}`, "error"); }
     setBatchImporting(false);
+  };
+
+  const doImportFile = async () => {
+    const api = (window as any).electronAPI;
+    let paths: string[] = [];
+    if (api?.openFileDialog) {
+      paths = await api.openFileDialog();
+    } else {
+      const p = window.prompt("请输入 Skill 文件的完整路径（.json 或 .md）：");
+      if (p?.trim()) paths = [p.trim()];
+    }
+    if (!paths.length) return;
+    const filePath = paths[0];
+    const ext = filePath.toLowerCase();
+    if (!ext.endsWith(".json") && !ext.endsWith(".md") && !ext.endsWith(".markdown")) {
+      toast("仅支持 .json、.md、.markdown 格式", "error");
+      return;
+    }
+    try {
+      const r = await fetch("/api/skills/import-file", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path: filePath }),
+      });
+      const d = await r.json().catch(() => ({} as any));
+      if (!r.ok) throw new Error(d.error || `HTTP ${r.status}`);
+      toast(`✅ 已导入: ${d.skill.name}`);
+      if (d.warnings?.length) toast(`⚠️ ${d.warnings.join("; ")}`, "error");
+      fetchSkills();
+    } catch (err: any) { toast(`导入失败: ${err.message}`, "error"); }
   };
 
   // 在线 Hub
@@ -1183,10 +1259,109 @@ function SkillsPanel({ onCreateSkill, onEditSkill, onLearnFromHistory, skillsVer
 
   return (
     <div className="skills-panel">
+      {repoView ? (
+        <>
+          <header className="header">
+            <button className="scan-back-btn" onClick={() => { setRepoView(false); setScanResult(null); }}>← 返回 Skill 库</button>
+            <h1>📦 浏览仓库</h1>
+          </header>
+          <main className="repo-browser">
+            <div className="repo-input-row">
+              <input className="repo-url-input" type="url" placeholder="GitHub 仓库地址，如 https://github.com/user/repo" value={repoUrl}
+                onChange={e => setRepoUrl(e.target.value)}
+                onKeyDown={e => { if (e.key === "Enter") doScanRepo(); }} />
+              <button className="repo-scan-btn" disabled={scanning || !repoUrl.trim()} onClick={doScanRepo}>
+                {scanning ? "扫描中…" : "🔍 扫描"}
+              </button>
+            </div>
+            {scanResult?.candidates && scanResult.candidates.length > 0 && (
+              <div className="repo-results">
+                <div className="repo-results-header">
+                  <strong>{scanResult.repo?.collectionName || scanResult.repo?.name}</strong>
+                  <span>{scanResult.candidates.length} 个 Skill</span>
+                </div>
+                {scanResult.candidates.map((c: any) => (
+                  <label key={c.id} className="repo-result-item">
+                    <input type="checkbox" checked={selectedSkillIds.has(c.id)}
+                      onChange={() => { const next = new Set(selectedSkillIds); next.has(c.id) ? next.delete(c.id) : next.add(c.id); setSelectedSkillIds(next); }} />
+                    <div>
+                      <strong>{c.name}</strong>
+                      <code>{c.id}</code>
+                      <span className="hub-scan-format">{c.format === "markdown" ? "📝 .md" : "📄 .json"}</span>
+                      {c.description && <p>{c.description}</p>}
+                    </div>
+                  </label>
+                ))}
+                <div className="repo-actions">
+                  <button className="repo-install-btn" disabled={batchImporting || selectedSkillIds.size === 0} onClick={doBatchImport}>
+                    {batchImporting ? "安装中…" : `安装选中 (${selectedSkillIds.size})`}
+                  </button>
+                  <button className="repo-deep-btn" disabled={deepSummarizing} onClick={() => summarizeCandidates(scanResult, "deep")}>
+                    {deepSummarizing ? "深度思考中…" : "🧠 深度读取"}
+                  </button>
+                </div>
+              </div>
+            )}
+            {/* 超大文件 */}
+            {scanResult?.oversized && scanResult.oversized.length > 0 && (
+              <div className="repo-oversized">
+                <div className="repo-oversized-header">⚠️ {scanResult.oversized.length} 个文件过大（&gt;100KB），可能是非 Skill 文档：</div>
+                {scanResult.oversized.map((f: any) => (
+                  <div key={f.id} className="repo-result-item">
+                    <div>
+                      <strong>{f.name}</strong>
+                      <code>{f.path}</code>
+                      <span className="repo-oversized-size">{(f.size / 1024).toFixed(0)} KB</span>
+                    </div>
+                    <button className="repo-confirm-btn"
+                      disabled={selectedSkillIds.has(f.id) || batchImporting}
+                      onClick={() => { setSelectedSkillIds(prev => new Set([...prev, f.id])); }}>
+                      {selectedSkillIds.has(f.id) ? "已加入" : "确认扫描"}
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+            {scanResult?.rateLimited && (
+              <div className="repo-error">
+                <p>{scanResult.message || "GitHub API 限流"}</p>
+                <button className="token-help-btn" onClick={() => setShowTokenHelp(true)}>🆓 免费获取 Token（教程）</button>
+              </div>
+            )}
+            {scanResult && !scanResult.candidates?.length && !scanResult.oversized?.length && !scanResult.rateLimited && (
+              <div className="repo-empty">{scanResult.message || "未发现 Skill，请确认仓库地址是否正确"}</div>
+            )}
+          </main>
+          {showTokenHelp && (
+            <div className="modal-overlay" onClick={() => setShowTokenHelp(false)}>
+              <div className="modal" style={{ maxWidth: 480 }} onClick={e => e.stopPropagation()}>
+                <div className="modal-header"><h2>🪙 添加 GitHub Token</h2></div>
+                <div className="modal-body" style={{ lineHeight: 1.8, fontSize: 14 }}>
+                  <p>GitHub 匿名 API 每小时限 60 次，添加免费 Token 后提升至 <strong>5000 次/小时</strong>，完全免费。</p>
+                  <ol style={{ margin: "12px 0", paddingLeft: 20 }}>
+                    <li>打开 <a href="https://github.com/settings/tokens" target="_blank" rel="noopener">github.com/settings/tokens</a></li>
+                    <li>点击 <strong>Generate new token (classic)</strong></li>
+                    <li>勾选 <code>public_repo</code> 权限（只需读公开仓库）</li>
+                    <li>点击生成，复制 Token（格式：<code>ghp_xxxxxxxx</code>）</li>
+                    <li>在 WahtWay 的 <code>client/.env</code> 文件里添加一行：<br/>
+                      <code style={{ background: "#f0f0f0", padding: "4px 8px", borderRadius: 4, display: "inline-block", marginTop: 4 }}>GITHUB_TOKEN=ghp_xxxxxxxx</code>
+                    </li>
+                    <li>重启 WahtWay</li>
+                  </ol>
+                </div>
+                <div className="modal-actions">
+                  <button className="primary" onClick={() => setShowTokenHelp(false)}>知道了</button>
+                </div>
+              </div>
+            </div>
+          )}
+        </>
+      ) : (
+        <>
       <header className="header">
         <h1>Skill 库</h1>
         <span className="subtitle">{tab === "local" ? `${skills.length} 个本地技能` : "在线 Skill Hub"}</span>
-        {tab === "local" && <div className="skill-header-actions"><button className="history-skill-btn" onClick={learnFromHistory} disabled={learning}>{learning ? "归纳中..." : "从历史习惯生成"}</button><button className="create-btn" onClick={onCreateSkill}>+ 创建 Skill</button></div>}
+        {tab === "local" && <div className="skill-header-actions"><button className="import-file-btn" onClick={doImportFile} title="从本地 .json 或 .md 文件导入 Skill">📂 从文件导入</button><button className="history-skill-btn" onClick={learnFromHistory} disabled={learning}>{learning ? "归纳中..." : "从历史习惯生成"}</button><button className="create-btn" onClick={onCreateSkill}>+ 创建 Skill</button></div>}
       </header>
 
       <div className="skills-tabs">
@@ -1271,19 +1446,7 @@ function SkillsPanel({ onCreateSkill, onEditSkill, onLearnFromHistory, skillsVer
             ) : (
               <button className="hub-import-toggle" onClick={() => setShowImportUrl(true)} title="从 GitHub / Gist 等 URL 导入 Skill">🔗 URL 导入</button>
             )}
-            <button className="hub-repo-scan-btn" onClick={() => { setRepoUrl(""); setScanResult(null); setShowImportUrl(false); }} title="扫描 GitHub 仓库，从 skills.json 清单或 JSON 文件批量发现 Skill">
-              📦 扫描仓库
-            </button>
-          </div>
-
-          {/* 扫描仓库 */}
-          <div className="hub-scan-section">
-            <input className="hub-import-input" type="url" placeholder="GitHub 仓库地址，如 https://github.com/user/repo" value={repoUrl}
-              onChange={e => setRepoUrl(e.target.value)}
-              onKeyDown={e => { if (e.key === "Enter") doScanRepo(); }} />
-            <button className="hub-import-btn" disabled={scanning || !repoUrl.trim()} onClick={doScanRepo}>
-              {scanning ? "扫描中…" : "扫描"}
-            </button>
+            <button className="hub-repo-scan-btn" onClick={() => { setRepoView(true); setShowImportUrl(false); }}>📦 扫描仓库</button>
           </div>
 
           {hubError && <div className="hub-error">⚠️ {hubError}<button onClick={() => fetchHub(hubSearch, hubSort)}>重试</button></div>}
@@ -1435,6 +1598,8 @@ function SkillsPanel({ onCreateSkill, onEditSkill, onLearnFromHistory, skillsVer
             </div>
           </div>
         </div>
+      )}
+        </>
       )}
     </div>
   );

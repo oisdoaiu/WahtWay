@@ -39,7 +39,7 @@ const REQUIRED_FIELDS: (keyof Skill)[] = [
  */
 export function loadSkills(): Skill[] {
   if (!fs.existsSync(getSkillsDir())) {
-    console.warn(`⚠️ Skill 目录不存在: ${getSkillsDir()}`);
+    console.warn(`[loader] skills dir not found: ${getSkillsDir()}`);
     return [];
   }
 
@@ -48,7 +48,7 @@ export function loadSkills(): Skill[] {
     .filter((f) => f.endsWith(".json"));
 
   if (files.length === 0) {
-    console.warn("⚠️ 没有找到任何 Skill 文件");
+    console.warn("[loader] no skill files found");
     return [];
   }
 
@@ -77,9 +77,9 @@ export function loadSkills(): Skill[] {
         version: 1,
         origin: BUILTIN_SKILL_IDS.has(baseSkill.id) ? "builtin" : "custom",
       });
-      console.log(`📦 已加载 Skill: ${parsed.name} (${parsed.id})`);
+      console.log(`[loader] loaded: ${parsed.name}`);
     } catch (err: any) {
-      console.error(`❌ 解析 Skill 文件 ${file} 失败: ${err.message}`);
+      console.error(`[loader] failed to parse ${file}: ${err.message}`);
     }
   }
 
@@ -102,7 +102,7 @@ export function deleteSkill(skillId: string): void {
   }
   fs.unlinkSync(filePath);
   deleteSkillLearning(skillId);
-  console.log(`🗑️ 已删除 Skill: ${skillId}`);
+  console.log(`[loader] deleted: ${skillId}`);
   registeredSkills = loadSkills();
 }
 
@@ -133,7 +133,7 @@ export function saveSkill(skill: Skill): void {
   const { version: _version, origin: _origin, ...persistedSkill } = skill;
   fs.writeFileSync(filePath, JSON.stringify(persistedSkill, null, 2), "utf-8");
   resetActiveSkillVersion(skill.id);
-  console.log(`💾 已保存 Skill: ${skill.name} → ${filePath}`);
+  console.log(`[loader] saved: ${skill.name} → ${filePath}`);
 
   // 4. 重载注册表
   registeredSkills = loadSkills();

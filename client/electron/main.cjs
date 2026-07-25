@@ -33,10 +33,10 @@ function loadEnv() {
       const m = line.trim().match(/^([^#=]+)=(.*)$/);
       if (m && !process.env[m[1]]) process.env[m[1]] = m[2].trim();
     }
-    console.log("✅ .env 已加载:", p);
+    console.log("[main] .env loaded:", p);
     return;
   }
-  console.warn("⚠️ 未找到 .env，请配置 API Key");
+  console.warn("[main] WARNING: .env not found, please configure API Key");
 }
 
 function writePortFile(port) {
@@ -138,7 +138,7 @@ app.whenReady().then(async () => {
   if (fs.existsSync(distPath)) {
     try {
       require(distPath);
-      console.log("✅ Express 已启动");
+      console.log("[main] Express started");
     } catch (e) {
       require("electron").dialog.showErrorBox("后端加载失败", e.message + "\n" + (e.stack || ""));
       // fallback: 内置最小 Express
