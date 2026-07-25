@@ -1,9 +1,32 @@
 import { Router, Request, Response } from "express";
+import { timingSafeEqual } from "crypto";
 import { AuthenticatedRequest, requireAuth } from "../auth/middleware";
 import { issueToken } from "../auth/tokens";
 import { AuthError, createUser, verifyCredentials } from "../auth/userStore";
 
 const router = Router();
+const inviteCodes = (process.env.SKILL_HUB_INVITE_CODES || "")
+  .split(",")
+  .map((code) => code.trim())
+  .filter(Boolean);
+
+function requireInviteCode(value: unknown): void {
+  if (inviteCodes.length === 0) {
+    throw new AuthError("服务器尚未配置邀请码", 503);
+  }
+  if (typeof value !== "string" || value.length < 4 || value.length > 128) {
+    throw new AuthError("邀请码无效", 403);
+  }
+
+  const supplied = Buffer.from(value);
+  const isValid = inviteCodes.some((code) => {
+    const configured = Buffer.from(code);
+    return supplied.length === configured.length && timingSafeEqual(supplied, configured);
+  });
+  if (!isValid) {
+    throw new AuthError("邀请码无效", 403);
+  }
+}
 
 function respondAuthError(res: Response, err: unknown): void {
   const statusCode = err instanceof AuthError ? err.statusCode : 500;
@@ -13,6 +36,7 @@ function respondAuthError(res: Response, err: unknown): void {
 
 router.post("/register", (req: Request, res: Response) => {
   try {
+    requireInviteCode(req.body?.inviteCode);
     const user = createUser({
       username: req.body?.username,
       password: req.body?.password,

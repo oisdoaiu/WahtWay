@@ -907,6 +907,9 @@ body {
 }
 
 .skill-header-actions { margin-left: auto; display: flex; gap: 8px; }
+.import-file-btn { padding: 6px 12px; border: 1px solid #e67e22; border-radius: 6px; background: #fff; color: #e67e22; font-size: 13px; cursor: pointer; }
+.import-file-btn:hover { background: #fef5e7; }
+.app.dark .import-file-btn { background: #313244; color: #fab387; border-color: #fab387; }
 .history-skill-btn { padding: 6px 12px; border: 1px solid #1a73e8; border-radius: 6px; background: #fff; color: #1a73e8; font-size: 13px; cursor: pointer; }
 .history-skill-btn:hover:not(:disabled) { background: #f0f7ff; }
 .history-skill-btn:disabled { opacity: 0.6; cursor: wait; }
@@ -1138,6 +1141,40 @@ body {
 .hub-repo-scan-btn { height: 36px; padding: 0 14px; border: 1px dashed #e67e22; border-radius: 8px; background: transparent; color: #e67e22; font-size: 12px; cursor: pointer; white-space: nowrap; }
 .hub-repo-scan-btn:hover { background: #fef5e7; }
 .hub-scan-section { display: flex; gap: 8px; padding: 8px 16px; align-items: center; }
+.scan-back-btn { border: 0; background: transparent; color: #1a73e8; font-size: 14px; cursor: pointer; padding: 0; margin-right: 12px; }
+.scan-back-btn:hover { text-decoration: underline; }
+.repo-browser { flex: 1; overflow-y: auto; padding: 20px 24px; }
+.repo-input-row { display: flex; gap: 10px; margin-bottom: 20px; }
+.repo-url-input { flex: 1; height: 44px; font-size: 15px; border: 1px solid #ddd; border-radius: 10px; padding: 0 16px; outline: none; }
+.repo-url-input:focus { border-color: #1a73e8; }
+.repo-scan-btn { height: 44px; padding: 0 24px; border: 0; border-radius: 10px; background: #1a73e8; color: #fff; font-size: 15px; cursor: pointer; white-space: nowrap; }
+.repo-scan-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.repo-results { border: 1px solid #e0e0e0; border-radius: 12px; background: #fafafa; padding: 16px; }
+.repo-results-header { display: flex; justify-content: space-between; padding-bottom: 12px; margin-bottom: 12px; border-bottom: 1px solid #eee; }
+.repo-result-item { display: flex; align-items: flex-start; gap: 10px; padding: 10px 0; cursor: pointer; border-bottom: 1px solid #f0f0f0; }
+.repo-result-item:last-child { border-bottom: 0; }
+.repo-result-item input[type="checkbox"] { margin-top: 4px; }
+.repo-result-item div { flex: 1; }
+.repo-result-item strong { font-size: 15px; display: block; }
+.repo-result-item code { font-size: 12px; color: #999; }
+.repo-result-item p { font-size: 13px; color: #666; margin: 4px 0 0; }
+.repo-install-btn { flex: 1; height: 40px; border: 0; border-radius: 10px; background: #1a73e8; color: #fff; font-size: 15px; cursor: pointer; }
+.repo-install-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.repo-actions { display: flex; gap: 10px; margin-top: 14px; }
+.repo-deep-btn { height: 40px; padding: 0 16px; border: 1px solid #6c5ce7; border-radius: 10px; background: #fff; color: #6c5ce7; font-size: 14px; cursor: pointer; white-space: nowrap; }
+.repo-deep-btn:hover:not(:disabled) { background: #f5f3ff; }
+.repo-deep-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.repo-empty { text-align: center; padding: 40px; color: #999; }
+.repo-error { text-align: center; padding: 30px; color: #c62828; background: #fff5f5; border-radius: 10px; margin-top: 16px; }
+.repo-error p { margin-bottom: 14px; font-size: 14px; }
+.token-help-btn { padding: 8px 18px; border: 1px solid #e67e22; border-radius: 8px; background: #fff; color: #e67e22; font-size: 14px; cursor: pointer; }
+.token-help-btn:hover { background: #fef5e7; }
+.repo-oversized { margin-top: 16px; padding: 14px; border: 1px solid #f0c040; border-radius: 10px; background: #fffdf0; }
+.repo-oversized-header { font-size: 13px; color: #996600; margin-bottom: 10px; }
+.repo-oversized-size { font-size: 11px; color: #cc8800; margin-left: 8px; }
+.repo-confirm-btn { height: 32px; padding: 0 14px; border: 1px solid #e67e22; border-radius: 6px; background: #fff; color: #e67e22; font-size: 12px; cursor: pointer; white-space: nowrap; }
+.repo-confirm-btn:hover:not(:disabled) { background: #fef5e7; }
+.repo-confirm-btn:disabled { opacity: 0.6; cursor: not-allowed; }
 .hub-scan-result { margin: 8px 16px; padding: 12px; border: 1px solid #e0e0e0; border-radius: 10px; background: #fafafa; }
 .hub-scan-header { display: flex; justify-content: space-between; align-items: center; padding-bottom: 8px; margin-bottom: 8px; border-bottom: 1px solid #eee; }
 .hub-scan-count { font-size: 12px; color: #999; }

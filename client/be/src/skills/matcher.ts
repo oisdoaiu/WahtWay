@@ -119,12 +119,12 @@ ${context.length > 0 ? JSON.stringify(context) : "无。只根据当前消息判
   const index = Number(parsed.skillIndex);
 
   if (index === -1 || isNaN(index) || index < 0 || index >= skills.length) {
-    console.log(`💬 LLM 匹配: "${userMessage}" → 闲聊模式`);
+    console.log(`[matcher] chat mode: "${userMessage}" `);
     return { skill: null };
   }
 
   const matched = skills[index];
-  console.log(`🤖 LLM 匹配: "${userMessage}" → ${matched.name}`);
+  console.log(`[matcher] skill matched: "${userMessage}" → ${matched.name}`);
   return {
     skill: matched,
     needSnapshot: normalizeNeedSnapshot(parsed.needSnapshot, userMessage),
@@ -140,7 +140,7 @@ export async function matchSkillWithNeed(
   try {
     return await llmMatch(userMessage, skills, history);
   } catch (err) {
-    console.warn(`⚠️ Skill 匹配失败，已降级为普通对话: ${formatLlmError(err)}`);
+    console.warn(`[matcher] match failed, fallback to chat: ${formatLlmError(err)}`);
     return { skill: null };
   }
 }

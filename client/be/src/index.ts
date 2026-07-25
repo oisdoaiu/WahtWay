@@ -73,7 +73,7 @@ app.post("/api/tools/approve", (req, res) => {
   const { path: p } = req.body;
   if (!p) return res.status(400).json({ error: "请提供 path" });
   approvePath(p);
-  console.log(`🔓 已授权路径: ${p}`);
+  console.log(`[api] approved path: ${p}`);
   res.json({ success: true });
 });
 
@@ -89,7 +89,7 @@ app.post("/api/tools/approve-command", async (req, res) => {
   if (!command) { res.status(400).json({ error: "请提供 command" }); return; }
   try {
     const result = await approveAndExecute(command, cwd || require("os").homedir());
-    console.log(`💻 已执行命令: ${command}`);
+    console.log(`[api] executed command: ${command}`);
     res.json({ success: true, result });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
@@ -175,7 +175,7 @@ app.post("/api/setup", (req, res) => {
       balancePath: typeof balancePath === "string" ? balancePath : undefined,
       modelOptions: Array.isArray(modelOptions) ? modelOptions : undefined,
     });
-    console.log("🔑 AI 配置已保存:", settings.provider, settings.baseURL);
+    console.log("[api] AI config saved:", settings.provider, settings.baseURL);
     res.json({ success: true, settings: getPublicAiSettings() });
   } catch (err: any) {
     res.status(500).json({ error: `保存失败: ${err.message}` });
@@ -191,11 +191,11 @@ if (fs.existsSync(publicDir)) {
 
 function startServer(port: number, maxRetries = 10) {
   const server = app.listen(port, () => {
-    console.log(`🚀 WahtWay running on http://localhost:${port}`);
+    console.log(`[server] WahtWay running on http://localhost:${port}`);
     // V0.21 无感压缩配置
     const compact = (process.env.COMPACT_ENABLED ?? "true").toLowerCase() !== "false";
     const compactMode = (process.env.COMPACT_MODE || "rolling").toLowerCase();
-    console.log(`🗜️  上下文压缩: ${compact ? "开启" : "关闭"} (MODE=${compactMode}, RECENT_TURNS=${process.env.COMPACT_RECENT_TURNS || 6}, SUMMARY_EVERY=${process.env.COMPACT_SUMMARY_EVERY || 6})`);
+    console.log(`[server] context compaction: ${compact ? "ON" : "OFF"} (MODE=${compactMode}, RECENT_TURNS=${process.env.COMPACT_RECENT_TURNS || 6}, SUMMARY_EVERY=${process.env.COMPACT_SUMMARY_EVERY || 6})`);
     // 写入端口文件供 Electron 读取
     try {
       const pkgDir = path.resolve(__dirname, "..");
@@ -207,7 +207,7 @@ function startServer(port: number, maxRetries = 10) {
       console.log(`端口 ${port} 被占用，尝试 ${port + 1}…`);
       startServer(port + 1, maxRetries - 1);
     } else {
-      console.error("启动失败:", err.message);
+      console.error("startup failed:", err.message);
     }
   });
 }

@@ -6,7 +6,7 @@ const tools: Map<string, ToolDef> = new Map();
 
 export function registerTool(tool: ToolDef): void {
   tools.set(tool.name, tool);
-  console.log(`🔧 Tool 已注册: ${tool.name}`);
+  console.log(`[registry] registered: ${tool.name}`);
 }
 
 export function unregisterTool(name: string): void {

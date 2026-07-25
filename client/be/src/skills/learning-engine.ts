@@ -73,7 +73,7 @@ function optimizerModel(): string {
 
 function enqueue(task: () => Promise<void>): void {
   taskQueue = taskQueue.then(task).catch((error) => {
-    console.warn("Skill 学习任务失败:", error instanceof Error ? error.message : error);
+    console.warn("[learn] task failed:", error instanceof Error ? error.message : error);
   });
 }
 
