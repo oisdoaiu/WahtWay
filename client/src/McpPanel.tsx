@@ -69,6 +69,57 @@ interface McpServer {
   };
 }
 
+type DependencyStatus = "healthy" | "degraded" | "unavailable";
+
+interface McpSkillBinding {
+  serverId: string;
+  toolName: string;
+  registeredName: string;
+}
+
+interface SkillDependencyIssue {
+  code: string;
+  severity: "warning" | "blocking";
+  message: string;
+  serverId?: string;
+  toolName?: string;
+  registeredName?: string;
+  suggestedRegisteredName?: string;
+  serverState?: RuntimeState;
+}
+
+interface ResolvedSkillBinding extends McpSkillBinding {
+  serverName?: string;
+  currentRegisteredName?: string;
+  serverState?: RuntimeState;
+  permission?: ToolPermission;
+  status: "healthy" | "unavailable";
+  issueCodes: string[];
+}
+
+interface SkillDependencyHealth {
+  status: DependencyStatus;
+  runnable: boolean;
+  checkedAt: string;
+  issues: SkillDependencyIssue[];
+  bindings: ResolvedSkillBinding[];
+}
+
+interface McpBoundSkill {
+  id: string;
+  name: string;
+  mcpBindings: McpSkillBinding[];
+  dependencyHealth: SkillDependencyHealth;
+}
+
+interface SkillBindingView {
+  skillId: string;
+  skillName: string;
+  binding: McpSkillBinding;
+  resolvedBinding?: ResolvedSkillBinding;
+  health: SkillDependencyHealth;
+}
+
 interface EditorState {
   id: string;
   name: string;
@@ -105,6 +156,19 @@ const STATE_LABELS: Record<RuntimeState, string> = {
   error: "异常",
 };
 
+const DEPENDENCY_LABELS: Record<DependencyStatus, string> = {
+  healthy: "健康",
+  degraded: "受影响",
+  unavailable: "不可用",
+};
+
+const bindingKey = (serverId: string, toolName: string) => `${serverId}:${toolName}`;
+
+const bindingIssues = (view: SkillBindingView) => view.health.issues.filter((issue) =>
+  issue.serverId === view.binding.serverId
+  && (!issue.toolName || issue.toolName === view.binding.toolName),
+);
+
 export function McpPanel({ onNotify }: { onNotify: (message: string, type?: "info" | "error") => void }) {
   const [servers, setServers] = useState<McpServer[]>([]);
   const [editing, setEditing] = useState<EditorState | null>(null);
@@ -112,7 +176,7 @@ export function McpPanel({ onNotify }: { onNotify: (message: string, type?: "inf
   const [busyId, setBusyId] = useState("");
   const [secretName, setSecretName] = useState("");
   const [secretValue, setSecretValue] = useState("");
-  const [skillBindings, setSkillBindings] = useState(new Map<string, { id: string; name: string }>());
+  const [skillBindings, setSkillBindings] = useState(new Map<string, SkillBindingView[]>());
   const [auditView, setAuditView] = useState<{ server: McpServer; events: ToolAuditEvent[]; loading: boolean } | null>(null);
   const toolRevisions = useRef(new Map<string, number>());
 
@@ -131,9 +195,23 @@ export function McpPanel({ onNotify }: { onNotify: (message: string, type?: "inf
     setServers(nextServers);
     if (skillsResponse.ok) {
       const skillsData = await skillsResponse.json();
-      const bindings = new Map<string, { id: string; name: string }>();
-      for (const skill of skillsData.skills || []) {
-        for (const binding of skill.mcpBindings || []) bindings.set(binding.registeredName, { id: skill.id, name: skill.name });
+      const bindings = new Map<string, SkillBindingView[]>();
+      for (const skill of (skillsData.skills || []) as McpBoundSkill[]) {
+        if (!skill.dependencyHealth) continue;
+        for (const binding of skill.mcpBindings || []) {
+          const key = bindingKey(binding.serverId, binding.toolName);
+          const views = bindings.get(key) || [];
+          views.push({
+            skillId: skill.id,
+            skillName: skill.name,
+            binding,
+            resolvedBinding: skill.dependencyHealth.bindings.find((candidate) =>
+              candidate.serverId === binding.serverId && candidate.toolName === binding.toolName,
+            ),
+            health: skill.dependencyHealth,
+          });
+          bindings.set(key, views);
+        }
       }
       setSkillBindings(bindings);
     }
@@ -317,6 +395,32 @@ export function McpPanel({ onNotify }: { onNotify: (message: string, type?: "inf
   };
 
   const editingServer = originalId ? servers.find((server) => server.id === originalId) : undefined;
+  const allSkillBindings = Array.from(skillBindings.values()).flat();
+  const serverIds = new Set(servers.map((server) => server.id));
+  const orphanedBindings = allSkillBindings.filter((view) => !serverIds.has(view.binding.serverId));
+
+  const bindingsForServer = (serverId: string) => allSkillBindings.filter((view) => view.binding.serverId === serverId);
+  const bindingsForTool = (serverId: string, toolName: string) => skillBindings.get(bindingKey(serverId, toolName)) || [];
+
+  const renderBoundSkills = (bindings: SkillBindingView[]) => (
+    <div className="mcp-bound-skill-list">
+      {bindings.map((view) => {
+        const issues = bindingIssues(view);
+        return (
+          <div
+            className={`mcp-bound-skill dependency-${view.health.status}`}
+            key={`${view.skillId}:${view.binding.serverId}:${view.binding.toolName}`}
+          >
+            <span className="mcp-bound-skill-name">{view.skillName}</span>
+            <span className={`mcp-dependency-badge status-${view.health.status}`}>
+              {DEPENDENCY_LABELS[view.health.status]}
+            </span>
+            {issues.length > 0 && <span className="mcp-bound-skill-issue">{issues.map((issue) => issue.message).join("；")}</span>}
+          </div>
+        );
+      })}
+    </div>
+  );
 
   return (
     <section className="mcp-panel">
@@ -326,9 +430,42 @@ export function McpPanel({ onNotify }: { onNotify: (message: string, type?: "inf
         <button className="create-btn" onClick={() => openEditor()}>添加 Server</button>
       </header>
 
+      {orphanedBindings.length > 0 && (
+        <section className="mcp-orphaned-bindings" aria-label="失效的 MCP Skill 绑定">
+          <div className="mcp-orphaned-bindings-heading">
+            <strong>失效的 Skill 绑定</strong>
+            <span>{orphanedBindings.length} 个绑定对应的 MCP Server 已不存在</span>
+          </div>
+          <div className="mcp-orphaned-binding-list">
+            {orphanedBindings.map((view) => {
+              const issues = bindingIssues(view);
+              const messages = issues.length > 0
+                ? issues.map((issue) => issue.message)
+                : [`找不到 MCP Server ${view.binding.serverId}`];
+              return (
+                <div className="mcp-orphaned-binding" key={`${view.skillId}:${view.binding.serverId}:${view.binding.toolName}`}>
+                  <div className="mcp-orphaned-binding-title">
+                    <strong>{view.skillName}</strong>
+                    <code>{view.binding.serverId}:{view.binding.toolName}</code>
+                    <span className="mcp-dependency-badge status-unavailable">不可用</span>
+                  </div>
+                  {messages.map((message, index) => <p className="mcp-orphaned-binding-issue" key={index}>{message}</p>)}
+                  <p className="mcp-rebind-hint">请编辑或重新创建该 Skill，将工具绑定到现有 MCP Server。</p>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      )}
+
       <div className="mcp-server-list">
         {servers.length === 0 && <div className="mcp-empty">还没有配置 MCP Server</div>}
-        {servers.map((server) => (
+        {servers.map((server) => {
+          const serverBindings = bindingsForServer(server.id);
+          const affectedBindings = serverBindings.filter((view) => !view.health.runnable);
+          const linkedSkillCount = new Set(serverBindings.map((view) => view.skillId)).size;
+          const affectedSkillCount = new Set(affectedBindings.map((view) => view.skillId)).size;
+          return (
           <div key={server.id} className={`mcp-server-row state-${server.status.state}`}>
             <span className="mcp-state-dot" title={STATE_LABELS[server.status.state]} />
             <div className="mcp-server-info">
@@ -349,9 +486,24 @@ export function McpPanel({ onNotify }: { onNotify: (message: string, type?: "inf
               </div>
               {server.status.lastError && <div className="mcp-error">{server.status.lastError}</div>}
               {server.status.lastToolListError && <div className="mcp-error">工具列表刷新失败：{server.status.lastToolListError}</div>}
+              {serverBindings.length > 0 && (
+                <div className={`mcp-server-skill-health ${affectedSkillCount > 0 ? "has-unavailable-skills" : "all-skills-healthy"}`}>
+                  <strong>关联 Skill：{linkedSkillCount}</strong>
+                  <span>工具绑定：{serverBindings.length}</span>
+                  {affectedSkillCount > 0
+                    ? <span className="mcp-server-affected-skills">受影响 Skill：{affectedSkillCount}</span>
+                    : <span className="mcp-server-healthy-skills">全部可用</span>}
+                  {server.status.tools.length === 0 && (
+                    <span className="mcp-server-binding-note">当前未发现工具，关联 Skill 状态仍按保存的绑定检查。</span>
+                  )}
+                  {affectedBindings.length > 0 && renderBoundSkills(affectedBindings)}
+                </div>
+              )}
               {server.status.tools.length > 0 && (
                 <div className="mcp-tool-list">
-                  {server.status.tools.map((tool) => <div key={tool.registeredName} className={`mcp-tool-permission permission-${tool.permission}`} title={tool.description}>
+                  {server.status.tools.map((tool) => {
+                    const linkedSkills = bindingsForTool(server.id, tool.name);
+                    return <div key={tool.registeredName} className={`mcp-tool-permission permission-${tool.permission}`} title={tool.description}>
                     <span>{tool.registeredName}</span><span className={`mcp-risk risk-${tool.risk}`}>{tool.risk}</span>
                     <select value={tool.overridden ? tool.permission : "inherit"} disabled={busyId === server.id} onChange={(event) => updateToolPermission(server.id, tool.name, event.target.value)}>
                       <option value="inherit">继承默认（{server.defaultToolPermission}）</option>
@@ -361,11 +513,11 @@ export function McpPanel({ onNotify }: { onNotify: (message: string, type?: "inf
                       <option value="inherit">风险：保守推断</option><option value="read">只读</option><option value="write">写入</option><option value="destructive">危险</option>
                     </select>
                     <label className="mcp-idempotent"><input type="checkbox" checked={tool.safetyOverride?.idempotent === true} disabled={busyId === server.id || !tool.safetyOverride?.risk} onChange={(event) => updateToolSafety(server.id, tool, tool.safetyOverride?.risk || "write", event.target.checked)} />幂等</label>
-                    {skillBindings.has(tool.registeredName)
-                      ? <span className="mcp-skill-linked">已关联：{skillBindings.get(tool.registeredName)!.name}</span>
+                    {linkedSkills.length > 0
+                      ? <div className="mcp-tool-linked-skills"><span className="mcp-skill-linked-label">关联 Skill（{linkedSkills.length}）</span>{renderBoundSkills(linkedSkills)}</div>
                       : <button className="mcp-create-skill" disabled={busyId === server.id || tool.permission === "disabled"} onClick={() => createSkillAssistant(server.id, tool.name)}>创建 Skill 助手</button>}
                     <span className="mcp-hints">Server: {tool.annotations.readOnlyHint ? "只读 " : ""}{tool.annotations.destructiveHint ? "危险 " : ""}{tool.annotations.idempotentHint ? "幂等提示 " : ""}{tool.annotations.openWorldHint ? "外部访问" : ""}</span>
-                  </div>)}
+                  </div>})}
                 </div>
               )}
             </div>
@@ -383,7 +535,7 @@ export function McpPanel({ onNotify }: { onNotify: (message: string, type?: "inf
               }}>删除</button>
             </div>
           </div>
-        ))}
+        )})}
       </div>
 
       {auditView && (

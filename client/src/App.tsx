@@ -133,6 +133,12 @@ interface SkillMeta {
   modeExamples?: string[];
   version?: number;
   origin?: "builtin" | "custom" | "hub" | "learned";
+  mcpBindings?: Array<{
+    serverId: string;
+    toolName: string;
+    registeredName: string;
+  }>;
+  dependencyHealth?: SkillDependencyHealth;
   learning?: {
     autoImprove: boolean;
     activeVersion: number;
@@ -143,6 +149,29 @@ interface SkillMeta {
     lastImprovedAt?: string;
     lastInsight?: string;
   };
+}
+
+interface SkillDependencyIssue {
+  code: string;
+  severity: "warning" | "blocking";
+  message: string;
+  serverId?: string;
+  toolName?: string;
+  registeredName?: string;
+  suggestedRegisteredName?: string;
+}
+
+interface SkillDependencyHealth {
+  status: "healthy" | "degraded" | "unavailable";
+  runnable: boolean;
+  checkedAt: string;
+  issues: SkillDependencyIssue[];
+}
+
+function dependencyStatusLabel(health?: SkillDependencyHealth): string {
+  if (health?.status === "unavailable") return "依赖不可用";
+  if (health?.status === "degraded") return "部分能力受限";
+  return "依赖正常";
 }
 
 const DEFAULT_MODE_COLOR = "#1a73e8";
@@ -216,7 +245,7 @@ interface ExternalToolConfig {
 
 // ---- 对话面板 ----
 
-function ChatPanel({ conversationId, memoryMode, modeSkillId, onMemoryModeChange, onModeChange, onTitleChange, onCreateSkill, aiSettings, onAiSettingsChange, onOpenAiSettings }: { showModal: boolean; conversationId: string; memoryMode: MemoryMode; modeSkillId: string; onMemoryModeChange: (mode: MemoryMode) => void; onModeChange: (skillId: string) => void; onTitleChange: (title: string) => void; onCreateSkill: (prefill?: string) => void; aiSettings: AiSettingsView | null; onAiSettingsChange: (patch: Partial<AiSettingsView> & { apiKey?: string }) => void; onOpenAiSettings: () => void; }) {
+function ChatPanel({ conversationId, memoryMode, modeSkillId, onMemoryModeChange, onModeChange, onTitleChange, onCreateSkill, onOpenMcp, aiSettings, onAiSettingsChange, onOpenAiSettings }: { showModal: boolean; conversationId: string; memoryMode: MemoryMode; modeSkillId: string; onMemoryModeChange: (mode: MemoryMode) => void; onModeChange: (skillId: string) => void; onTitleChange: (title: string) => void; onCreateSkill: (prefill?: string) => void; onOpenMcp: () => void; aiSettings: AiSettingsView | null; onAiSettingsChange: (patch: Partial<AiSettingsView> & { apiKey?: string }) => void; onOpenAiSettings: () => void; }) {
   const [, setTick] = useState(0);
   const messages = getMessages(conversationId);
   const msg = messages[messages.length - 1];
@@ -250,6 +279,8 @@ function ChatPanel({ conversationId, memoryMode, modeSkillId, onMemoryModeChange
   const skillId = modeSkillId;
   const selectedSkill = allSkills.find(s => s.id === skillId) || null;
   const activeMode = selectedSkill || smartMode;
+  const activeModeUnavailable = selectedSkill?.dependencyHealth?.runnable === false;
+  const activeModeIssue = selectedSkill?.dependencyHealth?.issues.find(issue => issue.severity === "blocking")?.message || "该模式的工具依赖当前不可用";
   const filteredSkills = allSkills.filter(s => skillMatchesQuery(s, skillSearch));
   const groupedSkills = filteredSkills.reduce<Record<string, SkillMeta[]>>((groups, skill) => {
     const category = getModeCategory(skill);
@@ -261,6 +292,12 @@ function ChatPanel({ conversationId, memoryMode, modeSkillId, onMemoryModeChange
     "--mode-color": getModeColor(activeMode),
   } as { [key: string]: string };
   const selectMode = (nextSkillId: string) => {
+    const nextSkill = allSkills.find((skill) => skill.id === nextSkillId);
+    if (nextSkill?.dependencyHealth?.runnable === false) {
+      const issue = nextSkill.dependencyHealth.issues.find((item) => item.severity === "blocking");
+      toast(issue?.message || "该 Skill 的依赖当前不可用", "error");
+      return;
+    }
     onModeChange(nextSkillId);
     setSkillName(nextSkillId ? allSkills.find((skill) => skill.id === nextSkillId)?.name || null : null);
     setShowSkillPicker(false);
@@ -268,10 +305,14 @@ function ChatPanel({ conversationId, memoryMode, modeSkillId, onMemoryModeChange
   };
 
   // 加载 Skill 列表（下拉用）
-  const loadSkills = () => fetch("/api/skills").then(r => r.json()).then(d => setAllSkills(d.skills || []));
+  const loadSkills = () => fetch("/api/skills").then(r => r.json()).then(d => setAllSkills(d.skills || [])).catch(() => undefined);
 
 
-  useEffect(() => { loadSkills(); }, []);
+  useEffect(() => {
+    loadSkills();
+    const timer = window.setInterval(loadSkills, 5000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   useEffect(() => {
     fetch("/api/memory").then(r => r.json()).then(d => setMemories(d.memories || [])).catch(() => setMemories([]));
@@ -316,6 +357,10 @@ function ChatPanel({ conversationId, memoryMode, modeSkillId, onMemoryModeChange
   const sendMessage = useCallback(async () => {
     const text = input.trim();
     if (!text || streaming) return;
+    if (activeModeUnavailable) {
+      toast(activeModeIssue, "error");
+      return;
+    }
 
     const currentMessages = [...getMessages(conversationId)];
     if (currentMessages.length === 0) onTitleChange(text.slice(0, 15) + (text.length > 15 ? "…" : ""));
@@ -474,7 +519,7 @@ function ChatPanel({ conversationId, memoryMode, modeSkillId, onMemoryModeChange
       abortRef.current = null;
       setStreaming(conversationId, false);
     }
-  }, [input, streaming, conversationId, onTitleChange, attachedFiles, model, skillId, workspace, memoryMode, selectedMemoryIds]);
+  }, [input, streaming, activeModeUnavailable, activeModeIssue, conversationId, onTitleChange, attachedFiles, model, skillId, workspace, memoryMode, selectedMemoryIds]);
 
   const continueApproval = async (runId: string, action: "approve" | "reject") => {
     setPermBusy(true);
@@ -761,7 +806,7 @@ function ChatPanel({ conversationId, memoryMode, modeSkillId, onMemoryModeChange
         onDrop={handleDrop}>
         {dragOver && <div className="drop-hint">📂 松开以填入文件路径</div>}
         <div className="input-toolbar">
-          <div className="mode-selector" style={activeModeStyle} onClick={() => { setShowSkillPicker(!showSkillPicker); loadSkills(); }}>
+          <div className={`mode-selector ${activeModeUnavailable ? "has-warning" : ""}`} style={activeModeStyle} title={activeModeUnavailable ? activeModeIssue : undefined} onClick={() => { setShowSkillPicker(!showSkillPicker); loadSkills(); }}>
             <span className="mode-dot">{getModeIcon(activeMode)}</span>
             <span className="mode-badge">{activeMode.name}</span>
             <span className="mode-arrow">{showSkillPicker ? "▴" : "▾"}</span>
@@ -819,12 +864,18 @@ function ChatPanel({ conversationId, memoryMode, modeSkillId, onMemoryModeChange
                   <div key={category} className="mode-group">
                     <div className="mode-group-title">{category}</div>
                     {skills.map(s => (
-                      <div key={s.id} className={`skill-picker-item mode-item ${skillId === s.id ? "active" : ""}`} style={{ "--mode-color": getModeColor(s) } as { [key: string]: string }}
+                      <div key={s.id} className={`skill-picker-item mode-item ${skillId === s.id ? "active" : ""} ${s.dependencyHealth?.runnable === false ? "is-unavailable" : ""}`} style={{ "--mode-color": getModeColor(s) } as { [key: string]: string }}
+                        aria-disabled={s.dependencyHealth?.runnable === false}
                         onClick={() => selectMode(s.id)}>
                         <span className="mode-item-icon">{getModeIcon(s)}</span>
                         <span className="mode-item-copy">
                           <strong>{s.name}</strong>
                           <span className="skill-picker-desc">{s.welcomeMessage || s.description}</span>
+                          {s.dependencyHealth && s.dependencyHealth.status !== "healthy" && (
+                            <span className={`mode-item-status status-${s.dependencyHealth?.status || "unavailable"}`}>
+                              {dependencyStatusLabel(s.dependencyHealth)} · {s.dependencyHealth?.issues[0]?.message}
+                            </span>
+                          )}
                         </span>
                       </div>
                     ))}
@@ -847,11 +898,18 @@ function ChatPanel({ conversationId, memoryMode, modeSkillId, onMemoryModeChange
             ))}
           </div>
         )}
+        {activeModeUnavailable && (
+          <div className="active-mode-warning" role="status">
+            <span><strong>{activeMode.name}</strong>：{activeModeIssue}</span>
+            <button onClick={() => selectMode("")}>切换智能模式</button>
+            <button onClick={onOpenMcp}>打开 MCP</button>
+          </div>
+        )}
         <div className="input-row">
           <textarea id="chat-input" value={input} onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown} placeholder="输入你的问题…（Enter 发送，Shift+Enter 换行）"
             rows={2} disabled={streaming} />
-          <button onClick={sendMessage} disabled={streaming || (!input.trim() && attachedFiles.length === 0)}>发送</button>
+          <button onClick={sendMessage} disabled={streaming || activeModeUnavailable || (!input.trim() && attachedFiles.length === 0)}>发送</button>
           {streaming && <button className="stop-btn" onClick={stopStreaming}>⏹</button>}
         </div>
       </footer>
@@ -950,7 +1008,7 @@ function ChatPanel({ conversationId, memoryMode, modeSkillId, onMemoryModeChange
 
 // ---- Skill 库面板 ----
 
-function SkillsPanel({ onCreateSkill, onEditSkill, onLearnFromHistory, skillsVersion }: { onCreateSkill: () => void; onEditSkill: (skill: SkillMeta) => void; onLearnFromHistory: (skill: SkillMeta) => void; skillsVersion: number }) {
+function SkillsPanel({ onCreateSkill, onEditSkill, onLearnFromHistory, onOpenMcp, skillsVersion }: { onCreateSkill: () => void; onEditSkill: (skill: SkillMeta) => void; onLearnFromHistory?: (skill: SkillMeta) => void; onOpenMcp: () => void; skillsVersion: number }) {
   const [skills, setSkills] = useState<SkillMeta[]>([]);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<"local" | "hub">("local");
@@ -1158,7 +1216,7 @@ function SkillsPanel({ onCreateSkill, onEditSkill, onLearnFromHistory, skillsVer
       const data = await res.json();
       if (!res.ok || !data.skill) throw new Error(data.error || "未找到可复用的常用操作");
       toast(data.reason || `已分析 ${data.sampleCount} 条历史操作`);
-      onLearnFromHistory(data.skill);
+      onLearnFromHistory?.(data.skill);
     } catch (err: any) {
       toast(err.message || "归纳失败", "error");
     } finally {
@@ -1198,15 +1256,26 @@ function SkillsPanel({ onCreateSkill, onEditSkill, onLearnFromHistory, skillsVer
         <main className="skills-list">
           {loading && <div className="skills-loading">加载中...</div>}
           {!loading && skills.map(skill => (
-            <div key={skill.id} className="skill-card">
+            <div key={skill.id} className={`skill-card dependency-${skill.dependencyHealth?.status || "healthy"}`}>
               <div className="skill-card-header">
                 <h3>🧠 {skill.name}</h3>
                 <code>{skill.id}</code>
                 <span className="skill-version-badge">v{skill.learning?.activeVersion || skill.version || 1}</span>
+                {(skill.requiredTools.length > 0 || (skill.mcpBindings?.length || 0) > 0 || (skill.dependencyHealth && skill.dependencyHealth.status !== "healthy")) && (
+                  <span className={`skill-health-badge status-${skill.dependencyHealth?.status || "healthy"}`} title={skill.dependencyHealth?.issues.map(issue => issue.message).join("\n")}>
+                    {dependencyStatusLabel(skill.dependencyHealth)}
+                  </span>
+                )}
                 <button className="skill-edit-btn" title="编辑 Skill" onClick={() => onEditSkill(skill)}>✏️</button>
                 <button className="skill-delete-btn skill-delete-text" title="删除 Skill" onClick={(e) => { e.stopPropagation(); setDeleteConfirm(skill.id); }}>×</button>
               </div>
               <p className="skill-card-desc">{skill.description}</p>
+              {skill.dependencyHealth && skill.dependencyHealth.status !== "healthy" && (
+                <div className={`skill-dependency-message status-${skill.dependencyHealth.status}`}>
+                  <span>{skill.dependencyHealth.issues[0]?.message || "Skill 依赖状态异常"}</span>
+                  {skill.dependencyHealth.issues.some(issue => issue.code.startsWith("mcp_")) && <button onClick={onOpenMcp}>查看 MCP</button>}
+                </div>
+              )}
               {skill.learning && (
                 <div className="skill-learning">
                   <div className="skill-learning-row">
@@ -2082,9 +2151,9 @@ export default function App() {
       </nav>
       <div className="main-content">
         {view === "chat" ? (
-          conversationId ? <ChatPanel showModal={showModal} conversationId={conversationId} memoryMode={activeConversation?.memoryMode || "off"} modeSkillId={activeConversation?.modeSkillId || ""} onMemoryModeChange={handleMemoryModeChange} onModeChange={handleModeChange} onTitleChange={handleTitleChange} onCreateSkill={(prefill) => { setPrefillSkillDesc(prefill || ""); setShowModal(true); }} aiSettings={aiSettings} onAiSettingsChange={(patch) => { void saveAiSettings(patch).catch((error: any) => toast(error.message || "保存 AI 配置失败", "error")); }} onOpenAiSettings={() => setShowAiSettings(true)} /> : <div className="welcome"><h2>🤔 Waht?</h2></div>
+          conversationId ? <ChatPanel showModal={showModal} conversationId={conversationId} memoryMode={activeConversation?.memoryMode || "off"} modeSkillId={activeConversation?.modeSkillId || ""} onMemoryModeChange={handleMemoryModeChange} onModeChange={handleModeChange} onTitleChange={handleTitleChange} onCreateSkill={(prefill) => { setPrefillSkillDesc(prefill || ""); setShowModal(true); }} onOpenMcp={() => setView("mcp")} aiSettings={aiSettings} onAiSettingsChange={(patch) => { void saveAiSettings(patch).catch((error: any) => toast(error.message || "保存 AI 配置失败", "error")); }} onOpenAiSettings={() => setShowAiSettings(true)} /> : <div className="welcome"><h2>🤔 Waht?</h2></div>
         ) : view === "skills" ? (
-          <SkillsPanel onCreateSkill={() => setShowModal(true)} onEditSkill={openEditSkill} skillsVersion={skillsVersion} />
+          <SkillsPanel onCreateSkill={() => setShowModal(true)} onEditSkill={openEditSkill} onOpenMcp={() => setView("mcp")} skillsVersion={skillsVersion} />
         ) : view === "memory" ? (
           <MemoryPanel />
         ) : view === "external-tools" ? (
