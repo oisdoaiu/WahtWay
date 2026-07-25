@@ -506,6 +506,9 @@ body {
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.06);
 }
 
+.skill-card.dependency-degraded { border-color: #ead79b; }
+.skill-card.dependency-unavailable { border-color: #e8b4b0; }
+
 .skill-card-header {
   display: flex;
   align-items: center;
@@ -542,6 +545,36 @@ body {
   font-weight: 600;
   flex: none;
 }
+
+.skill-health-badge {
+  flex: none;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.skill-health-badge.status-healthy { background: #e6f4ea; color: #137333; }
+.skill-health-badge.status-degraded { background: #fef7e0; color: #856404; }
+.skill-health-badge.status-unavailable { background: #fce8e6; color: #c62828; }
+
+.skill-dependency-message {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin: -3px 0 12px;
+  padding: 7px 9px;
+  border-left: 3px solid currentColor;
+  background: #fafafa;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.skill-dependency-message.status-degraded { color: #856404; background: #fefbf1; }
+.skill-dependency-message.status-unavailable { color: #b3261e; background: #fef3f2; }
+.skill-dependency-message span { min-width: 0; overflow-wrap: anywhere; }
+.skill-dependency-message button { flex: none; border: 0; background: transparent; color: inherit; cursor: pointer; font-weight: 600; }
 
 .skill-edit-btn,
 .skill-rollback-btn,
@@ -1033,6 +1066,7 @@ body {
 .memory-item-actions button.danger { color: #c62828; }
 .mode-selector { display: inline-flex; align-items: center; gap: 6px; min-height: 32px; padding: 5px 11px; background: color-mix(in srgb, var(--mode-color) 10%, white); border: 1px solid color-mix(in srgb, var(--mode-color) 28%, white); border-radius: 999px; color: var(--mode-color); cursor: pointer; font-size: 12px; user-select: none; }
 .mode-selector:hover { background: color-mix(in srgb, var(--mode-color) 16%, white); }
+.mode-selector.has-warning { border-color: #c62828; color: #b3261e; }
 .mode-dot { display: inline-grid; place-items: center; width: 20px; height: 20px; border-radius: 999px; background: #fff; }
 .mode-badge { font-weight: 700; }
 .mode-arrow { color: #999; font-size: 10px; }
@@ -1054,9 +1088,29 @@ body {
 .mode-item-copy { min-width: 0; display: flex; flex-direction: column; }
 .mode-item-copy strong { font-size: 13px; color: #333; }
 .mode-item.active .mode-item-copy strong { color: var(--mode-color); }
+.mode-item.is-unavailable { cursor: not-allowed; opacity: 0.62; }
+.mode-item.is-unavailable:hover { background: #fafafa; }
+.mode-item-status { margin-top: 4px; font-size: 10px; line-height: 1.35; overflow-wrap: anywhere; }
+.mode-item-status.status-degraded { color: #856404; }
+.mode-item-status.status-unavailable { color: #c62828; }
 .input-row { display: flex; gap: 10px; }
 
 .input-area { flex-direction: column; }
+
+.active-mode-warning {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  border: 1px solid #e8b4b0;
+  border-radius: 6px;
+  background: #fef3f2;
+  color: #8c1d18;
+  font-size: 11px;
+  line-height: 1.4;
+}
+.active-mode-warning span { min-width: 0; margin-right: auto; overflow-wrap: anywhere; }
+.active-mode-warning button { flex: none; border: 1px solid #d7a09c; border-radius: 5px; padding: 4px 7px; background: #fff; color: #8c1d18; cursor: pointer; font-size: 10px; }
 
 .skill-picker-create { color: #1a73e8; cursor: pointer; } .skill-picker-create:hover { text-decoration: underline; }
 
@@ -1499,8 +1553,18 @@ body {
 
 /* === MCP Servers === */
 .mcp-panel { height: 100vh; display: flex; flex-direction: column; }
-.mcp-server-list { flex: 1; overflow-y: auto; padding: 8px 24px 24px; }
+.mcp-server-list { flex: 1; overflow-x: hidden; overflow-y: auto; padding: 8px 24px 24px; }
 .mcp-empty { padding: 70px 0; color: #999; text-align: center; }
+.mcp-orphaned-bindings { padding: 10px 24px; border-bottom: 1px solid #e8b4b0; background: #fef3f2; color: #8c1d18; }
+.mcp-orphaned-bindings-heading { display: flex; align-items: baseline; gap: 10px; margin-bottom: 7px; }
+.mcp-orphaned-bindings-heading strong { font-size: 13px; }
+.mcp-orphaned-bindings-heading span { color: #a34b45; font-size: 11px; }
+.mcp-orphaned-binding-list { display: flex; gap: 12px; overflow-x: auto; }
+.mcp-orphaned-binding { min-width: min(420px, 82vw); padding: 7px 0; border-top: 1px solid #edcfcc; }
+.mcp-orphaned-binding-title { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
+.mcp-orphaned-binding-title code { overflow-wrap: anywhere; color: inherit; font-size: 10px; }
+.mcp-orphaned-binding-issue, .mcp-rebind-hint { margin: 4px 0 0; font-size: 10px; line-height: 1.4; overflow-wrap: anywhere; }
+.mcp-rebind-hint { color: #795350; }
 .mcp-server-row { display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; gap: 12px; align-items: start; padding: 16px 4px; border-bottom: 1px solid #eee; }
 .mcp-state-dot { width: 9px; height: 9px; margin-top: 6px; border-radius: 50%; background: #aaa; }
 .mcp-server-row.state-running .mcp-state-dot { background: #2e7d32; }
@@ -1520,6 +1584,12 @@ body {
 .mcp-runtime-meta { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 7px; color: #777; font-size: 11px; }
 .mcp-runtime-meta .failure { color: #c62828; }
 .mcp-error { margin-top: 8px; color: #c62828; font-size: 11px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.mcp-server-skill-health { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 8px; padding-left: 8px; border-left: 3px solid #2e7d32; color: #52615a; font-size: 10px; }
+.mcp-server-skill-health.has-unavailable-skills { border-left-color: #c62828; color: #8c1d18; }
+.mcp-server-affected-skills { font-weight: 700; color: #c62828; }
+.mcp-server-healthy-skills { color: #137333; }
+.mcp-server-binding-note { flex-basis: 100%; color: #777; }
+.mcp-server-skill-health > .mcp-bound-skill-list { flex-basis: 100%; }
 .mcp-tool-list { display: flex; gap: 5px; flex-wrap: wrap; margin-top: 9px; }
 .mcp-tool-permission { display: inline-flex; align-items: center; gap: 5px; padding: 3px 5px 3px 7px; border: 1px solid #d7e4f5; border-radius: 5px; color: #1a73e8; font-size: 10px; }
 .mcp-tool-permission.permission-disabled { border-color: #ddd; color: #888; background: #f5f5f5; }
@@ -1535,6 +1605,21 @@ body {
 .mcp-create-skill { border: 1px solid #1a73e8; border-radius: 4px; padding: 3px 6px; background: #fff; color: #1a73e8; cursor: pointer; font-size: 9px; }
 .mcp-create-skill:disabled { opacity: 0.45; cursor: not-allowed; }
 .mcp-skill-linked { padding: 2px 5px; border-radius: 4px; background: #e6f4ea; color: #137333; font-size: 9px; }
+.mcp-tool-linked-skills { display: flex; align-items: center; gap: 5px; flex-basis: 100%; min-width: 0; padding-top: 2px; }
+.mcp-skill-linked-label { flex: none; color: #555; font-size: 9px; }
+.mcp-bound-skill-list { display: flex; align-items: center; gap: 4px; min-width: 0; flex-wrap: wrap; }
+.mcp-bound-skill { display: inline-flex; align-items: center; gap: 4px; min-width: 0; padding: 2px 5px; border-radius: 4px; background: #e6f4ea; color: #137333; }
+.mcp-bound-skill.dependency-degraded { background: #fef7e0; color: #856404; }
+.mcp-bound-skill.dependency-unavailable { background: #fce8e6; color: #c62828; }
+.mcp-bound-skill-name, .mcp-bound-skill-issue { max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mcp-bound-skill-issue { color: inherit; opacity: 0.88; }
+.mcp-dependency-badge { flex: none; padding: 1px 4px; border-radius: 3px; background: rgba(255, 255, 255, 0.75); font-size: 8px; font-weight: 700; }
+.mcp-binding-repair-btn, .mcp-orphaned-repair-btn { flex: none; border: 1px solid currentColor; border-radius: 4px; background: transparent; color: inherit; cursor: pointer; font-size: 9px; font-weight: 600; }
+.mcp-binding-repair-btn { padding: 2px 5px; }
+.mcp-orphaned-repair-btn { margin-top: 7px; padding: 5px 8px; }
+.mcp-binding-repair-btn:hover:not(:disabled), .mcp-orphaned-repair-btn:hover:not(:disabled) { background: rgba(255, 255, 255, 0.65); }
+.mcp-binding-repair-btn:disabled, .mcp-orphaned-repair-btn:disabled { opacity: 0.55; cursor: wait; }
+.mcp-bound-skill.repair-target, .mcp-orphaned-binding.repair-target { outline: 2px solid #1a73e8; outline-offset: 2px; }
 .mcp-server-actions { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
 .mcp-server-actions button { padding: 6px 10px; border: 1px solid #ddd; border-radius: 6px; background: #fff; cursor: pointer; }
 .mcp-server-actions button:disabled { opacity: 0.45; cursor: not-allowed; }
@@ -1554,6 +1639,94 @@ body {
 .mcp-audit-detail { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; margin-top: 5px; color: #666; font-size: 11px; }
 .mcp-audit-detail b { width: 30px; }
 .mcp-audit-detail code { padding: 2px 5px; border-radius: 4px; background: #f5f5f5; }
+.mcp-repair-modal { display: flex; flex-direction: column; width: min(900px, calc(100vw - 32px)); max-height: calc(100vh - 40px); overflow: hidden; }
+.mcp-repair-modal .modal-header { flex: none; align-items: flex-start; }
+.mcp-repair-modal .modal-header > div { min-width: 0; }
+.mcp-repair-binding-path { margin: 4px 0 0; color: #777; font-size: 11px; }
+.mcp-repair-binding-path code { overflow-wrap: anywhere; color: #555; }
+.mcp-repair-body { flex: 1; min-height: 240px; overflow-y: auto; padding: 4px 24px 20px; }
+.mcp-repair-error { margin: 8px 0 12px; padding: 9px 11px; border-left: 3px solid #c62828; background: #fce8e6; color: #8c1d18; font-size: 12px; line-height: 1.45; }
+.mcp-repair-empty { display: flex; min-height: 80px; align-items: center; justify-content: center; gap: 10px; color: #777; font-size: 12px; text-align: center; }
+.mcp-repair-empty button { border: 1px solid #bbb; border-radius: 5px; padding: 5px 8px; background: #fff; color: #555; cursor: pointer; }
+.mcp-repair-step { padding: 14px 0 18px; border-bottom: 1px solid #eee; }
+.mcp-repair-step-heading { display: flex; align-items: flex-start; gap: 10px; }
+.mcp-repair-step-heading.compact { align-items: center; }
+.mcp-repair-step-number { display: inline-flex; width: 22px; height: 22px; flex: none; align-items: center; justify-content: center; border-radius: 50%; background: #1a73e8; color: #fff; font-size: 11px; font-weight: 700; }
+.mcp-repair-step-heading h3, .mcp-repair-history h3 { margin: 1px 0 3px; color: #333; font-size: 14px; letter-spacing: 0; }
+.mcp-repair-step-heading p, .mcp-repair-history > p { margin: 0; color: #777; font-size: 11px; line-height: 1.45; }
+.mcp-repair-step-heading code { overflow-wrap: anywhere; }
+.mcp-repair-current-issues { display: flex; flex-direction: column; gap: 3px; margin: 10px 0 0 32px; font-size: 11px; }
+.mcp-repair-current-issues .severity-blocking { color: #c62828; }
+.mcp-repair-current-issues .severity-warning { color: #856404; }
+.mcp-repair-candidates { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-top: 12px; }
+.mcp-repair-candidate { display: grid; grid-template-columns: 18px minmax(0, 1fr); gap: 7px; min-width: 0; padding: 10px; border: 1px solid #ddd; border-radius: 6px; background: #fff; color: #444; cursor: pointer; }
+.mcp-repair-candidate:hover { border-color: #9abff0; }
+.mcp-repair-candidate.selected { border-color: #1a73e8; box-shadow: inset 0 0 0 1px #1a73e8; }
+.mcp-repair-candidate.high-risk { border-color: #e8aaa5; }
+.mcp-repair-candidate.high-risk.selected { border-color: #c62828; box-shadow: inset 0 0 0 1px #c62828; }
+.mcp-repair-candidate > input { width: 14px; height: 14px; margin: 2px 0 0; }
+.mcp-repair-candidate-main { display: flex; min-width: 0; flex-direction: column; gap: 5px; }
+.mcp-repair-candidate-title { display: flex; min-width: 0; align-items: center; gap: 6px; flex-wrap: wrap; }
+.mcp-repair-candidate-title strong { font-size: 12px; }
+.mcp-repair-candidate-title code { max-width: 100%; overflow-wrap: anywhere; color: #1a73e8; font-size: 10px; }
+.mcp-repair-candidate-description { display: -webkit-box; overflow: hidden; color: #666; font-size: 10px; line-height: 1.4; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.mcp-repair-candidate-meta { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; color: #777; font-size: 9px; }
+.mcp-repair-candidate-meta > span { padding: 2px 4px; border-radius: 3px; background: #f3f3f3; }
+.mcp-repair-candidate-meta .cross-server { background: #fef7e0; color: #856404; }
+.mcp-repair-candidate-meta .recommended { background: #e8f0fe; color: #174ea6; font-weight: 700; }
+.mcp-repair-candidate-meta .mcp-risk.risk-destructive { background: #fce8e6; color: #c62828; }
+.mcp-repair-prompt-options { display: inline-grid; grid-template-columns: 1fr 1fr; margin: 10px 0 0 32px; border: 1px solid #ccc; border-radius: 6px; overflow: hidden; }
+.mcp-repair-prompt-options label { display: flex; align-items: center; gap: 6px; padding: 7px 10px; color: #666; cursor: pointer; font-size: 11px; }
+.mcp-repair-prompt-options label + label { border-left: 1px solid #ccc; }
+.mcp-repair-prompt-options label.selected { background: #e8f0fe; color: #174ea6; }
+.mcp-repair-prompt-options input { margin: 0; }
+.mcp-repair-history { padding: 16px 0 2px; }
+.mcp-repair-history-row { display: grid; grid-template-columns: minmax(130px, auto) minmax(0, auto) 12px minmax(0, auto) minmax(100px, 1fr); align-items: center; gap: 6px; padding: 6px 0; border-top: 1px solid #eee; color: #777; font-size: 10px; }
+.mcp-repair-history-row:first-of-type { margin-top: 8px; }
+.mcp-repair-history-row code { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #555; }
+.mcp-repair-preview { padding: 14px 0; }
+.mcp-repair-preview-summary { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; margin: 12px 0; color: #666; font-size: 11px; }
+.mcp-repair-preview-summary > span { padding: 3px 6px; border-radius: 4px; background: #f3f3f3; }
+.mcp-repair-warnings { padding: 10px 12px; border-left: 3px solid #d79b00; background: #fef7e0; color: #6f5300; font-size: 11px; line-height: 1.45; }
+.mcp-repair-warnings ul { margin: 6px 0 0; padding-left: 18px; }
+.mcp-repair-warnings li + li { margin-top: 3px; }
+.mcp-repair-diffs { margin-top: 12px; border-top: 1px solid #eee; }
+.mcp-repair-diff { padding: 9px 0; border-bottom: 1px solid #eee; }
+.mcp-repair-diff summary { color: #444; cursor: pointer; font-size: 12px; font-weight: 700; }
+.mcp-repair-diff-values { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 8px; }
+.mcp-repair-diff-values > div { min-width: 0; }
+.mcp-repair-diff-values span { color: #777; font-size: 10px; }
+.mcp-repair-diff-values pre { max-height: 220px; overflow: auto; margin: 4px 0 0; padding: 8px; border: 1px solid #e4e4e4; border-radius: 5px; background: #f7f7f7; color: #444; font: 10px/1.5 Consolas, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
+.mcp-repair-actions { flex: none; }
+.mcp-repair-actions button.danger-confirm { border-color: #c62828; background: #c62828; color: #fff; }
+.app.dark .mcp-orphaned-bindings { background: #452522; border-color: #7f3d38; color: #f2b8b5; }
+.app.dark .mcp-orphaned-bindings-heading span, .app.dark .mcp-rebind-hint { color: #d9a5a1; }
+.app.dark .mcp-orphaned-binding { border-color: #7f3d38; }
+.app.dark .mcp-server-skill-health { color: #bac2de; }
+.app.dark .mcp-server-binding-note { color: #a6adc8; }
+.app.dark .mcp-skill-linked-label { color: #bac2de; }
+.app.dark .mcp-bound-skill { background: #24452f; color: #a6e3a1; }
+.app.dark .mcp-bound-skill.dependency-degraded { background: #463b20; color: #f6d675; }
+.app.dark .mcp-bound-skill.dependency-unavailable { background: #452522; color: #f2b8b5; }
+.app.dark .mcp-dependency-badge { background: rgba(24, 24, 37, 0.55); }
+.app.dark .mcp-bound-skill.repair-target, .app.dark .mcp-orphaned-binding.repair-target { outline-color: #89b4fa; }
+.app.dark .mcp-binding-repair-btn:hover:not(:disabled), .app.dark .mcp-orphaned-repair-btn:hover:not(:disabled) { background: rgba(24, 24, 37, 0.55); }
+.app.dark .mcp-repair-binding-path, .app.dark .mcp-repair-step-heading p, .app.dark .mcp-repair-history > p { color: #a6adc8; }
+.app.dark .mcp-repair-binding-path code, .app.dark .mcp-repair-history-row code { color: #cdd6f4; }
+.app.dark .mcp-repair-error { background: #452522; color: #f2b8b5; }
+.app.dark .mcp-repair-step, .app.dark .mcp-repair-history-row, .app.dark .mcp-repair-diffs, .app.dark .mcp-repair-diff { border-color: #45475a; }
+.app.dark .mcp-repair-step-heading h3, .app.dark .mcp-repair-history h3, .app.dark .mcp-repair-diff summary { color: #cdd6f4; }
+.app.dark .mcp-repair-candidate { border-color: #45475a; background: #313244; color: #cdd6f4; }
+.app.dark .mcp-repair-candidate:hover, .app.dark .mcp-repair-candidate.selected { border-color: #89b4fa; }
+.app.dark .mcp-repair-candidate.high-risk { border-color: #7f3d38; }
+.app.dark .mcp-repair-candidate-description, .app.dark .mcp-repair-candidate-meta, .app.dark .mcp-repair-history-row { color: #a6adc8; }
+.app.dark .mcp-repair-candidate-meta > span, .app.dark .mcp-repair-preview-summary > span { background: #45475a; }
+.app.dark .mcp-repair-candidate-meta .cross-server, .app.dark .mcp-repair-warnings { background: #463b20; color: #f6d675; }
+.app.dark .mcp-repair-candidate-meta .recommended, .app.dark .mcp-repair-prompt-options label.selected { background: #243b5c; color: #89b4fa; }
+.app.dark .mcp-repair-prompt-options { border-color: #585b70; }
+.app.dark .mcp-repair-prompt-options label { color: #bac2de; }
+.app.dark .mcp-repair-prompt-options label + label { border-color: #585b70; }
+.app.dark .mcp-repair-diff-values pre { border-color: #45475a; background: #181825; color: #cdd6f4; }
 .mcp-form { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; padding: 18px 24px 0; }
 .mcp-form > label { display: flex; flex-direction: column; gap: 5px; color: #666; font-size: 12px; }
 .mcp-form .wide { grid-column: 1 / -1; }
@@ -1616,9 +1789,19 @@ body {
   .mcp-server-row { grid-template-columns: 14px minmax(0, 1fr); }
   .mcp-server-actions { grid-column: 2; justify-content: flex-start; }
   .mcp-secret-inputs { grid-template-columns: 1fr; }
+  .mcp-repair-modal { width: calc(100vw - 20px); max-height: calc(100dvh - 20px); }
+  .mcp-repair-body { padding: 2px 14px 16px; }
+  .mcp-repair-candidates { grid-template-columns: 1fr; }
+  .mcp-repair-prompt-options { display: grid; grid-template-columns: 1fr; margin-left: 32px; }
+  .mcp-repair-prompt-options label + label { border-top: 1px solid #ccc; border-left: 0; }
+  .mcp-repair-diff-values { grid-template-columns: 1fr; }
+  .mcp-repair-history-row { grid-template-columns: 1fr auto 12px auto; }
+  .mcp-repair-history-row time, .mcp-repair-history-row > span:last-child { grid-column: 1 / -1; }
+  .mcp-repair-actions { flex-wrap: wrap; }
 
   .sidebar-brand {
     padding: 8px 12px;
+    flex: none;
   }
 
   .sidebar-brand h2 {
@@ -1634,13 +1817,23 @@ body {
   .sidebar-nav {
     display: flex;
     flex: 1;
+    min-width: 0;
     justify-content: flex-end;
     padding: 6px;
+    overflow: hidden;
   }
 
-  .nav-item {
+  .sidebar-nav .nav-item {
+    min-width: 36px;
     width: auto;
-    padding: 8px 10px;
+    flex: 1;
+    justify-content: center;
+    gap: 0;
+    padding: 8px 6px;
+  }
+
+  .sidebar-nav .nav-item > span:not(.nav-icon) {
+    display: none;
   }
 
   .main-content {
@@ -1649,8 +1842,16 @@ body {
   }
 
   .chat-panel,
-  .skills-panel {
+  .skills-panel,
+  .external-tools-panel,
+  .mcp-panel {
     height: calc(100dvh - 58px);
+  }
+
+  .mcp-orphaned-bindings-heading {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 3px;
   }
 
   .header {
@@ -1743,6 +1944,10 @@ body {
 .app.dark .skill-search-input { background: #313244; color: #cdd6f4; border-color: #45475a; }
 .app.dark .mode-chip { background: #313244; color: #cdd6f4; border-color: #45475a; }
 .app.dark .mode-chip:hover, .app.dark .mode-chip.active, .app.dark .skill-picker-item.active { background: color-mix(in srgb, var(--mode-color) 20%, #313244); }
+.app.dark .mode-item.is-unavailable:hover { background: #313244; }
+.app.dark .active-mode-warning, .app.dark .skill-dependency-message.status-unavailable { background: #452522; border-color: #7f3d38; color: #f2b8b5; }
+.app.dark .skill-dependency-message.status-degraded { background: #463b20; color: #f6d675; }
+.app.dark .active-mode-warning button { background: #313244; border-color: #7f3d38; color: #f2b8b5; }
 .app.dark .memory-picker-item:hover { background: #45475a; }
 .app.dark .memory-editor, .app.dark .memory-item-card { border-color: #313244; }
 .app.dark .memory-item-actions label { color: #a6adc8; }

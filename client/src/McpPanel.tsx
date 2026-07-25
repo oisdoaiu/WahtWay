@@ -69,6 +69,141 @@ interface McpServer {
   };
 }
 
+type DependencyStatus = "healthy" | "degraded" | "unavailable";
+
+interface McpSkillBinding {
+  serverId: string;
+  toolName: string;
+  registeredName: string;
+}
+
+interface SkillDependencyIssue {
+  code: string;
+  severity: "warning" | "blocking";
+  message: string;
+  serverId?: string;
+  toolName?: string;
+  registeredName?: string;
+  suggestedRegisteredName?: string;
+  serverState?: RuntimeState;
+}
+
+interface ResolvedSkillBinding extends McpSkillBinding {
+  serverName?: string;
+  currentRegisteredName?: string;
+  serverState?: RuntimeState;
+  permission?: ToolPermission;
+  status: "healthy" | "unavailable";
+  issueCodes: string[];
+}
+
+interface SkillDependencyHealth {
+  status: DependencyStatus;
+  runnable: boolean;
+  checkedAt: string;
+  issues: SkillDependencyIssue[];
+  bindings: ResolvedSkillBinding[];
+}
+
+interface McpBoundSkill {
+  id: string;
+  name: string;
+  mcpBindings: McpSkillBinding[];
+  dependencyHealth: SkillDependencyHealth;
+}
+
+interface SkillBindingView {
+  skillId: string;
+  skillName: string;
+  bindingIndex: number;
+  binding: McpSkillBinding;
+  resolvedBinding?: ResolvedSkillBinding;
+  health: SkillDependencyHealth;
+}
+
+type SkillRepairPromptPolicy = "preserve" | "replace-exact";
+type SkillRepairCandidateMatch = "same-binding" | "same-tool" | "same-server" | "other";
+
+interface SkillRepairCandidate {
+  serverId: string;
+  serverName: string;
+  toolName: string;
+  registeredName: string;
+  description: string;
+  permission: Exclude<ToolPermission, "disabled">;
+  risk: ToolRisk;
+  match: SkillRepairCandidateMatch;
+  recommended: boolean;
+  toolListRevision: number;
+  schemaCompatibility: "unknown";
+}
+
+interface SkillRepairChange {
+  field: "mcpBindings" | "allowedTools" | "requiredTools" | "systemPrompt";
+  before: unknown;
+  after: unknown;
+}
+
+interface SkillRepairPreview {
+  skillId: string;
+  skillName: string;
+  bindingIndex: number;
+  expectedRevision: string;
+  expectedToolListRevision: number;
+  originalBinding: McpSkillBinding;
+  replacementBinding: McpSkillBinding;
+  candidate: SkillRepairCandidate;
+  promptPolicy: SkillRepairPromptPolicy;
+  promptReplacementCount: number;
+  changes: SkillRepairChange[];
+  warnings: string[];
+}
+
+interface SkillRepairAuditEvent {
+  id: string;
+  skillId: string;
+  createdAt: string;
+  bindingIndex: number;
+  beforeBinding: McpSkillBinding;
+  afterBinding: McpSkillBinding;
+  changedFields: SkillRepairChange["field"][];
+  promptPolicy: SkillRepairPromptPolicy;
+  promptReplacementCount: number;
+  warnings: string[];
+}
+
+interface SkillRepairCandidatesResponse {
+  skillId: string;
+  skillName: string;
+  bindingIndex: number;
+  expectedRevision: string;
+  expectedBinding: McpSkillBinding;
+  issues: SkillDependencyIssue[];
+  bindingHealth?: ResolvedSkillBinding;
+  candidates: SkillRepairCandidate[];
+  recentRepairs: SkillRepairAuditEvent[];
+}
+
+interface SkillRepairDialogState {
+  view: SkillBindingView;
+  loading: boolean;
+  applying: boolean;
+  data?: SkillRepairCandidatesResponse;
+  selectedKey: string;
+  promptPolicy: SkillRepairPromptPolicy;
+  preview?: SkillRepairPreview;
+  error?: string;
+}
+
+type BindingRepairAction = "candidates" | "enable-start" | "start" | "confirm-tool" | "restart";
+
+class McpRequestError extends Error {
+  constructor(message: string, readonly status: number, readonly code?: string) {
+    super(message);
+    this.name = "McpRequestError";
+  }
+}
+
 interface EditorState {
   id: string;
   name: string;
@@ -105,20 +240,99 @@ const STATE_LABELS: Record<RuntimeState, string> = {
   error: "异常",
 };
 
-export function McpPanel({ onNotify }: { onNotify: (message: string, type?: "info" | "error") => void }) {
+const DEPENDENCY_LABELS: Record<DependencyStatus, string> = {
+  healthy: "健康",
+  degraded: "受影响",
+  unavailable: "不可用",
+};
+
+const REPAIR_MATCH_LABELS: Record<SkillRepairCandidateMatch, string> = {
+  "same-binding": "当前绑定",
+  "same-tool": "同名工具",
+  "same-server": "同一 Server",
+  other: "其他工具",
+};
+
+const REPAIR_FIELD_LABELS: Record<SkillRepairChange["field"], string> = {
+  mcpBindings: "MCP 绑定",
+  allowedTools: "允许工具",
+  requiredTools: "必需工具",
+  systemPrompt: "System Prompt",
+};
+
+const bindingKey = (serverId: string, toolName: string) => `${serverId}:${toolName}`;
+
+const bindingIssues = (view: SkillBindingView) => view.health.issues.filter((issue) =>
+  issue.serverId === view.binding.serverId
+  && (!issue.toolName || issue.toolName === view.binding.toolName),
+);
+
+const bindingDependencyStatus = (view: SkillBindingView): DependencyStatus => {
+  const issues = bindingIssues(view);
+  if (issues.some((issue) => issue.severity === "blocking")) return "unavailable";
+  if (issues.length > 0) return "degraded";
+  if (view.resolvedBinding) return view.resolvedBinding.status;
+  return "healthy";
+};
+
+const repairCandidateKey = (candidate: Pick<SkillRepairCandidate, "serverId" | "toolName">) =>
+  `${candidate.serverId}\u0000${candidate.toolName}`;
+
+const repairActionFor = (view: SkillBindingView): BindingRepairAction => {
+  const codes = new Set(bindingIssues(view).map((issue) => issue.code));
+  if (
+    codes.has("mcp_server_missing")
+    || codes.has("mcp_tool_missing")
+    || codes.has("mcp_registered_name_changed")
+  ) return "candidates";
+  if (codes.has("mcp_server_disabled")) return "enable-start";
+  if (codes.has("mcp_server_not_running")) return "start";
+  if (codes.has("mcp_tool_disabled")) return "confirm-tool";
+  if (codes.has("mcp_tool_unregistered")) return "restart";
+  return "candidates";
+};
+
+const repairActionLabel = (action: BindingRepairAction) => {
+  if (action === "enable-start") return "启用并启动";
+  if (action === "start") return "启动 Server";
+  if (action === "confirm-tool") return "启用工具";
+  if (action === "restart") return "重启并注册";
+  return "选择替代工具";
+};
+
+const displayRepairValue = (value: unknown): string => {
+  if (typeof value === "string") return value;
+  if (value === undefined) return "（未设置）";
+  return JSON.stringify(value, null, 2);
+};
+
+export function McpPanel({ onNotify, repairSkillId = "" }: {
+  onNotify: (message: string, type?: "info" | "error") => void;
+  repairSkillId?: string;
+}) {
   const [servers, setServers] = useState<McpServer[]>([]);
   const [editing, setEditing] = useState<EditorState | null>(null);
   const [originalId, setOriginalId] = useState<string | null>(null);
   const [busyId, setBusyId] = useState("");
   const [secretName, setSecretName] = useState("");
   const [secretValue, setSecretValue] = useState("");
-  const [skillBindings, setSkillBindings] = useState(new Map<string, { id: string; name: string }>());
+  const [skillBindings, setSkillBindings] = useState(new Map<string, SkillBindingView[]>());
   const [auditView, setAuditView] = useState<{ server: McpServer; events: ToolAuditEvent[]; loading: boolean } | null>(null);
+  const [repairDialog, setRepairDialog] = useState<SkillRepairDialogState | null>(null);
+  const [repairBusyId, setRepairBusyId] = useState("");
   const toolRevisions = useRef(new Map<string, number>());
+  const loadSequence = useRef(0);
+  const repairSequence = useRef(0);
+  const focusedRepairSkillId = useRef("");
 
   const load = async () => {
+    const sequence = ++loadSequence.current;
     const [response, skillsResponse] = await Promise.all([fetch("/api/mcp/servers"), fetch("/api/skills")]);
-    const data = await response.json();
+    const [data, skillsData] = await Promise.all([
+      response.json(),
+      skillsResponse.ok ? skillsResponse.json() : Promise.resolve({ skills: [] }),
+    ]);
+    if (sequence !== loadSequence.current) return;
     if (!response.ok) throw new Error(data.error || "MCP Server 加载失败");
     const nextServers: McpServer[] = data.servers || [];
     for (const server of nextServers) {
@@ -130,10 +344,22 @@ export function McpPanel({ onNotify }: { onNotify: (message: string, type?: "inf
     }
     setServers(nextServers);
     if (skillsResponse.ok) {
-      const skillsData = await skillsResponse.json();
-      const bindings = new Map<string, { id: string; name: string }>();
-      for (const skill of skillsData.skills || []) {
-        for (const binding of skill.mcpBindings || []) bindings.set(binding.registeredName, { id: skill.id, name: skill.name });
+      const bindings = new Map<string, SkillBindingView[]>();
+      for (const skill of (skillsData.skills || []) as McpBoundSkill[]) {
+        if (!skill.dependencyHealth) continue;
+        for (const [bindingIndex, binding] of (skill.mcpBindings || []).entries()) {
+          const key = bindingKey(binding.serverId, binding.toolName);
+          const views = bindings.get(key) || [];
+          views.push({
+            skillId: skill.id,
+            skillName: skill.name,
+            bindingIndex,
+            binding,
+            resolvedBinding: skill.dependencyHealth.bindings[bindingIndex],
+            health: skill.dependencyHealth,
+          });
+          bindings.set(key, views);
+        }
       }
       setSkillBindings(bindings);
     }
@@ -144,6 +370,16 @@ export function McpPanel({ onNotify }: { onNotify: (message: string, type?: "inf
     const timer = setInterval(() => load().catch(() => undefined), 2000);
     return () => clearInterval(timer);
   }, []);
+
+  useEffect(() => {
+    if (!repairSkillId || focusedRepairSkillId.current === repairSkillId) return;
+    const target = Array.from(document.querySelectorAll<HTMLElement>("[data-repair-skill-id]"))
+      .find((element) => element.dataset.repairSkillId === repairSkillId);
+    if (!target) return;
+    focusedRepairSkillId.current = repairSkillId;
+    target.scrollIntoView({ behavior: "smooth", block: "center" });
+    target.focus({ preventScroll: true });
+  }, [repairSkillId, skillBindings]);
 
   const openEditor = (server?: McpServer) => {
     setOriginalId(server?.id || null);
@@ -167,7 +403,7 @@ export function McpPanel({ onNotify }: { onNotify: (message: string, type?: "inf
   const request = async (url: string, options?: RequestInit) => {
     const response = await fetch(url, options);
     const data = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(data.error || "MCP 操作失败");
+    if (!response.ok) throw new McpRequestError(data.error || "MCP 操作失败", response.status, data.code);
     return data;
   };
 
@@ -316,7 +552,222 @@ export function McpPanel({ onNotify }: { onNotify: (message: string, type?: "inf
     }
   };
 
+  const closeRepairDialog = () => {
+    repairSequence.current += 1;
+    setRepairDialog(null);
+  };
+
+  const openBindingRepair = async (view: SkillBindingView) => {
+    const sequence = ++repairSequence.current;
+    setRepairDialog({
+      view,
+      loading: true,
+      applying: false,
+      selectedKey: "",
+      promptPolicy: "replace-exact",
+    });
+    try {
+      const data = await request(
+        `/api/skills/${encodeURIComponent(view.skillId)}/mcp-bindings/${view.bindingIndex}/candidates`,
+      ) as SkillRepairCandidatesResponse;
+      if (sequence !== repairSequence.current) return;
+      const recommended = data.candidates.find((candidate) => candidate.recommended);
+      const currentView: SkillBindingView = {
+        ...view,
+        binding: data.expectedBinding,
+        resolvedBinding: data.bindingHealth,
+      };
+      setRepairDialog({
+        view: currentView,
+        loading: false,
+        applying: false,
+        data,
+        selectedKey: recommended ? repairCandidateKey(recommended) : "",
+        promptPolicy: "replace-exact",
+      });
+    } catch (error: any) {
+      if (sequence !== repairSequence.current) return;
+      setRepairDialog({
+        view,
+        loading: false,
+        applying: false,
+        selectedKey: "",
+        promptPolicy: "replace-exact",
+        error: error.message || "修复候选加载失败",
+      });
+    }
+  };
+
+  const performBindingRepair = async (view: SkillBindingView) => {
+    const action = repairActionFor(view);
+    if (action === "candidates") {
+      await openBindingRepair(view);
+      return;
+    }
+    const operationId = `${view.skillId}:${view.bindingIndex}`;
+    setRepairBusyId(operationId);
+    try {
+      if (action === "enable-start") {
+        await request(`/api/mcp/servers/${encodeURIComponent(view.binding.serverId)}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ enabled: true }),
+        });
+        await request(`/api/mcp/servers/${encodeURIComponent(view.binding.serverId)}/start`, { method: "POST" });
+      } else if (action === "start") {
+        const lifecycleAction = view.resolvedBinding?.serverState === "stopped" ? "start" : "restart";
+        await request(`/api/mcp/servers/${encodeURIComponent(view.binding.serverId)}/${lifecycleAction}`, { method: "POST" });
+      } else if (action === "confirm-tool") {
+        await request(
+          `/api/mcp/servers/${encodeURIComponent(view.binding.serverId)}/tool-permissions/${encodeURIComponent(view.binding.toolName)}`,
+          {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ permission: "confirm" }),
+          },
+        );
+      } else {
+        await request(`/api/mcp/servers/${encodeURIComponent(view.binding.serverId)}/restart`, { method: "POST" });
+      }
+      await load();
+      onNotify(`${view.skillName} 的 MCP 依赖已重新检查`);
+    } catch (error: any) {
+      await load().catch(() => undefined);
+      onNotify(error.message || "MCP 依赖恢复失败", "error");
+    } finally {
+      setRepairBusyId("");
+    }
+  };
+
+  const selectedRepairCandidate = (dialog: SkillRepairDialogState) =>
+    dialog.data?.candidates.find((candidate) => repairCandidateKey(candidate) === dialog.selectedKey);
+
+  const repairRequestBody = (dialog: SkillRepairDialogState, candidate: SkillRepairCandidate) => ({
+    expectedRevision: dialog.data?.expectedRevision,
+    expectedBinding: dialog.data?.expectedBinding,
+    replacement: { serverId: candidate.serverId, toolName: candidate.toolName },
+    expectedToolListRevision: candidate.toolListRevision,
+    promptPolicy: dialog.promptPolicy,
+  });
+
+  const previewBindingRepair = async () => {
+    const dialog = repairDialog;
+    if (!dialog?.data) return;
+    const sequence = repairSequence.current;
+    const candidate = selectedRepairCandidate(dialog);
+    if (!candidate) {
+      onNotify("请先选择一个替代工具", "error");
+      return;
+    }
+    setRepairDialog({ ...dialog, loading: true, error: undefined });
+    try {
+      const result = await request(
+        `/api/skills/${encodeURIComponent(dialog.view.skillId)}/mcp-bindings/${dialog.view.bindingIndex}/preview`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(repairRequestBody(dialog, candidate)),
+        },
+      ) as { preview: SkillRepairPreview };
+      if (sequence !== repairSequence.current) return;
+      setRepairDialog((current) => current && current.view.skillId === dialog.view.skillId
+        && current.view.bindingIndex === dialog.view.bindingIndex
+        ? { ...current, loading: false, preview: result.preview, error: undefined }
+        : current);
+    } catch (error: any) {
+      if (sequence !== repairSequence.current) return;
+      if (error instanceof McpRequestError && error.status === 409) {
+        await openBindingRepair(dialog.view);
+        onNotify("Skill 或工具列表已变化，候选和预览已刷新", "error");
+        return;
+      }
+      setRepairDialog((current) => current ? { ...current, loading: false, error: error.message || "修复预览失败" } : current);
+    }
+  };
+
+  const applyBindingRepair = async () => {
+    const dialog = repairDialog;
+    if (!dialog?.data || !dialog.preview) return;
+    const candidate = selectedRepairCandidate(dialog);
+    if (!candidate) return;
+    setRepairDialog({ ...dialog, applying: true, error: undefined });
+    try {
+      const result = await request(
+        `/api/skills/${encodeURIComponent(dialog.view.skillId)}/mcp-bindings/${dialog.view.bindingIndex}`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(repairRequestBody(dialog, candidate)),
+        },
+      );
+      await load();
+      const targetBinding = result.dependencyHealth?.bindings?.[dialog.view.bindingIndex] as ResolvedSkillBinding | undefined;
+      if (!targetBinding || targetBinding.status !== "healthy") {
+        await openBindingRepair({
+          ...dialog.view,
+          binding: result.preview?.replacementBinding || dialog.view.binding,
+          resolvedBinding: targetBinding,
+          health: result.dependencyHealth || dialog.view.health,
+        });
+        onNotify(`${dialog.view.skillName} 的绑定已更新，但依赖仍不可用，请继续检查`, "error");
+        return;
+      }
+      closeRepairDialog();
+      onNotify(result.auditRecorded === false
+        ? `${dialog.view.skillName} 依赖已修复，但审计记录写入失败`
+        : `${dialog.view.skillName} 的 MCP 依赖已修复`);
+    } catch (error: any) {
+      if (error instanceof McpRequestError && error.status === 409) {
+        await openBindingRepair(dialog.view);
+        onNotify("Skill 或工具列表已变化，请重新预览后确认", "error");
+        return;
+      }
+      setRepairDialog((current) => current ? { ...current, applying: false, error: error.message || "依赖修复失败" } : current);
+    }
+  };
+
   const editingServer = originalId ? servers.find((server) => server.id === originalId) : undefined;
+  const allSkillBindings = Array.from(skillBindings.values()).flat();
+  const serverIds = new Set(servers.map((server) => server.id));
+  const orphanedBindings = allSkillBindings.filter((view) => !serverIds.has(view.binding.serverId));
+  const activeRepairCandidate = repairDialog ? selectedRepairCandidate(repairDialog) : undefined;
+
+  const bindingsForServer = (serverId: string) => allSkillBindings.filter((view) => view.binding.serverId === serverId);
+  const bindingsForTool = (serverId: string, toolName: string) => skillBindings.get(bindingKey(serverId, toolName)) || [];
+
+  const renderBoundSkills = (bindings: SkillBindingView[]) => (
+    <div className="mcp-bound-skill-list">
+      {bindings.map((view) => {
+        const issues = bindingIssues(view);
+        const status = bindingDependencyStatus(view);
+        const repairAction = repairActionFor(view);
+        const operationId = `${view.skillId}:${view.bindingIndex}`;
+        return (
+          <div
+            className={`mcp-bound-skill dependency-${status}${repairSkillId === view.skillId && status !== "healthy" ? " repair-target" : ""}`}
+            key={`${view.skillId}:${view.bindingIndex}:${view.binding.serverId}:${view.binding.toolName}`}
+            data-repair-skill-id={status !== "healthy" ? view.skillId : undefined}
+            tabIndex={repairSkillId === view.skillId && status !== "healthy" ? -1 : undefined}
+          >
+            <span className="mcp-bound-skill-name">{view.skillName}</span>
+            <span className={`mcp-dependency-badge status-${status}`}>
+              {DEPENDENCY_LABELS[status]}
+            </span>
+            {issues.length > 0 && <span className="mcp-bound-skill-issue">{issues.map((issue) => issue.message).join("；")}</span>}
+            {status !== "healthy" && (
+              <button
+                className="mcp-binding-repair-btn"
+                disabled={repairBusyId === operationId}
+                onClick={() => performBindingRepair(view)}
+              >
+                {repairBusyId === operationId ? "处理中…" : repairActionLabel(repairAction)}
+              </button>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
 
   return (
     <section className="mcp-panel">
@@ -326,9 +777,54 @@ export function McpPanel({ onNotify }: { onNotify: (message: string, type?: "inf
         <button className="create-btn" onClick={() => openEditor()}>添加 Server</button>
       </header>
 
+      {orphanedBindings.length > 0 && (
+        <section className="mcp-orphaned-bindings" aria-label="失效的 MCP Skill 绑定">
+          <div className="mcp-orphaned-bindings-heading">
+            <strong>失效的 Skill 绑定</strong>
+            <span>{orphanedBindings.length} 个绑定对应的 MCP Server 已不存在</span>
+          </div>
+          <div className="mcp-orphaned-binding-list">
+            {orphanedBindings.map((view) => {
+              const issues = bindingIssues(view);
+              const operationId = `${view.skillId}:${view.bindingIndex}`;
+              const messages = issues.length > 0
+                ? issues.map((issue) => issue.message)
+                : [`找不到 MCP Server ${view.binding.serverId}`];
+              return (
+                <div
+                  className={`mcp-orphaned-binding${repairSkillId === view.skillId ? " repair-target" : ""}`}
+                  key={`${view.skillId}:${view.bindingIndex}:${view.binding.serverId}:${view.binding.toolName}`}
+                  data-repair-skill-id={view.skillId}
+                  tabIndex={repairSkillId === view.skillId ? -1 : undefined}
+                >
+                  <div className="mcp-orphaned-binding-title">
+                    <strong>{view.skillName}</strong>
+                    <code>{view.binding.serverId}:{view.binding.toolName}</code>
+                    <span className="mcp-dependency-badge status-unavailable">不可用</span>
+                  </div>
+                  {messages.map((message, index) => <p className="mcp-orphaned-binding-issue" key={index}>{message}</p>)}
+                  <button
+                    className="mcp-orphaned-repair-btn"
+                    disabled={repairBusyId === operationId}
+                    onClick={() => performBindingRepair(view)}
+                  >
+                    {repairBusyId === operationId ? "处理中…" : "选择替代工具"}
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      )}
+
       <div className="mcp-server-list">
         {servers.length === 0 && <div className="mcp-empty">还没有配置 MCP Server</div>}
-        {servers.map((server) => (
+        {servers.map((server) => {
+          const serverBindings = bindingsForServer(server.id);
+          const affectedBindings = serverBindings.filter((view) => bindingDependencyStatus(view) !== "healthy");
+          const linkedSkillCount = new Set(serverBindings.map((view) => view.skillId)).size;
+          const affectedSkillCount = new Set(affectedBindings.map((view) => view.skillId)).size;
+          return (
           <div key={server.id} className={`mcp-server-row state-${server.status.state}`}>
             <span className="mcp-state-dot" title={STATE_LABELS[server.status.state]} />
             <div className="mcp-server-info">
@@ -349,9 +845,24 @@ export function McpPanel({ onNotify }: { onNotify: (message: string, type?: "inf
               </div>
               {server.status.lastError && <div className="mcp-error">{server.status.lastError}</div>}
               {server.status.lastToolListError && <div className="mcp-error">工具列表刷新失败：{server.status.lastToolListError}</div>}
+              {serverBindings.length > 0 && (
+                <div className={`mcp-server-skill-health ${affectedSkillCount > 0 ? "has-unavailable-skills" : "all-skills-healthy"}`}>
+                  <strong>关联 Skill：{linkedSkillCount}</strong>
+                  <span>工具绑定：{serverBindings.length}</span>
+                  {affectedSkillCount > 0
+                    ? <span className="mcp-server-affected-skills">受影响 Skill：{affectedSkillCount}</span>
+                    : <span className="mcp-server-healthy-skills">全部可用</span>}
+                  {server.status.tools.length === 0 && (
+                    <span className="mcp-server-binding-note">当前未发现工具，关联 Skill 状态仍按保存的绑定检查。</span>
+                  )}
+                  {affectedBindings.length > 0 && renderBoundSkills(affectedBindings)}
+                </div>
+              )}
               {server.status.tools.length > 0 && (
                 <div className="mcp-tool-list">
-                  {server.status.tools.map((tool) => <div key={tool.registeredName} className={`mcp-tool-permission permission-${tool.permission}`} title={tool.description}>
+                  {server.status.tools.map((tool) => {
+                    const linkedSkills = bindingsForTool(server.id, tool.name);
+                    return <div key={tool.registeredName} className={`mcp-tool-permission permission-${tool.permission}`} title={tool.description}>
                     <span>{tool.registeredName}</span><span className={`mcp-risk risk-${tool.risk}`}>{tool.risk}</span>
                     <select value={tool.overridden ? tool.permission : "inherit"} disabled={busyId === server.id} onChange={(event) => updateToolPermission(server.id, tool.name, event.target.value)}>
                       <option value="inherit">继承默认（{server.defaultToolPermission}）</option>
@@ -361,11 +872,11 @@ export function McpPanel({ onNotify }: { onNotify: (message: string, type?: "inf
                       <option value="inherit">风险：保守推断</option><option value="read">只读</option><option value="write">写入</option><option value="destructive">危险</option>
                     </select>
                     <label className="mcp-idempotent"><input type="checkbox" checked={tool.safetyOverride?.idempotent === true} disabled={busyId === server.id || !tool.safetyOverride?.risk} onChange={(event) => updateToolSafety(server.id, tool, tool.safetyOverride?.risk || "write", event.target.checked)} />幂等</label>
-                    {skillBindings.has(tool.registeredName)
-                      ? <span className="mcp-skill-linked">已关联：{skillBindings.get(tool.registeredName)!.name}</span>
+                    {linkedSkills.length > 0
+                      ? <div className="mcp-tool-linked-skills"><span className="mcp-skill-linked-label">关联 Skill（{linkedSkills.length}）</span>{renderBoundSkills(linkedSkills)}</div>
                       : <button className="mcp-create-skill" disabled={busyId === server.id || tool.permission === "disabled"} onClick={() => createSkillAssistant(server.id, tool.name)}>创建 Skill 助手</button>}
                     <span className="mcp-hints">Server: {tool.annotations.readOnlyHint ? "只读 " : ""}{tool.annotations.destructiveHint ? "危险 " : ""}{tool.annotations.idempotentHint ? "幂等提示 " : ""}{tool.annotations.openWorldHint ? "外部访问" : ""}</span>
-                  </div>)}
+                  </div>})}
                 </div>
               )}
             </div>
@@ -383,8 +894,225 @@ export function McpPanel({ onNotify }: { onNotify: (message: string, type?: "inf
               }}>删除</button>
             </div>
           </div>
-        ))}
+        )})}
       </div>
+
+      {repairDialog && (
+        <div className="modal-overlay" onClick={() => { if (!repairDialog.applying) closeRepairDialog(); }}>
+          <div
+            className="modal mcp-repair-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="mcp-repair-title"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="modal-header">
+              <div>
+                <h2 id="mcp-repair-title">修复 {repairDialog.view.skillName} 的 MCP 依赖</h2>
+                <p className="mcp-repair-binding-path">
+                  当前绑定 <code>{repairDialog.view.binding.serverId}:{repairDialog.view.binding.toolName}</code>
+                </p>
+              </div>
+              <button className="modal-close" aria-label="关闭依赖修复" disabled={repairDialog.applying} onClick={closeRepairDialog}>×</button>
+            </div>
+
+            <div className="mcp-repair-body">
+              {repairDialog.loading && !repairDialog.data && (
+                <div className="mcp-repair-empty" role="status">正在查找可用工具…</div>
+              )}
+              {repairDialog.error && <div className="mcp-repair-error" role="alert">{repairDialog.error}</div>}
+              {!repairDialog.loading && !repairDialog.data && (
+                <div className="mcp-repair-empty">
+                  <span>无法加载修复候选。</span>
+                  <button onClick={() => openBindingRepair(repairDialog.view)}>重新加载</button>
+                </div>
+              )}
+
+              {repairDialog.data && !repairDialog.preview && (
+                <>
+                  <section className="mcp-repair-step" aria-labelledby="mcp-repair-candidates-heading">
+                    <div className="mcp-repair-step-heading">
+                      <span className="mcp-repair-step-number">1</span>
+                      <div>
+                        <h3 id="mcp-repair-candidates-heading">选择替代工具</h3>
+                        <p>只列出已启用、正在运行且已注册的工具。跨 Server 候选必须由你手动选择。</p>
+                      </div>
+                    </div>
+                    {repairDialog.data.issues.length > 0 && (
+                      <div className="mcp-repair-current-issues">
+                        {repairDialog.data.issues.map((issue, index) => (
+                          <span className={`severity-${issue.severity}`} key={`${issue.code}:${index}`}>{issue.message}</span>
+                        ))}
+                      </div>
+                    )}
+                    {repairDialog.data.candidates.length === 0
+                      ? <div className="mcp-repair-empty">当前没有安全可用的替代工具。请先启动 MCP Server 或恢复工具注册。</div>
+                      : (
+                        <div className="mcp-repair-candidates" role="radiogroup" aria-label="替代 MCP 工具">
+                          {repairDialog.data.candidates.map((candidate) => {
+                            const candidateKey = repairCandidateKey(candidate);
+                            const selected = candidateKey === repairDialog.selectedKey;
+                            const crossServer = candidate.serverId !== repairDialog.data?.expectedBinding.serverId;
+                            return (
+                              <label
+                                className={`mcp-repair-candidate${selected ? " selected" : ""}${candidate.risk === "destructive" ? " high-risk" : ""}`}
+                                key={candidateKey}
+                              >
+                                <input
+                                  type="radio"
+                                  name="mcp-repair-candidate"
+                                  checked={selected}
+                                  disabled={repairDialog.loading}
+                                  onChange={() => setRepairDialog({ ...repairDialog, selectedKey: candidateKey, preview: undefined, error: undefined })}
+                                />
+                                <span className="mcp-repair-candidate-main">
+                                  <span className="mcp-repair-candidate-title">
+                                    <strong>{candidate.serverName}</strong>
+                                    <code>{candidate.registeredName}</code>
+                                  </span>
+                                  <span className="mcp-repair-candidate-description">{candidate.description || "无工具描述"}</span>
+                                  <span className="mcp-repair-candidate-meta">
+                                    <span>{REPAIR_MATCH_LABELS[candidate.match]}</span>
+                                    <span>{candidate.permission === "auto" ? "自动调用" : "每次确认"}</span>
+                                    {crossServer && <span className="cross-server">跨 Server</span>}
+                                    {candidate.recommended && <span className="recommended">推荐</span>}
+                                    <span className={`mcp-risk risk-${candidate.risk}`}>
+                                      {candidate.risk === "read" ? "只读" : candidate.risk === "write" ? "写入" : "危险"}
+                                    </span>
+                                  </span>
+                                </span>
+                              </label>
+                            );
+                          })}
+                        </div>
+                      )}
+                  </section>
+
+                  <section className="mcp-repair-step" aria-labelledby="mcp-repair-prompt-heading">
+                    <div className="mcp-repair-step-heading compact">
+                      <span className="mcp-repair-step-number">2</span>
+                      <div>
+                        <h3 id="mcp-repair-prompt-heading">Prompt 引用策略</h3>
+                        <p>选择是否同步替换 System Prompt 中独立出现的旧工具注册名。</p>
+                      </div>
+                    </div>
+                    <div className="mcp-repair-prompt-options" role="radiogroup" aria-label="Prompt 引用策略">
+                      <label className={repairDialog.promptPolicy === "replace-exact" ? "selected" : ""}>
+                        <input
+                          type="radio"
+                          name="mcp-repair-prompt-policy"
+                          checked={repairDialog.promptPolicy === "replace-exact"}
+                          disabled={repairDialog.loading}
+                          onChange={() => setRepairDialog({ ...repairDialog, promptPolicy: "replace-exact", preview: undefined, error: undefined })}
+                        />
+                        精确替换旧注册名
+                      </label>
+                      <label className={repairDialog.promptPolicy === "preserve" ? "selected" : ""}>
+                        <input
+                          type="radio"
+                          name="mcp-repair-prompt-policy"
+                          checked={repairDialog.promptPolicy === "preserve"}
+                          disabled={repairDialog.loading}
+                          onChange={() => setRepairDialog({ ...repairDialog, promptPolicy: "preserve", preview: undefined, error: undefined })}
+                        />
+                        保持 Prompt 不变
+                      </label>
+                    </div>
+                  </section>
+
+                  <section className="mcp-repair-history" aria-labelledby="mcp-repair-history-heading">
+                    <h3 id="mcp-repair-history-heading">最近修复记录</h3>
+                    {repairDialog.data.recentRepairs.length === 0
+                      ? <p>该 Skill 暂无依赖修复记录。</p>
+                      : repairDialog.data.recentRepairs.map((event) => (
+                        <div className="mcp-repair-history-row" key={event.id}>
+                          <time>{new Date(event.createdAt).toLocaleString()}</time>
+                          <code>{event.beforeBinding.registeredName}</code>
+                          <span aria-hidden="true">→</span>
+                          <code>{event.afterBinding.registeredName}</code>
+                          <span>{event.changedFields.map((field) => REPAIR_FIELD_LABELS[field]).join("、") || "重新校验"}</span>
+                        </div>
+                      ))}
+                  </section>
+                </>
+              )}
+
+              {repairDialog.data && repairDialog.preview && (
+                <section className="mcp-repair-preview" aria-labelledby="mcp-repair-preview-heading">
+                  <div className="mcp-repair-step-heading">
+                    <span className="mcp-repair-step-number">3</span>
+                    <div>
+                      <h3 id="mcp-repair-preview-heading">确认修改差异</h3>
+                      <p>
+                        <code>{repairDialog.preview.originalBinding.registeredName}</code>
+                        <span aria-hidden="true"> → </span>
+                        <code>{repairDialog.preview.replacementBinding.registeredName}</code>
+                      </p>
+                    </div>
+                  </div>
+                  <div className="mcp-repair-preview-summary">
+                    <span>将修改 {repairDialog.preview.changes.length} 个字段</span>
+                    <span>Prompt 精确替换 {repairDialog.preview.promptReplacementCount} 处</span>
+                    {activeRepairCandidate && (
+                      <span className={`mcp-risk risk-${activeRepairCandidate.risk}`}>
+                        {activeRepairCandidate.risk === "read" ? "只读工具" : activeRepairCandidate.risk === "write" ? "写入工具" : "危险工具"}
+                      </span>
+                    )}
+                  </div>
+                  {repairDialog.preview.warnings.length > 0 && (
+                    <div className="mcp-repair-warnings" role="alert">
+                      <strong>确认前请检查</strong>
+                      <ul>{repairDialog.preview.warnings.map((warning, index) => <li key={index}>{warning}</li>)}</ul>
+                    </div>
+                  )}
+                  {repairDialog.preview.changes.length === 0
+                    ? <div className="mcp-repair-empty">没有需要写入的变化。</div>
+                    : (
+                      <div className="mcp-repair-diffs">
+                        {repairDialog.preview.changes.map((change) => (
+                          <details className="mcp-repair-diff" key={change.field} open={change.field !== "systemPrompt"}>
+                            <summary>{REPAIR_FIELD_LABELS[change.field]}</summary>
+                            <div className="mcp-repair-diff-values">
+                              <div><span>修改前</span><pre>{displayRepairValue(change.before)}</pre></div>
+                              <div><span>修改后</span><pre>{displayRepairValue(change.after)}</pre></div>
+                            </div>
+                          </details>
+                        ))}
+                      </div>
+                    )}
+                </section>
+              )}
+            </div>
+
+            <div className="modal-actions mcp-repair-actions">
+              <button disabled={repairDialog.applying} onClick={repairDialog.preview
+                ? () => setRepairDialog({ ...repairDialog, preview: undefined, error: undefined })
+                : closeRepairDialog}
+              >
+                {repairDialog.preview ? "返回候选" : "取消"}
+              </button>
+              {repairDialog.preview
+                ? (
+                  <button
+                    className={activeRepairCandidate?.risk === "destructive" ? "danger-confirm" : "primary"}
+                    disabled={repairDialog.applying || repairDialog.preview.changes.length === 0}
+                    onClick={applyBindingRepair}
+                  >
+                    {repairDialog.applying ? "正在应用…" : activeRepairCandidate?.risk === "destructive" ? "确认绑定危险工具" : "确认并应用修复"}
+                  </button>
+                ) : (
+                  <button
+                    className="primary"
+                    disabled={repairDialog.loading || !activeRepairCandidate}
+                    onClick={previewBindingRepair}
+                  >
+                    {repairDialog.loading ? "正在生成预览…" : "预览修改"}
+                  </button>
+                )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {auditView && (
         <div className="modal-overlay" onClick={() => setAuditView(null)}>

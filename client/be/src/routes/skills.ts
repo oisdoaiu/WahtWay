@@ -18,9 +18,33 @@ import { formatLlmError } from "../llm-errors";
 import { getAllTools } from "../tools/registry";
 import { listExternalTools } from "../external-tools/repository";
 import { listPublicMcpServers } from "../mcp/runtime";
+import { createSkillDependencySnapshot, getSkillDependencyHealth } from "../skills/dependency-health";
+import {
+  applySkillBindingRepair,
+  getSkillBindingRepairCandidates,
+  previewSkillBindingRepair,
+  SkillDependencyRepairError,
+} from "../skills/dependency-repair";
+import { listSkillDependencyRepairAuditEvents } from "../skills/dependency-repair-audit";
 
 const router = Router();
 const DEFAULT_SKILL_HUB_URL = "https://wahtway-production.up.railway.app";
+
+function parseBindingIndex(value: string): number {
+  if (!/^\d+$/.test(value)) {
+    throw new SkillDependencyRepairError("INVALID_BINDING_INDEX", "binding index 无效", 400);
+  }
+  return Number(value);
+}
+
+function sendDependencyRepairError(res: Response, error: unknown): void {
+  if (error instanceof SkillDependencyRepairError) {
+    res.status(error.status).json({ error: error.message, code: error.code, details: error.details });
+    return;
+  }
+  console.error("[dependency-repair] request failed:", error);
+  res.status(500).json({ error: "依赖修复失败", code: "DEPENDENCY_REPAIR_FAILED" });
+}
 
 function getSkillHubUrl(): string {
   return (process.env.SKILL_HUB_URL || DEFAULT_SKILL_HUB_URL).trim().replace(/\/+$/, "");
@@ -172,6 +196,7 @@ function getRecentUserOperations(): string[] {
 
 // GET /api/skills — 已注册 Skill 列表（脱敏）
 router.get("/", (_req: Request, res: Response) => {
+  const dependencySnapshot = createSkillDependencySnapshot();
   const skills = registeredSkills.map((s) => ({
     id: s.id,
     name: s.name,
@@ -187,12 +212,72 @@ router.get("/", (_req: Request, res: Response) => {
     modeIcon: s.modeIcon,
     welcomeMessage: s.welcomeMessage,
     modeExamples: s.modeExamples,
+    dependencyHealth: getSkillDependencyHealth(s, dependencySnapshot),
   }));
   res.json({ skills });
 });
 
 router.get("/tools/catalog", (_req: Request, res: Response) => {
   res.json({ tools: buildSkillToolCatalog() });
+});
+
+router.get("/:id/dependencies", (req: Request, res: Response) => {
+  const skill = registeredSkills.find((item) => item.id === req.params.id);
+  if (!skill) return res.status(404).json({ error: "Skill 不存在" });
+  res.setHeader("Cache-Control", "no-store");
+  res.json({ skillId: skill.id, dependencyHealth: getSkillDependencyHealth(skill) });
+});
+
+router.get("/:id/mcp-bindings/:index/candidates", (req: Request, res: Response) => {
+  try {
+    const result = getSkillBindingRepairCandidates(req.params.id, parseBindingIndex(req.params.index));
+    res.setHeader("Cache-Control", "no-store");
+    res.json({
+      ...result,
+      recentRepairs: listSkillDependencyRepairAuditEvents(req.params.id, 10),
+    });
+  } catch (error) {
+    sendDependencyRepairError(res, error);
+  }
+});
+
+router.post("/:id/mcp-bindings/:index/preview", (req: Request, res: Response) => {
+  try {
+    res.setHeader("Cache-Control", "no-store");
+    res.json({
+      preview: previewSkillBindingRepair(req.params.id, parseBindingIndex(req.params.index), req.body),
+    });
+  } catch (error) {
+    sendDependencyRepairError(res, error);
+  }
+});
+
+router.patch("/:id/mcp-bindings/:index", (req: Request, res: Response) => {
+  try {
+    res.setHeader("Cache-Control", "no-store");
+    res.json(applySkillBindingRepair(req.params.id, parseBindingIndex(req.params.index), req.body));
+  } catch (error) {
+    sendDependencyRepairError(res, error);
+  }
+});
+
+router.get("/:id/dependency-repairs", (req: Request, res: Response) => {
+  if (!registeredSkills.some((skill) => skill.id === req.params.id)) {
+    res.status(404).json({ error: "Skill 不存在" });
+    return;
+  }
+  const rawLimit = typeof req.query.limit === "string" ? Number(req.query.limit) : 50;
+  if (!Number.isInteger(rawLimit) || rawLimit < 1 || rawLimit > 100) {
+    res.status(400).json({ error: "limit 必须是 1 到 100 的整数" });
+    return;
+  }
+  try {
+    res.setHeader("Cache-Control", "no-store");
+    res.json({ events: listSkillDependencyRepairAuditEvents(req.params.id, rawLimit) });
+  } catch (error) {
+    console.error("[dependency-repair] audit query failed:", error);
+    res.status(500).json({ error: "依赖修复记录读取失败" });
+  }
 });
 
 export function buildMcpAssistantSkill(serverId: string, tool: any): Skill {

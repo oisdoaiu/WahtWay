@@ -3,6 +3,7 @@
 
 import * as fs from "fs";
 import * as path from "path";
+import { randomUUID } from "crypto";
 import { Skill } from "../types";
 import {
   deleteSkillLearning,
@@ -11,6 +12,7 @@ import {
 } from "./learning-store";
 
 const BUILTIN_SKILL_IDS = new Set(["daily-study-plan", "code-explain"]);
+const SAFE_SKILL_ID = /^[\p{L}\p{N}][\p{L}\p{N}-]{0,79}$/u;
 
 // 动态计算 skills 路径（兼容 ts-node 开发 / esbuild 编译 / Electron 三种模式）
 export function getSkillsDir(): string {
@@ -92,11 +94,43 @@ export function loadSkills(): Skill[] {
  */
 export let registeredSkills: Skill[] = [];
 
+export function assertValidSkillId(skillId: string): void {
+  if (!SAFE_SKILL_ID.test(skillId)) throw new Error(`无效的 Skill ID: ${skillId}`);
+}
+
+function skillFilePath(skillId: string): string {
+  assertValidSkillId(skillId);
+  const root = path.resolve(getSkillsDir());
+  const filePath = path.resolve(root, `${skillId}.json`);
+  if (path.dirname(filePath) !== root) throw new Error("Skill 路径超出存储目录");
+  return filePath;
+}
+
+export function readPersistedSkill(skillId: string): Skill | null {
+  const filePath = skillFilePath(skillId);
+  if (!fs.existsSync(filePath)) return null;
+  const parsed = JSON.parse(fs.readFileSync(filePath, "utf-8")) as Skill;
+  const missing = REQUIRED_FIELDS.filter((field) => !(field in parsed));
+  if (missing.length > 0) throw new Error(`Skill 缺少必填字段: ${missing.join(", ")}`);
+  return parsed;
+}
+
+function writeSkillAtomic(filePath: string, value: unknown): void {
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  const temporary = `${filePath}.${process.pid}.${randomUUID()}.tmp`;
+  try {
+    fs.writeFileSync(temporary, JSON.stringify(value, null, 2), "utf-8");
+    fs.renameSync(temporary, filePath);
+  } finally {
+    if (fs.existsSync(temporary)) fs.unlinkSync(temporary);
+  }
+}
+
 /**
  * 删除 Skill JSON 文件并重载注册表
  */
 export function deleteSkill(skillId: string): void {
-  const filePath = path.join(getSkillsDir(), `${skillId}.json`);
+  const filePath = skillFilePath(skillId);
   if (!fs.existsSync(filePath)) {
     throw new Error(`Skill 文件不存在: ${skillId}`);
   }
@@ -116,7 +150,7 @@ export function initSkills(): void {
 /**
  * 保存新 Skill 到 JSON 文件并重载注册表
  */
-export function saveSkill(skill: Skill): void {
+export function saveSkill(skill: Skill, options: { resetLearning?: boolean } = {}): void {
   // 1. 校验必填字段
   const missing = REQUIRED_FIELDS.filter((f) => !(f in skill));
   if (missing.length > 0) {
@@ -129,10 +163,10 @@ export function saveSkill(skill: Skill): void {
   }
 
   // 3. 写入文件
-  const filePath = path.join(getSkillsDir(), `${skill.id}.json`);
+  const filePath = skillFilePath(skill.id);
   const { version: _version, origin: _origin, ...persistedSkill } = skill;
-  fs.writeFileSync(filePath, JSON.stringify(persistedSkill, null, 2), "utf-8");
-  resetActiveSkillVersion(skill.id);
+  writeSkillAtomic(filePath, persistedSkill);
+  if (options.resetLearning !== false) resetActiveSkillVersion(skill.id);
   console.log(`[loader] saved: ${skill.name} → ${filePath}`);
 
   // 4. 重载注册表
