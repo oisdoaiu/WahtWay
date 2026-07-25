@@ -1013,6 +1013,65 @@ function SkillsPanel({ onCreateSkill, onEditSkill, onLearnFromHistory, skillsVer
     fetchSkills();
   };
 
+  const [importUrl, setImportUrl] = useState("");
+  const [importing, setImporting] = useState(false);
+  const [showImportUrl, setShowImportUrl] = useState(false);
+
+  const doImportUrl = async () => {
+    if (!importUrl.trim()) return;
+    setImporting(true);
+    try {
+      const r = await fetch("/api/skills/import-url", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: importUrl.trim() }),
+      });
+      const d = await r.json().catch(() => ({} as any));
+      if (!r.ok) throw new Error(d.error || `HTTP ${r.status}`);
+      toast(`✅ 已导入: ${d.skill.name}`);
+      setImportUrl("");
+      setShowImportUrl(false);
+      fetchSkills();
+    } catch (err: any) { toast(`导入失败: ${err.message}`, "error"); }
+    setImporting(false);
+  };
+
+  // 扫描 GitHub 仓库
+  const [repoUrl, setRepoUrl] = useState("");
+  const [scanning, setScanning] = useState(false);
+  const [scanResult, setScanResult] = useState<{ repo?: any; candidates?: any[]; message?: string } | null>(null);
+  const [selectedSkillIds, setSelectedSkillIds] = useState<Set<string>>(new Set());
+  const [batchImporting, setBatchImporting] = useState(false);
+
+  const doScanRepo = async () => {
+    if (!repoUrl.trim()) return;
+    setScanning(true);
+    setScanResult(null);
+    setSelectedSkillIds(new Set());
+    try {
+      const r = await fetch("/api/skills/scan-repo", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ repoUrl: repoUrl.trim() }) });
+      const d = await r.json().catch(() => ({} as any));
+      if (!r.ok) throw new Error(d.error || `HTTP ${r.status}`);
+      setScanResult(d);
+      // 默认全选
+      if (d.candidates?.length > 0) setSelectedSkillIds(new Set(d.candidates.map((c: any) => c.id)));
+    } catch (err: any) { toast(`扫描失败: ${err.message}`, "error"); }
+    setScanning(false);
+  };
+
+  const doBatchImport = async () => {
+    if (selectedSkillIds.size === 0 || !scanResult?.repo?.url) return;
+    setBatchImporting(true);
+    try {
+      const r = await fetch("/api/skills/batch-import", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ repoUrl: scanResult.repo.url, skillIds: [...selectedSkillIds] }) });
+      const d = await r.json().catch(() => ({} as any));
+      if (!r.ok) throw new Error(d.error || `HTTP ${r.status}`);
+      if (d.installed?.length) toast(`✅ 已安装 ${d.installed.length} 个: ${d.installed.join(", ")}`);
+      if (d.errors?.length) toast(`⚠️ ${d.errors.join("; ")}`, "error");
+      setScanResult(null); setRepoUrl(""); fetchSkills(); fetchHub();
+    } catch (err: any) { toast(`安装失败: ${err.message}`, "error"); }
+    setBatchImporting(false);
+  };
+
   // 在线 Hub
   const [hubSkills, setHubSkills] = useState<any[]>([]);
   const [hubLoading, setHubLoading] = useState(false);
@@ -1201,10 +1260,62 @@ function SkillsPanel({ onCreateSkill, onEditSkill, onLearnFromHistory, skillsVer
               <option value="rating">评分</option>
               <option value="name">名称</option>
             </select>
+            {showImportUrl ? (
+              <div className="hub-import-row">
+                <input className="hub-import-input" type="url" placeholder="粘贴 Skill JSON 的原始 URL…" value={importUrl}
+                  onChange={e => setImportUrl(e.target.value)}
+                  onKeyDown={e => { if (e.key === "Enter") doImportUrl(); if (e.key === "Escape") setShowImportUrl(false); }} />
+                <button className="hub-import-btn" disabled={importing || !importUrl.trim()} onClick={doImportUrl}>{importing ? "导入中…" : "导入"}</button>
+                <button className="hub-import-cancel" onClick={() => setShowImportUrl(false)}>取消</button>
+              </div>
+            ) : (
+              <button className="hub-import-toggle" onClick={() => setShowImportUrl(true)} title="从 GitHub / Gist 等 URL 导入 Skill">🔗 URL 导入</button>
+            )}
+            <button className="hub-repo-scan-btn" onClick={() => { setRepoUrl(""); setScanResult(null); setShowImportUrl(false); }} title="扫描 GitHub 仓库，从 skills.json 清单或 JSON 文件批量发现 Skill">
+              📦 扫描仓库
+            </button>
+          </div>
+
+          {/* 扫描仓库 */}
+          <div className="hub-scan-section">
+            <input className="hub-import-input" type="url" placeholder="GitHub 仓库地址，如 https://github.com/user/repo" value={repoUrl}
+              onChange={e => setRepoUrl(e.target.value)}
+              onKeyDown={e => { if (e.key === "Enter") doScanRepo(); }} />
+            <button className="hub-import-btn" disabled={scanning || !repoUrl.trim()} onClick={doScanRepo}>
+              {scanning ? "扫描中…" : "扫描"}
+            </button>
           </div>
 
           {hubError && <div className="hub-error">⚠️ {hubError}<button onClick={() => fetchHub(hubSearch, hubSort)}>重试</button></div>}
           {hubLoading && <div className="skills-loading">从 Hub 加载中...</div>}
+
+          {/* 扫描结果 */}
+          {scanResult?.candidates && scanResult.candidates.length > 0 && (
+            <div className="hub-scan-result">
+              <div className="hub-scan-header">
+                <strong>{scanResult.repo?.collectionName || scanResult.repo?.name}</strong>
+                <span className="hub-scan-count">{scanResult.candidates.length} 个 Skill</span>
+              </div>
+              {scanResult.candidates.map((c: any) => (
+                <label key={c.id} className="hub-scan-item">
+                  <input type="checkbox" checked={selectedSkillIds.has(c.id)}
+                    onChange={() => { const next = new Set(selectedSkillIds); next.has(c.id) ? next.delete(c.id) : next.add(c.id); setSelectedSkillIds(next); }} />
+                  <div>
+                    <strong>{c.name}</strong>
+                    <code>{c.id}</code>
+                    <span className="hub-scan-format">{c.format === "markdown" ? "📝 .md" : "📄 .json"}</span>
+                    {c.description && <p>{c.description}</p>}
+                  </div>
+                </label>
+              ))}
+              <button className="hub-import-btn" disabled={batchImporting || selectedSkillIds.size === 0} onClick={doBatchImport}>
+                {batchImporting ? "安装中…" : `安装选中 (${selectedSkillIds.size})`}
+              </button>
+            </div>
+          )}
+          {scanResult && !scanResult.candidates?.length && (
+            <div className="hub-error">⚠️ {scanResult.message || "未发现 Skill"}</div>
+          )}
 
           {!hubLoading && !hubError && hubSkills.map(skill => (
             <div key={skill.skillId} className={`skill-card hub-card ${localIds.has(skill.skillId) ? "installed" : ""}`}>

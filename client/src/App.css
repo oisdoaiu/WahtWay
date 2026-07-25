@@ -1073,6 +1073,29 @@ body {
 .hub-search { flex: 1; min-width: 0; height: 36px; box-sizing: border-box; padding: 8px 14px; border: 1px solid #ddd; border-radius: 8px; font-size: 13px; outline: none; }
 .hub-search:focus { border-color: #1a73e8; }
 .hub-sort { width: 120px; height: 36px; box-sizing: border-box; padding: 8px 12px; border: 1px solid #ddd; border-radius: 8px; font-size: 13px; background: #fff; outline: none; }
+.hub-import-toggle { height: 36px; padding: 0 14px; border: 1px dashed #1a73e8; border-radius: 8px; background: transparent; color: #1a73e8; font-size: 12px; cursor: pointer; white-space: nowrap; }
+.hub-import-toggle:hover { background: #e8f0fe; }
+.hub-import-row { display: flex; gap: 8px; align-items: center; }
+.hub-import-input { flex: 1; min-width: 200px; height: 36px; padding: 8px 14px; border: 1px solid #1a73e8; border-radius: 8px; font-size: 13px; outline: none; }
+.hub-import-btn { height: 36px; padding: 0 16px; border: 0; border-radius: 8px; background: #1a73e8; color: #fff; font-size: 13px; cursor: pointer; white-space: nowrap; }
+.hub-import-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.hub-import-cancel { height: 36px; padding: 0 10px; border: 0; border-radius: 8px; background: transparent; color: #999; font-size: 12px; cursor: pointer; white-space: nowrap; }
+.hub-import-cancel:hover { color: #666; }
+.hub-repo-scan-btn { height: 36px; padding: 0 14px; border: 1px dashed #e67e22; border-radius: 8px; background: transparent; color: #e67e22; font-size: 12px; cursor: pointer; white-space: nowrap; }
+.hub-repo-scan-btn:hover { background: #fef5e7; }
+.hub-scan-section { display: flex; gap: 8px; padding: 8px 16px; align-items: center; }
+.hub-scan-result { margin: 8px 16px; padding: 12px; border: 1px solid #e0e0e0; border-radius: 10px; background: #fafafa; }
+.hub-scan-header { display: flex; justify-content: space-between; align-items: center; padding-bottom: 8px; margin-bottom: 8px; border-bottom: 1px solid #eee; }
+.hub-scan-count { font-size: 12px; color: #999; }
+.hub-scan-item { display: flex; align-items: flex-start; gap: 10px; padding: 8px 0; cursor: pointer; border-bottom: 1px solid #f0f0f0; }
+.hub-scan-item:last-child { border-bottom: 0; }
+.hub-scan-item input[type="checkbox"] { margin-top: 4px; }
+.hub-scan-item div { flex: 1; }
+.hub-scan-item strong { font-size: 14px; display: block; }
+.hub-scan-item code { font-size: 11px; color: #999; }
+.hub-scan-format { font-size: 11px; color: #888; margin-left: 6px; background: #f0f0f0; padding: 2px 6px; border-radius: 4px; }
+.hub-scan-item p { font-size: 12px; color: #666; margin: 4px 0 0; }
+.hub-scan-result .hub-import-btn { margin-top: 10px; width: 100%; }
 
 .hub-card { border-left: 3px solid #e0e0e0; position: relative; }
 .hub-card.installed { border-left-color: #4caf50; }

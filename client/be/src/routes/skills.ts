@@ -411,6 +411,259 @@ router.post("/download", async (req: Request, res: Response) => {
   }
 });
 
+// POST /api/skills/import-url — 从 URL 导入外部 Skill
+router.post("/import-url", async (req: Request, res: Response) => {
+  const url = typeof req.body?.url === "string" ? req.body.url.trim() : "";
+  if (!url || !/^https?:\/\/.+/.test(url)) {
+    res.status(400).json({ error: "请提供有效的 HTTPS URL（Skill JSON 原始地址）" });
+    return;
+  }
+
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 20000);
+    const response = await fetch(url, { signal: controller.signal });
+    clearTimeout(timeout);
+
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const contentType = response.headers.get("content-type") || "";
+    if (contentType.includes("text/html")) throw new Error("URL 返回的是 HTML 页面，请提供 Skill JSON 文件的原始(raw)地址");
+    const text = await response.text();
+    if (text.length > 512 * 1024) throw new Error("JSON 文件过大（超过 512KB）");
+
+    let skill: any;
+    try { skill = JSON.parse(text); } catch { throw new Error("JSON 解析失败，请确认 URL 返回的是合法 JSON"); }
+
+    // 校验必填字段
+    const missing = ["id", "name", "description", "systemPrompt", "input", "output"].filter(f => !(f in skill));
+    if (missing.length > 0) throw new Error(`缺少必填字段: ${missing.join(", ")}`);
+    if (typeof skill.id !== "string" || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(skill.id) || skill.id.length < 3 || skill.id.length > 64) {
+      throw new Error("Skill ID 必须是 3-64 位 kebab-case（如 my-skill）");
+    }
+    if (typeof skill.name !== "string" || !skill.name.trim()) throw new Error("Skill name 不能为空");
+
+    // 检查是否已存在
+    if (registeredSkills.some(s => s.id === skill.id)) {
+      res.status(409).json({ error: `Skill "${skill.id}" 已存在，请先删除再导入` });
+      return;
+    }
+
+    // 添加来源标记
+    skill.origin = "hub";
+    saveSkill(skill as Skill);
+    console.log(`📥 已从 URL 导入 Skill: ${skill.name} (${skill.id}) ← ${url}`);
+    res.json({ success: true, skill: { id: skill.id, name: skill.name, description: skill.description } });
+  } catch (err: any) {
+    res.status(500).json({ error: `导入失败: ${err.message}` });
+  }
+});
+
+// POST /api/skills/scan-repo — 扫描 GitHub 仓库中的 Skill
+router.post("/scan-repo", async (req: Request, res: Response) => {
+  const repoUrl = typeof req.body?.repoUrl === "string" ? req.body.repoUrl.trim() : "";
+  if (!repoUrl) { res.status(400).json({ error: "请提供 GitHub 仓库 URL" }); return; }
+
+  // 解析 GitHub URL: https://github.com/owner/repo 或 /tree/branch/path
+  const match = repoUrl.match(/github\.com\/([^\/]+)\/([^\/]+?)(?:\/tree\/([^\/]+)\/(.+))?\/?(?:\.git)?$/);
+  if (!match) { res.status(400).json({ error: "URL 格式不正确，示例: https://github.com/user/repo" }); return; }
+
+  const [, owner, repo, branch, subPath] = match;
+  const ref = branch || "main";
+  const base = subPath ? `${subPath}/` : "";
+
+  const headers: Record<string, string> = { Accept: "application/vnd.github.v3+json", "User-Agent": "WahtWay" };
+  try {
+    // 策略1: 先尝试读取 skills.json 清单
+    let candidates: Array<{ id: string; name: string; description: string; path: string; source: string }> = [];
+    let collectionName = `${owner}/${repo}`;
+    let collectionDesc = "";
+
+    // 通过 GitHub API content 端点读取 skills.json（避免 raw.githubusercontent.com 被墙）
+    const manifestApiUrl = `https://api.github.com/repos/${owner}/${repo}/contents/${base}skills.json?ref=${ref}`;
+    try {
+      const ctrl = new AbortController();
+      const t = setTimeout(() => ctrl.abort(), 10000);
+      const mr = await fetch(manifestApiUrl, { headers, signal: ctrl.signal });
+      clearTimeout(t);
+      if (mr.ok) {
+        const manifestEntry = await mr.json().catch(() => ({}));
+        const manifestContent = manifestEntry.content
+          ? Buffer.from(manifestEntry.content, manifestEntry.encoding || "base64").toString("utf-8")
+          : null;
+        const manifest = manifestContent ? JSON.parse(manifestContent) : ({} as any);
+        if (Array.isArray(manifest.skills)) {
+          collectionName = manifest.name || collectionName;
+          collectionDesc = manifest.description || "";
+          candidates = manifest.skills
+            .filter((s: any) => s.id && s.path)
+            .map((s: any) => ({
+              id: s.id,
+              name: s.name || s.id,
+              description: s.description || "",
+              path: `${base}${s.path}`.replace(/^\/+/, ""),
+              source: `https://github.com/${owner}/${repo}`,
+            }));
+        }
+      }
+    } catch { /* 无清单，走策略2 */ }
+
+    // 策略2: 没有清单则扫描目录
+    if (candidates.length === 0) {
+      const apiUrl = `https://api.github.com/repos/${owner}/${repo}/contents/${base}`.replace(/\/$/, "");
+      const ctrl2 = new AbortController();
+      const t2 = setTimeout(() => ctrl2.abort(), 10000);
+      const dirResp = await fetch(apiUrl, { headers, signal: ctrl2.signal });
+      clearTimeout(t2);
+      if (!dirResp.ok) {
+        res.status(502).json({ error: `GitHub API 返回 ${dirResp.status}（仓库可能为私有或不存在）` });
+        return;
+      }
+      const entries: any[] = await dirResp.json().catch(() => []);
+      if (!Array.isArray(entries)) {
+        res.status(400).json({ error: "该 URL 不是目录" });
+        return;
+      }
+
+      // 筛选 Skill 候选文件
+      const skipJson = new Set(["package.json", "package-lock.json", "tsconfig.json", ".eslintrc.json", "manifest.json", ".prettierrc.json"]);
+      const skipMd = new Set(["readme.md", "license.md", "contributing.md", "changelog.md", "code_of_conduct.md", "security.md"]);
+      for (const entry of entries) {
+        if (entry.type !== "file") continue;
+        const name = entry.name.toLowerCase();
+        if (entry.name.endsWith(".json") && !skipJson.has(entry.name)) {
+          candidates.push({
+            id: entry.name.replace(/\.json$/, ""),
+            name: entry.name.replace(/\.json$/, ""),
+            description: "",
+            path: entry.path,
+            source: `https://github.com/${owner}/${repo}`,
+            format: "json",
+          });
+        } else if ((entry.name.endsWith(".md") || entry.name.endsWith(".markdown")) && !skipMd.has(name)) {
+          candidates.push({
+            id: entry.name.replace(/\.(md|markdown)$/i, ""),
+            name: entry.name.replace(/\.(md|markdown)$/i, ""),
+            description: "Markdown 提示词 → 自动转为 Skill",
+            path: entry.path,
+            source: `https://github.com/${owner}/${repo}`,
+            format: "markdown",
+          });
+        }
+      }
+    }
+
+    if (candidates.length === 0) {
+      res.json({ candidates: [], message: "未发现符合 Skill 格式的 JSON 文件，可以在仓库根目录放一个 skills.json 清单文件" });
+      return;
+    }
+
+    res.json({
+      repo: { owner, name: repo, url: `https://github.com/${owner}/${repo}`, collectionName, collectionDesc },
+      candidates,
+    });
+  } catch (err: any) {
+    res.status(502).json({ error: `扫描仓库失败: ${err.message}` });
+  }
+});
+
+// POST /api/skills/batch-import — 从仓库批量导入 Skill
+router.post("/batch-import", async (req: Request, res: Response) => {
+  const { repoUrl, skillIds } = req.body as { repoUrl?: string; skillIds?: string[] };
+  if (!repoUrl || !Array.isArray(skillIds) || skillIds.length === 0) {
+    res.status(400).json({ error: "请提供 repoUrl 和 skillIds 数组" });
+    return;
+  }
+
+  const match = repoUrl.match(/github\.com\/([^\/]+)\/([^\/]+?)(?:\/tree\/([^\/]+)\/(.+))?\/?(?:\.git)?$/);
+  if (!match) { res.status(400).json({ error: "GitHub URL 格式不正确" }); return; }
+
+  const [, owner, repo, branch, subPath] = match;
+  const ref = branch || "main";
+  const base = subPath ? `${subPath}/` : "";
+
+  const installed: string[] = [];
+  const errors: string[] = [];
+  const headers: Record<string, string> = { Accept: "application/vnd.github.v3+json", "User-Agent": "WahtWay" };
+
+  for (const skillId of skillIds) {
+    try {
+      // 先尝试从 manifest 找到路径
+      let skillPath = `${base}${skillId}.json`;
+      let isMd = false;
+      try {
+        const ctrl = new AbortController();
+        const t = setTimeout(() => ctrl.abort(), 8000);
+        const mr = await fetch(`https://api.github.com/repos/${owner}/${repo}/contents/${base}skills.json?ref=${ref}`, { signal: ctrl.signal, headers });
+        clearTimeout(t);
+        if (mr.ok) {
+          const entry = await mr.json().catch(() => ({}));
+          const manifestContent = entry.content ? Buffer.from(entry.content, entry.encoding || "base64").toString("utf-8") : null;
+          const manifest = manifestContent ? JSON.parse(manifestContent) : ({} as any);
+          const found = manifest.skills?.find((s: any) => s.id === skillId);
+          if (found?.path) { skillPath = `${base}${found.path}`.replace(/^\/+/, ""); isMd = found.path.endsWith(".md"); }
+        }
+      } catch { /* use default path */ }
+
+      // 通过 GitHub API content 端点获取文件
+      let apiUrl = `https://api.github.com/repos/${owner}/${repo}/contents/${skillPath}?ref=${ref}`;
+      const ctrl2 = new AbortController();
+      const t2 = setTimeout(() => ctrl2.abort(), 10000);
+      let fr = await fetch(apiUrl, { headers, signal: ctrl2.signal });
+      clearTimeout(t2);
+
+      // 如果 .json 404，尝试 .md
+      if (!fr.ok && !isMd) {
+        const mdPath = skillPath.replace(/\.json$/, ".md");
+        const ctrl3 = new AbortController();
+        const t3 = setTimeout(() => ctrl3.abort(), 10000);
+        fr = await fetch(`https://api.github.com/repos/${owner}/${repo}/contents/${mdPath}?ref=${ref}`, { headers, signal: ctrl3.signal });
+        clearTimeout(t3);
+        if (fr.ok) { skillPath = mdPath; isMd = true; }
+      }
+
+      if (!fr.ok) throw new Error(`HTTP ${fr.status}`);
+      const fileEntry = await fr.json().catch(() => { throw new Error("GitHub API 响应异常"); });
+      if (!fileEntry.content) throw new Error("文件内容为空");
+      const content = Buffer.from(fileEntry.content, fileEntry.encoding || "base64").toString("utf-8");
+
+      let skill: any;
+      let generatedId = skillId;
+      if (isMd || skillPath.endsWith(".md")) {
+        // Markdown → Skill 自动转换
+        const titleMatch = content.match(/^#\s+(.+)/m);
+        const skillName = titleMatch ? titleMatch[1].trim() : skillId;
+        const descLines = content.split(/\n/).filter(l => l.trim() && !l.startsWith("#")).slice(0, 3);
+        generatedId = skillName.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 64) || skillId;
+        skill = {
+          id: generatedId,
+          name: skillName,
+          description: descLines[0]?.slice(0, 100) || `${skillName} (Markdown Skill)`,
+          systemPrompt: content,
+          input: { type: "object", properties: { request: { type: "string", description: "用户的需求" } }, required: ["request"] },
+          output: { type: "object", properties: {} },
+        };
+      } else {
+        skill = JSON.parse(content);
+      }
+      const missing = ["id", "name", "description", "systemPrompt", "input", "output"].filter(f => !(f in skill));
+      if (missing.length > 0) throw new Error(`缺少字段: ${missing.join(", ")}`);
+      if (registeredSkills.some(s => s.id === skill.id)) {
+        errors.push(`${skillId}: 已存在`);
+        continue;
+      }
+
+      skill.origin = "hub";
+      saveSkill(skill as Skill);
+      installed.push(skill.name || skillId);
+      console.log(`📥 批量导入: ${skill.name} (${skill.id}) ← ${repoUrl}`);
+    } catch (e: any) {
+      errors.push(`${skillId}: ${e.message}`);
+    }
+  }
+
+  res.json({ success: true, installed, errors });
+});
+
 // DELETE /api/skills/:id — 删除 Skill
 router.delete("/:id", (req: Request, res: Response) => {
   try {

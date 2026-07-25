@@ -1,0 +1,9 @@
+{
+  "name": "WahtWay 社区 Skills",
+  "description": "官方测试合集，验证 GitHub 仓库扫描导入功能",
+  "skills": [
+    { "id": "translate-helper", "name": "翻译助手", "path": "skills/translate-helper.json" },
+    { "id": "code-review", "name": "代码审查", "path": "skills/code-review.md" },
+    { "id": "meeting-notes", "name": "会议纪要", "path": "docs/skills/meeting-notes.json" }
+  ]
+}
