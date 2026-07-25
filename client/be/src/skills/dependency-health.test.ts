@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { Skill } from "../types";
+import { formatLlmError } from "../llm-errors";
 import {
   evaluateSkillDependencies,
   SkillDependencyError,
@@ -157,5 +158,16 @@ describe("Skill dependency health", () => {
     expect(error.health).toBe(health);
     expect(error.message).toContain("Fixture Skill");
     expect(error.message).toContain("files");
+  });
+
+  it("keeps dependency guidance ahead of generic LLM network errors", () => {
+    const manifest = skill({ mcpBindings: [binding] });
+    const health = evaluateSkillDependencies(manifest, [server({
+      status: { state: "reconnecting", lastError: "connection lost", tools: [] },
+    })], []);
+    const error = new SkillDependencyError(manifest, health);
+
+    expect(formatLlmError(error)).toBe(error.message);
+    expect(formatLlmError(error)).toContain("正在重连");
   });
 });

@@ -10,6 +10,10 @@ export function formatLlmError(err: unknown): string {
   const code = String(anyErr?.code || anyErr?.type || "").toLowerCase();
   const status = Number(anyErr?.status || anyErr?.statusCode || 0);
 
+  if (code === "skill_dependency_unavailable") {
+    return rawMessage;
+  }
+
   if (status === 401 || status === 403 || message.includes("unauthorized") || message.includes("invalid api key")) {
     return LLM_AUTH_MESSAGE;
   }
