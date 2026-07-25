@@ -44,6 +44,11 @@
   "modeColor": "#f59e0b",
   "modeIcon": "💻",
   "welcomeMessage": "贴代码、报错或文件路径，我会按逻辑、问题、修复方案和知识点来讲清楚。",
+  "modeExamples": [
+    "这段 JavaScript 为什么会报错？",
+    "帮我逐行解释这段 Python 代码",
+    "这个登录接口有什么安全问题？"
+  ],
   "keywords": [
     "代码",
     "bug",

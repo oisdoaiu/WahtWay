@@ -23,6 +23,7 @@ export interface Skill {
   modeColor?: string;
   modeIcon?: string;
   welcomeMessage?: string;
+  modeExamples?: string[];
 }
 
 export type SkillStatus = "draft" | "pending" | "published" | "rejected" | "archived";
@@ -110,6 +111,7 @@ export interface SkillListItem {
   modeColor?: string;
   modeIcon?: string;
   welcomeMessage?: string;
+  modeExamples?: string[];
   authorName?: string;
   category?: string;
   tags: string[];

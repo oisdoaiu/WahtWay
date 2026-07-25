@@ -114,6 +114,41 @@ function seedDatabase(): SkillHubDatabase {
   };
 }
 
+function syncSeedSkills(db: SkillHubDatabase): boolean {
+  const seedSkills = readSeedSkills();
+  const seedsById = new Map(seedSkills.map((skill) => [skill.id, skill]));
+  let changed = false;
+
+  for (const seedSkill of seedSkills) {
+    if (db.records.some((record) => record.skillId === seedSkill.id)) continue;
+    db.records.push(recordFromSeed(seedSkill));
+    changed = true;
+  }
+
+  for (const record of db.records) {
+    const seedSkill = seedsById.get(record.skillId);
+    if (!seedSkill || record.category !== "内置" || record.authorUserId) continue;
+
+    const current = latestVersion(record);
+    const nextManifest = {
+      ...current.manifest,
+      modeCategory: seedSkill.modeCategory,
+      modeColor: seedSkill.modeColor,
+      modeIcon: seedSkill.modeIcon,
+      welcomeMessage: seedSkill.welcomeMessage,
+      modeExamples: seedSkill.modeExamples,
+    };
+    if (JSON.stringify(current.manifest) === JSON.stringify(nextManifest)) continue;
+
+    current.manifest = nextManifest;
+    current.checksum = checksumSkill(nextManifest);
+    record.updatedAt = nowIso();
+    changed = true;
+  }
+
+  return changed;
+}
+
 function ensureDataDir(): void {
   if (!fs.existsSync(DATA_DIR)) {
     fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -128,6 +163,7 @@ function readDb(): SkillHubDatabase {
     if (parsed.schemaVersion !== 1 || !Array.isArray(parsed.records)) {
       throw new Error("数据库格式不正确");
     }
+    if (syncSeedSkills(parsed)) writeDb(parsed);
     return parsed;
   } catch (err: any) {
     throw new Error(`Skill Hub 数据读取失败: ${err.message}`);
@@ -165,6 +201,7 @@ function toListItem(record: SkillHubRecord): SkillListItem {
     modeColor: current.manifest.modeColor,
     modeIcon: current.manifest.modeIcon,
     welcomeMessage: current.manifest.welcomeMessage,
+    modeExamples: current.manifest.modeExamples,
     authorName: record.authorName,
     category: record.category,
     tags: record.tags,
