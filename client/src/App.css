@@ -1495,6 +1495,9 @@ body {
 .mcp-idempotent { display: inline-flex; align-items: center; gap: 3px; font-size: 9px; }
 .mcp-idempotent input { margin: 0; }
 .mcp-hints { flex-basis: 100%; color: #888; font-size: 9px; }
+.mcp-create-skill { border: 1px solid #1a73e8; border-radius: 4px; padding: 3px 6px; background: #fff; color: #1a73e8; cursor: pointer; font-size: 9px; }
+.mcp-create-skill:disabled { opacity: 0.45; cursor: not-allowed; }
+.mcp-skill-linked { padding: 2px 5px; border-radius: 4px; background: #e6f4ea; color: #137333; font-size: 9px; }
 .mcp-server-actions { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
 .mcp-server-actions button { padding: 6px 10px; border: 1px solid #ddd; border-radius: 6px; background: #fff; cursor: pointer; }
 .mcp-server-actions button:disabled { opacity: 0.45; cursor: not-allowed; }

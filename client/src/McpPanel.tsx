@@ -112,11 +112,12 @@ export function McpPanel({ onNotify }: { onNotify: (message: string, type?: "inf
   const [busyId, setBusyId] = useState("");
   const [secretName, setSecretName] = useState("");
   const [secretValue, setSecretValue] = useState("");
+  const [skillBindings, setSkillBindings] = useState(new Map<string, { id: string; name: string }>());
   const [auditView, setAuditView] = useState<{ server: McpServer; events: ToolAuditEvent[]; loading: boolean } | null>(null);
   const toolRevisions = useRef(new Map<string, number>());
 
   const load = async () => {
-    const response = await fetch("/api/mcp/servers");
+    const [response, skillsResponse] = await Promise.all([fetch("/api/mcp/servers"), fetch("/api/skills")]);
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || "MCP Server 加载失败");
     const nextServers: McpServer[] = data.servers || [];
@@ -128,6 +129,14 @@ export function McpPanel({ onNotify }: { onNotify: (message: string, type?: "inf
       toolRevisions.current.set(server.id, server.status.toolListRevision);
     }
     setServers(nextServers);
+    if (skillsResponse.ok) {
+      const skillsData = await skillsResponse.json();
+      const bindings = new Map<string, { id: string; name: string }>();
+      for (const skill of skillsData.skills || []) {
+        for (const binding of skill.mcpBindings || []) bindings.set(binding.registeredName, { id: skill.id, name: skill.name });
+      }
+      setSkillBindings(bindings);
+    }
   };
 
   useEffect(() => {
@@ -292,6 +301,21 @@ export function McpPanel({ onNotify }: { onNotify: (message: string, type?: "inf
     }
   };
 
+  const createSkillAssistant = async (serverId: string, toolName: string) => {
+    setBusyId(serverId);
+    try {
+      const data = await request("/api/skills/mcp-assistant", {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ serverId, toolName }),
+      });
+      await load();
+      onNotify(`已创建 ${data.skill?.name || "MCP Skill 助手"}`);
+    } catch (error: any) {
+      onNotify(error.message || "MCP Skill 助手创建失败", "error");
+    } finally {
+      setBusyId("");
+    }
+  };
+
   const editingServer = originalId ? servers.find((server) => server.id === originalId) : undefined;
 
   return (
@@ -337,6 +361,9 @@ export function McpPanel({ onNotify }: { onNotify: (message: string, type?: "inf
                       <option value="inherit">风险：保守推断</option><option value="read">只读</option><option value="write">写入</option><option value="destructive">危险</option>
                     </select>
                     <label className="mcp-idempotent"><input type="checkbox" checked={tool.safetyOverride?.idempotent === true} disabled={busyId === server.id || !tool.safetyOverride?.risk} onChange={(event) => updateToolSafety(server.id, tool, tool.safetyOverride?.risk || "write", event.target.checked)} />幂等</label>
+                    {skillBindings.has(tool.registeredName)
+                      ? <span className="mcp-skill-linked">已关联：{skillBindings.get(tool.registeredName)!.name}</span>
+                      : <button className="mcp-create-skill" disabled={busyId === server.id || tool.permission === "disabled"} onClick={() => createSkillAssistant(server.id, tool.name)}>创建 Skill 助手</button>}
                     <span className="mcp-hints">Server: {tool.annotations.readOnlyHint ? "只读 " : ""}{tool.annotations.destructiveHint ? "危险 " : ""}{tool.annotations.idempotentHint ? "幂等提示 " : ""}{tool.annotations.openWorldHint ? "外部访问" : ""}</span>
                   </div>)}
                 </div>
