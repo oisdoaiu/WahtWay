@@ -2090,10 +2090,7 @@ export default function App() {
         ) : view === "external-tools" ? (
           <ExternalToolsPanel />
         ) : (
-          <>
-            <SkillsPanel onCreateSkill={() => setShowModal(true)} onEditSkill={(s) => { setSkillToEdit(s); setShowModal(true); }} onLearnFromHistory={(s) => { setSkillToEdit(s); setShowModal(true); }} skillsVersion={skillsVersion} />
-            <McpPanel onNotify={(message, type = "info") => toast(message, type)} />
-          </>
+          <McpPanel onNotify={(message, type = "info") => toast(message, type)} />
         )}
       </div>
       <CommandPalette show={showCmdPalette} onClose={() => setShowCmdPalette(false)} skills={appSkills}
