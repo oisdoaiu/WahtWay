@@ -16,6 +16,7 @@ import { formatLlmError } from "../llm-errors";
 import { getAllTools } from "../tools/registry";
 import { listExternalTools } from "../external-tools/repository";
 import { listPublicMcpServers } from "../mcp/runtime";
+import { getSkillDependencyHealth } from "../skills/dependency-health";
 
 const router = Router();
 const DEFAULT_SKILL_HUB_URL = "https://wahtway-production.up.railway.app";
@@ -185,12 +186,20 @@ router.get("/", (_req: Request, res: Response) => {
     modeIcon: s.modeIcon,
     welcomeMessage: s.welcomeMessage,
     modeExamples: s.modeExamples,
+    dependencyHealth: getSkillDependencyHealth(s),
   }));
   res.json({ skills });
 });
 
 router.get("/tools/catalog", (_req: Request, res: Response) => {
   res.json({ tools: buildSkillToolCatalog() });
+});
+
+router.get("/:id/dependencies", (req: Request, res: Response) => {
+  const skill = registeredSkills.find((item) => item.id === req.params.id);
+  if (!skill) return res.status(404).json({ error: "Skill 不存在" });
+  res.setHeader("Cache-Control", "no-store");
+  res.json({ skillId: skill.id, dependencyHealth: getSkillDependencyHealth(skill) });
 });
 
 export function buildMcpAssistantSkill(serverId: string, tool: any): Skill {
