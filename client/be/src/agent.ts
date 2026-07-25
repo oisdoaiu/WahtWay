@@ -18,6 +18,7 @@ import { createAiClient, getCurrentModel as getConfiguredModel } from "./ai-sett
 import { createAgentRunCheckpoint, saveAgentRunCheckpoint } from "./agent-runs/repository";
 import { AgentRunCheckpoint, SerializedToolCall } from "./agent-runs/types";
 import { executeApprovedTool, parsePendingApproval } from "./agent-runs/approval";
+import { assertSkillDependencies } from "./skills/dependency-health";
 
 function getClient(): OpenAI {
   return createAiClient();
@@ -461,6 +462,7 @@ export async function* executeSkillStream(
 export async function runAgent(userMessage: string): Promise<AgentResult> {
   const skill = await matchSkill(userMessage);
   if (!skill) throw new Error("未找到合适的 Skill");
+  assertSkillDependencies(skill);
   const gen = agenticLoopStream(skill.systemPrompt, userMessage);
   let output = "";
   for await (const ev of gen) {
@@ -493,7 +495,10 @@ export async function runAgentStream(
 
   if (skillId) {
     skill = registeredSkills.find((s) => s.id === skillId) || null;
-    if (!skill) log.warn("skill_not_found", { skillId });
+    if (!skill) {
+      log.warn("skill_not_found", { skillId });
+      throw new Error(`Skill「${skillId}」不存在，请重新选择模式`);
+    }
   }
 
   if (!skill) {
@@ -515,6 +520,7 @@ export async function runAgentStream(
     return executeSkillStream(general, userMessage, history, traceId, workspace, summary, runMetadata);
   }
 
+  assertSkillDependencies(skill);
   return executeSkillStream(skill, userMessage, history, traceId, workspace, summary, runMetadata);
 }
 
