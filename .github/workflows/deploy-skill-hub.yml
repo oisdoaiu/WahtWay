@@ -106,7 +106,19 @@ jobs:
             set -a
             . ./.env
             set +a
-            curl --fail --silent --show-error "http://127.0.0.1:${PORT:-4000}/api/health"
+            health_url="http://127.0.0.1:${PORT:-4000}/api/health"
+            for attempt in $(seq 1 20); do
+              if curl --fail --silent --show-error "$health_url"; then
+                exit 0
+              fi
+              echo "Waiting for Skill Hub to listen (${attempt}/20)..."
+              sleep 1
+            done
+
+            echo "Skill Hub did not become healthy at ${health_url}."
+            sudo systemctl status wahtway-skill-hub --no-pager || true
+            sudo journalctl -u wahtway-skill-hub -n 50 --no-pager || true
+            exit 1
           REMOTE
 
   notify-feishu:
