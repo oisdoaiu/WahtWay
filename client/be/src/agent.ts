@@ -353,6 +353,11 @@ export function resumeAgentRun(
   checkpoint: AgentRunCheckpoint,
   approved: boolean
 ): AsyncGenerator<StreamEvent> {
+  const metadata: AgentRunMetadata = {
+    conversationId: checkpoint.conversationId,
+    userMessageId: checkpoint.userMessageId,
+    assistantMessageId: checkpoint.assistantMessageId,
+  };
   return agenticLoopStream(
     checkpoint.systemPrompt,
     "",
@@ -360,11 +365,9 @@ export function resumeAgentRun(
     checkpoint.traceId,
     checkpoint.allowedTools,
     checkpoint.workspace,
-    {
-      conversationId: checkpoint.conversationId,
-      userMessageId: checkpoint.userMessageId,
-      assistantMessageId: checkpoint.assistantMessageId,
-    },
+    [],
+    undefined,
+    metadata,
     checkpoint,
     approved
   );
