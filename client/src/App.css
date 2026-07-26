@@ -75,7 +75,13 @@ body {
 }
 
 .nav-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  flex: none;
   font-size: 18px;
+  line-height: 1;
 }
 
 .sidebar-footer {
