@@ -1391,6 +1391,18 @@ body {
   border-color: #45475a;
   color: #cdd6f4;
 }
+.app.dark .ai-inline-field select {
+  color-scheme: dark;
+  color: #cdd6f4;
+}
+.app.dark .ai-inline-field select option {
+  background: #313244;
+  color: #cdd6f4;
+}
+.app.dark .ai-inline-field select option:checked {
+  background: #1a73e8;
+  color: #fff;
+}
 .app.dark .ai-settings-btn {
   background: #313244;
   color: #89b4fa;
@@ -1405,20 +1417,46 @@ body {
 .app.dark .ai-settings-header {
   border-color: #45475a;
 }
-.app.dark .setup-textarea {
+.app.dark .ai-settings-card h1 {
+  color: #cdd6f4;
+}
+.app.dark .ai-settings-card p,
+.app.dark .ai-settings-form label,
+.app.dark .setup-hint {
+  color: #a6adc8;
+}
+.app.dark .ai-settings-form .setup-input,
+.app.dark .ai-settings-form .setup-textarea {
+  color-scheme: dark;
   background: #313244;
   border-color: #45475a;
   color: #cdd6f4;
+}
+.app.dark .ai-settings-form .setup-input::placeholder,
+.app.dark .ai-settings-form .setup-textarea::placeholder {
+  color: #7f849c;
+}
+.app.dark .ai-settings-form .setup-input:focus,
+.app.dark .ai-settings-form .setup-textarea:focus {
+  border-color: #89b4fa;
 }
 .app.dark .ai-settings-form select.setup-input {
   background: #313244;
   color: #cdd6f4;
   border-color: #45475a;
 }
+.app.dark .ai-settings-form select.setup-input option,
+.app.dark .ai-settings-form datalist option {
+  background: #313244;
+  color: #cdd6f4;
+}
 .app.dark .model-refresh-btn {
   background: #313244;
   color: #cdd6f4;
   border-color: #45475a;
+}
+.app.dark .model-refresh-btn:hover:not(:disabled) {
+  background: #45475a;
 }
 
 /* === Todo 可视化面板 === */
@@ -1445,6 +1483,27 @@ body {
 .app.dark { background: #1e1e2e; color: #cdd6f4; }
 .app.dark .sidebar { background: #181825; border-color: #313244; }
 .app.dark .header { background: #1e1e2e; border-color: #313244; }
+.app.dark * {
+  scrollbar-color: #585b70 #181825;
+}
+.app.dark *::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+.app.dark *::-webkit-scrollbar-track {
+  background: #181825;
+}
+.app.dark *::-webkit-scrollbar-thumb {
+  background: #585b70;
+  border: 2px solid #181825;
+  border-radius: 999px;
+}
+.app.dark *::-webkit-scrollbar-thumb:hover {
+  background: #6c7086;
+}
+.app.dark *::-webkit-scrollbar-corner {
+  background: #181825;
+}
 .app.dark .input-area { background: #1e1e2e; border-color: #313244; }
 .app.dark .input-area textarea { background: #313244; color: #cdd6f4; border-color: #45475a; }
 .app.dark .chat-area { background: #1e1e2e; }
@@ -1475,6 +1534,30 @@ body {
 .app.dark .field-hint code { background: #45475a; color: #bac2de; }
 .app.dark .field-count { color: #7f849c; }
 .app.dark .field-count.over { color: #fab387; }
+.app.dark .modal-textarea,
+.app.dark .edit-form input,
+.app.dark .edit-form textarea {
+  color-scheme: dark;
+  background: #313244;
+  color: #cdd6f4;
+  border-color: #45475a;
+}
+.app.dark .modal-textarea::placeholder,
+.app.dark .edit-form input::placeholder,
+.app.dark .edit-form textarea::placeholder,
+.app.dark .hub-search::placeholder,
+.app.dark .hub-import-input::placeholder,
+.app.dark .repo-url-input::placeholder {
+  color: #7f849c;
+}
+.app.dark .modal-textarea:focus,
+.app.dark .edit-form input:focus,
+.app.dark .edit-form textarea:focus {
+  border-color: #89b4fa;
+}
+.app.dark .skills-tabs {
+  border-bottom-color: #45475a;
+}
 .app.dark .skills-tab { color: #a6adc8; }
 .app.dark .skills-tab.active { color: #89b4fa; border-color: #89b4fa; }
 .app.dark .nav-item { color: #a6adc8; }
@@ -1485,10 +1568,113 @@ body {
 .app.dark .balance-button:hover:not(:disabled) { background: #313244; }
 .app.dark .balance-value { color: #a6e3a1; }
 .app.dark .balance-error { color: #f38ba8; }
+.app.dark .conv-list { border-top-color: #313244; }
+.app.dark .conv-item:hover { background: #313244; }
 .app.dark .conv-item { color: #a6adc8; }
 .app.dark .conv-item.active { background: #313244; color: #89b4fa; }
 .app.dark .hub-toolbar { background: #313244; border-color: #45475a; }
-.app.dark .hub-search, .app.dark .hub-sort { background: #45475a; color: #cdd6f4; border-color: #585b70; }
+.app.dark .hub-search,
+.app.dark .hub-sort,
+.app.dark .hub-import-input,
+.app.dark .repo-url-input {
+  color-scheme: dark;
+  background: #313244;
+  color: #cdd6f4;
+  border-color: #585b70;
+}
+.app.dark .hub-search:focus,
+.app.dark .hub-import-input:focus,
+.app.dark .repo-url-input:focus {
+  border-color: #89b4fa;
+}
+.app.dark .hub-sort option {
+  background: #313244;
+  color: #cdd6f4;
+}
+.app.dark .hub-import-toggle {
+  color: #89b4fa;
+  border-color: #89b4fa;
+}
+.app.dark .hub-import-toggle:hover {
+  background: #243b5c;
+}
+.app.dark .hub-import-cancel {
+  color: #a6adc8;
+}
+.app.dark .hub-import-cancel:hover {
+  color: #cdd6f4;
+}
+.app.dark .hub-repo-scan-btn,
+.app.dark .repo-confirm-btn,
+.app.dark .token-help-btn {
+  background: #313244;
+  color: #fab387;
+  border-color: #fab387;
+}
+.app.dark .hub-repo-scan-btn:hover,
+.app.dark .repo-confirm-btn:hover:not(:disabled),
+.app.dark .token-help-btn:hover {
+  background: #463b20;
+}
+.app.dark .repo-browser {
+  background: #1e1e2e;
+}
+.app.dark .repo-results,
+.app.dark .hub-scan-result {
+  background: #313244;
+  border-color: #45475a;
+}
+.app.dark .repo-results-header,
+.app.dark .hub-scan-header,
+.app.dark .repo-result-item,
+.app.dark .hub-scan-item {
+  border-color: #45475a;
+}
+.app.dark .repo-result-item strong,
+.app.dark .hub-scan-item strong,
+.app.dark .repo-results-header strong,
+.app.dark .hub-scan-header strong {
+  color: #cdd6f4;
+}
+.app.dark .repo-result-item code,
+.app.dark .hub-scan-item code,
+.app.dark .hub-scan-count {
+  color: #a6adc8;
+}
+.app.dark .repo-result-item p,
+.app.dark .hub-scan-item p {
+  color: #bac2de;
+}
+.app.dark .hub-scan-format {
+  background: #45475a;
+  color: #bac2de;
+}
+.app.dark .repo-deep-btn {
+  background: #313244;
+  color: #cba6f7;
+  border-color: #cba6f7;
+}
+.app.dark .repo-deep-btn:hover:not(:disabled) {
+  background: #3c3156;
+}
+.app.dark .repo-oversized {
+  background: #463b20;
+  border-color: #a77720;
+}
+.app.dark .repo-oversized-header,
+.app.dark .repo-oversized-size {
+  color: #f6d675;
+}
+.app.dark .repo-error,
+.app.dark .hub-error {
+  background: #452522;
+  color: #f2b8b5;
+}
+.app.dark .hub-error button {
+  background: #313244;
+  color: #f2b8b5;
+  border-color: #7f3d38;
+}
 .app.dark .todo-panel { background: #313244; border-color: #45475a; }
 .app.dark .todo-text { color: #cdd6f4; }
 .app.dark .todo-item.done .todo-text { color: #585b70; }
