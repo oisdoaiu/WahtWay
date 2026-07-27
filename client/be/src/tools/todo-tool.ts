@@ -50,7 +50,7 @@ export const todoUpdateTool: ToolDef = {
     }
     const done = todoItems.filter(t => t.done).length;
     const total = todoItems.length;
-    const lines = todoItems.map(t => `${t.done ? "✅" : "⬜"} ${t.text}`);
+    const lines = todoItems.map(t => `${t.done ? "[x]" : "[ ]"} ${t.text}`);
     return `任务进度 (${done}/${total}):\n${lines.join("\n")}`;
   },
 };

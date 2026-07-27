@@ -10,6 +10,30 @@ body {
   color: #333;
 }
 
+.app-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  font-size: 1.1em;
+  vertical-align: -0.08em;
+  flex: none;
+}
+
+button .app-icon,
+.sidebar-reset .app-icon,
+.sidebar-item .app-icon,
+.skill-tag .app-icon,
+.workspace-badge .app-icon,
+.todo-header .app-icon,
+.hub-scan-format .app-icon {
+  margin-right: 6px;
+}
+
+.icon-button .app-icon {
+  margin-right: 0;
+}
+
 /* === Layout === */
 
 .app {
@@ -259,6 +283,19 @@ body {
   color: #bbb;
 }
 
+.welcome-icon {
+  display: inline-flex;
+  width: 58px;
+  height: 58px;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 12px;
+  border-radius: 16px;
+  background: #f1f5f9;
+  color: #94a3b8;
+  font-size: 34px;
+}
+
 .mode-welcome {
   max-width: 520px;
   margin: 70px auto 0;
@@ -357,6 +394,8 @@ body {
 }
 
 .skill-tag {
+  display: inline-flex;
+  align-items: center;
   font-size: 12px;
   color: #1a73e8;
   margin-bottom: 6px;
@@ -1017,7 +1056,7 @@ body {
 .conv-item:hover .conv-delete { display: block; }
 .conv-delete:hover { color: #e74c3c; }
 
-.sidebar-reset { padding: 8px 12px; font-size: 11px; color: #ccc; cursor: pointer; text-align: center; }
+.sidebar-reset { display: flex; align-items: center; justify-content: flex-start; gap: 6px; min-height: 32px; padding: 8px 12px; font-size: 11px; color: #ccc; cursor: pointer; text-align: left; border-radius: 8px; }
 .sidebar-reset:hover { color: #e74c3c; }
 
 .debug-panel { max-height: 200px; overflow-y: auto; font-size: 11px; padding: 4px 0; border-top: 1px solid #333; }
@@ -1474,7 +1513,7 @@ body {
 .stop-btn:hover { background: #c0392b; }
 
 .workspace-control { display: inline-flex; align-items: center; gap: 4px; margin-left: 8px; }
-.workspace-badge { padding: 4px 10px; background: #f5f0ff; color: #7c4dff; border-radius: 10px; font-size: 12px; cursor: pointer; transition: background 0.2s; }
+.workspace-badge { display: inline-flex; align-items: center; gap: 4px; padding: 4px 10px; background: #f5f0ff; color: #7c4dff; border-radius: 10px; font-size: 12px; cursor: pointer; transition: background 0.2s; }
 .workspace-badge:hover { background: #ede0ff; }
 .workspace-clear { width: 20px; height: 20px; border: none; border-radius: 999px; background: #f2e8ff; color: #7c4dff; cursor: pointer; font-size: 14px; line-height: 20px; padding: 0; }
 .workspace-clear:hover { background: #e6d5ff; }
@@ -1695,13 +1734,13 @@ body {
 }
 .app.dark .cmd-input { color: #cdd6f4; border-color: #45475a; }
 .cmd-list { max-height: 300px; overflow-y: auto; }
-.cmd-item { padding: 12px 20px; cursor: pointer; font-size: 14px; transition: background 0.1s; }
+.cmd-item { display: flex; align-items: center; gap: 10px; padding: 12px 20px; cursor: pointer; font-size: 14px; transition: background 0.1s; }
 .cmd-item:hover { background: #f0f7ff; }
 .app.dark .cmd-item { color: #cdd6f4; }
 .app.dark .cmd-item:hover { background: #45475a; }
 
 /* === 侧边栏按钮 === */
-.sidebar-item { padding: 8px 14px; font-size: 12px; color: #888; cursor: pointer; border-radius: 8px; transition: background 0.15s; }
+.sidebar-item { display: flex; align-items: center; justify-content: flex-start; gap: 6px; min-height: 32px; padding: 8px 14px; font-size: 12px; color: #888; cursor: pointer; border-radius: 8px; transition: background 0.15s; }
 .sidebar-item:hover { background: #eee; }
 .app.dark .sidebar-item { color: #a6adc8; }
 .app.dark .sidebar-item:hover { background: #313244; }

@@ -25,7 +25,7 @@
   "whenToUse": "用户需要创建PPT、制作演示文稿、美化PPT、套用模板、生成幻灯片时触发。",
   "modeCategory": "办公创作",
   "modeColor": "#7c3aed",
-  "modeIcon": "📊",
+  "modeIcon": "ri-bar-chart-box-line",
   "welcomeMessage": "告诉我主题、页数、受众和是否有模板，我可以帮你规划并生成 PPT。",
   "modeExamples": [
     "帮我做一份 8 页的课程答辩 PPT",

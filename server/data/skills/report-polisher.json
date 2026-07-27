@@ -18,7 +18,7 @@
   "keywords": ["润色", "报告", "论文", "实习总结", "课程设计", "改写", "摘要", "语病"],
   "modeCategory": "学习",
   "modeColor": "#2563eb",
-  "modeIcon": "📝",
+  "modeIcon": "ri-edit-2-line",
   "welcomeMessage": "把原文和使用场景发给我，我会保留原意并把表达整理得更清楚、正式。",
   "modeExamples": [
     "帮我润色这段实习总结，让表达更正式",

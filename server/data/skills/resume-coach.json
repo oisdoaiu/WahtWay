@@ -18,7 +18,7 @@
   "keywords": ["简历", "实习", "校招", "项目经历", "自我介绍", "求职", "面试", "亮点"],
   "modeCategory": "办公创作",
   "modeColor": "#db2777",
-  "modeIcon": "📄",
+  "modeIcon": "ri-file-text-line",
   "welcomeMessage": "把你的项目、社团或实习经历发来，我会按目标岗位整理成真实、有重点的简历内容。",
   "modeExamples": [
     "帮我把这个课程项目改成前端实习简历的一条经历",

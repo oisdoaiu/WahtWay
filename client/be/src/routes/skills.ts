@@ -297,7 +297,7 @@ export function buildMcpAssistantSkill(serverId: string, tool: any): Skill {
     keywords: [tool.name, serverId, "MCP", "工具助手", "自动化"],
     modeCategory: "工具",
     modeColor: tool.risk === "destructive" ? "#c62828" : tool.risk === "write" ? "#856404" : "#1a73e8",
-    modeIcon: "🔧",
+    modeIcon: "ri-tools-line",
     welcomeMessage: `告诉我你希望 ${tool.name} 工具完成什么任务。`,
     modeExamples: [`使用 ${tool.name} 完成任务`],
     origin: "custom",
@@ -360,7 +360,7 @@ router.post("/learn-from-history", async (req: Request, res: Response) => {
 返回严格 JSON，不要 Markdown：
 {
   "reason": "一句话说明识别到的重复模式和依据数量",
-  "skill": { "id": "kebab-case", "name": "中文名称", "description": "一句话描述", "systemPrompt": "详细可执行的系统提示词", "input": { "type": "object", "properties": { "request": { "type": "string", "description": "用户本次需求" } }, "required": ["request"] }, "output": { "type": "object", "properties": {} }, "requiredTools": [], "keywords": ["至少5个关键词"], "modeCategory": "学习/开发/办公/生活/创作/其他之一", "modeColor": "#1a73e8", "modeIcon": "一个简短符号或 emoji", "welcomeMessage": "用户切换到此模式时看到的一句话提示，80字以内" }
+  "skill": { "id": "kebab-case", "name": "中文名称", "description": "一句话描述", "systemPrompt": "详细可执行的系统提示词", "input": { "type": "object", "properties": { "request": { "type": "string", "description": "用户本次需求" } }, "required": ["request"] }, "output": { "type": "object", "properties": {} }, "requiredTools": [], "keywords": ["至少5个关键词"], "modeCategory": "学习/开发/办公/生活/创作/其他之一", "modeColor": "#1a73e8", "modeIcon": "Remix Icon 类名，例如 ri-brain-line", "welcomeMessage": "用户切换到此模式时看到的一句话提示，80字以内" }
 }
 
 历史操作：
@@ -459,7 +459,7 @@ router.post("/generate", async (req: Request, res: Response) => {
   "keywords": ["关键", "词", "列表", "用于匹配用户意图", "5-15个"],
   "modeCategory": "学习/开发/办公/生活/创作/其他之一",
   "modeColor": "#1a73e8",
-  "modeIcon": "一个简短符号或 emoji",
+  "modeIcon": "Remix Icon 类名，例如 ri-brain-line",
   "welcomeMessage": "用户切换到此模式时看到的一句话提示，80字以内"
 }
 \`\`\`

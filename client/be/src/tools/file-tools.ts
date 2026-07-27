@@ -45,9 +45,9 @@ export const listFilesTool: ToolDef = {
         const isDir = stat.isDirectory();
         const size = isDir ? "-" : formatSize(stat.size);
         const mtime = stat.mtime.toLocaleString("zh-CN");
-        return `${isDir ? "📁" : "📄"} ${name}  ${size}  ${mtime}`;
+        return `${isDir ? "[DIR]" : "[FILE]"} ${name}  ${size}  ${mtime}`;
       } catch {
-        return `🚫 ${name}  (无权限)`;
+        return `[DENIED] ${name}  (无权限)`;
       }
     });
 
@@ -255,7 +255,7 @@ export const moveFileTool: ToolDef = {
       // 跨盘兼容：先复制再删除源文件
       fs.copyFileSync(src, dst);
       fs.unlinkSync(src);
-      return `✅ 已移动: ${path.basename(src)} → ${dst}`;
+      return `已移动: ${path.basename(src)} → ${dst}`;
     } catch (e: any) {
       return `移动失败: ${e.message}`;
     }
@@ -287,7 +287,7 @@ export const copyFileTool: ToolDef = {
       const targetDir = path.dirname(dst);
       if (!fs.existsSync(targetDir)) fs.mkdirSync(targetDir, { recursive: true });
       fs.copyFileSync(src, dst);
-      return `✅ 已复制: ${path.basename(src)} → ${dst}`;
+      return `已复制: ${path.basename(src)} → ${dst}`;
     } catch (e: any) {
       return `复制失败: ${e.message}`;
     }
@@ -314,7 +314,7 @@ export const newFolderTool: ToolDef = {
 
     try {
       fs.mkdirSync(dirPath, { recursive: true });
-      return `✅ 已创建文件夹: ${dirPath}`;
+      return `已创建文件夹: ${dirPath}`;
     } catch (e: any) {
       return `创建失败: ${e.message}`;
     }
@@ -345,7 +345,7 @@ export const writeFileTool: ToolDef = {
       const dir = path.dirname(filePath);
       if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
       fs.writeFileSync(filePath, content, "utf-8");
-      return `✅ 已写入: ${filePath} (${formatSize(content.length)})`;
+      return `已写入: ${filePath} (${formatSize(content.length)})`;
     } catch (e: any) {
       return `写入失败: ${e.message}`;
     }
@@ -373,7 +373,7 @@ export const deleteFileTool: ToolDef = {
 
     try {
       const trashPath = moveToTrash(filePath);
-      return `✅ 已移入回收站: ${path.basename(filePath)}\n回收站位置: ${TRASH_DIR}`;
+      return `已移入回收站: ${path.basename(filePath)}\n回收站位置: ${TRASH_DIR}`;
     } catch (e: any) {
       return `删除失败: ${e.message}`;
     }

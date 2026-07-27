@@ -187,7 +187,7 @@ function applyDefaults(skill: Record<string, unknown>, warnings: string[]): void
     skill.modeColor = "#1a73e8";
   }
   if (!skill.modeIcon || typeof skill.modeIcon !== "string") {
-    skill.modeIcon = "🤖";
+    skill.modeIcon = "ri-robot-2-line";
   }
   if (!skill.welcomeMessage || typeof skill.welcomeMessage !== "string") {
     skill.welcomeMessage = typeof skill.description === "string" ? skill.description.slice(0, 160) : "";

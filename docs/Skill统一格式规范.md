@@ -46,7 +46,7 @@
 | --- | --- | --- | --- | --- |
 | `modeCategory` | string | 否 | `常用` | 模式分组，例如 `通用`、`学习`、`开发`、`办公创作`、`生活`。 |
 | `modeColor` | string | 否 | `#1a73e8` | 主题色，必须是 6 位十六进制颜色。 |
-| `modeIcon` | string | 否 | `🤖` | 短图标或 emoji，建议 1 个字符，最多 8 字符。 |
+| `modeIcon` | string | 否 | `ri-robot-2-line` | Remix Icon 字体图标类名，例如 `ri-brain-line`，最多 64 字符。 |
 | `welcomeMessage` | string | 否 | `description` | 切换到该模式后的欢迎语，建议 160 字符以内。 |
 | `modeExamples` | string[] | 否 | `[]` | 快捷示例，最多 4 条，每条 80 字符以内。 |
 
@@ -107,7 +107,7 @@
   "whenToUse": "用户需要整理 GitHub Issue、Bug 反馈、需求描述、复现步骤或项目协作记录时触发。",
   "modeCategory": "开发",
   "modeColor": "#24292f",
-  "modeIcon": "🐙",
+  "modeIcon": "ri-github-line",
   "welcomeMessage": "把问题现象、报错或需求发给我，我会整理成适合提交到 GitHub 的 Issue。",
   "modeExamples": [
     "帮我把这个登录报错整理成 GitHub Issue",

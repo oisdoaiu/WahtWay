@@ -92,7 +92,7 @@ export function approveAndExecute(cmd: string, cwd: string): Promise<string> {
     const child = exec(cmd, { cwd, timeout: 30000, maxBuffer: 500 * 1024 }, (err, stdout, stderr) => {
       const key = cmd + "::" + cwd;
       if (err) {
-        const result = `❌ 命令执行失败 (exit ${err.code}):\n${stderr || err.message}`;
+        const result = `命令执行失败 (exit ${err.code}):\n${stderr || err.message}`;
         approvedCommands.set(key, result);
         resolve(result);
       } else {
@@ -136,7 +136,7 @@ export const runCommandTool: ToolDef = {
 
     // 危险命令永远弹窗
     if (isDangerous(cmd)) {
-      return `PERMISSION_REQUIRED::⚠️ 危险命令需确认::${cmd}::${cwd}`;
+      return `PERMISSION_REQUIRED::危险命令需确认::${cmd}::${cwd}`;
     }
 
     // 复合命令：拆开后逐个检查

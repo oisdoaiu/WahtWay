@@ -17,7 +17,7 @@
   "whenToUse": "用户需要润色、改写、完善课程报告、实习总结、论文段落或正式中文表达时触发。",
   "modeCategory": "学习",
   "modeColor": "#2563eb",
-  "modeIcon": "📝",
+  "modeIcon": "ri-edit-2-line",
   "welcomeMessage": "把原文和使用场景发给我，我会保留原意并把表达整理得更清楚、正式。",
   "modeExamples": [
     "帮我润色这段实习总结，让表达更正式",

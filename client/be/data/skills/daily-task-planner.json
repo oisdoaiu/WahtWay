@@ -17,7 +17,7 @@
   "whenToUse": "用户想整理待办、安排一天时间、判断任务优先级或拆分任务时触发。",
   "modeCategory": "生活",
   "modeColor": "#ea580c",
-  "modeIcon": "✅",
+  "modeIcon": "ri-checkbox-circle-line",
   "welcomeMessage": "把今天要做的事、截止时间和空闲时间发给我，我会整理成一份能落地的安排。",
   "modeExamples": [
     "我今天要写报告、复习和做 PPT，帮我排一下优先级",

@@ -79,7 +79,7 @@
     },
     "modeIcon": {
       "type": "string",
-      "maxLength": 8
+      "maxLength": 64
     },
     "welcomeMessage": {
       "type": "string",

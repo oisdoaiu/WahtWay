@@ -211,7 +211,7 @@ export const createPptTool: ToolDef = {
         } else if (layout === "image-text") {
           // 图片占位 + 右侧文字
           slide.addShape(pres.ShapeType.roundRect, { x: 0.5, y: 1.2, w: 4, h: 3.6, fill: { color: "EEEEEE" }, rectRadius: 0.1 });
-          slide.addText("📷", { x: 0.5, y: 2.2, w: 4, h: 1, fontSize: 40, align: "center", color: "CCCCCC" });
+          slide.addText("IMAGE", { x: 0.5, y: 2.2, w: 4, h: 1, fontSize: 24, align: "center", color: "CCCCCC" });
           if (s.title) slide.addText(s.title, { x: 5, y: 1.2, w: 4.5, h: 0.8, fontSize: 24, bold: true, color: theme.titleColor });
           if (s.bullets && s.bullets.length > 0) {
             slide.addText(
@@ -283,7 +283,7 @@ export const createPptTool: ToolDef = {
       const outDir = path.dirname(outPath);
       if (!fs.existsSync(outDir)) fs.mkdirSync(outDir, { recursive: true });
       await pres.writeFile({ fileName: outPath });
-      return "✅ PPT 已生成: " + outPath + " (共 " + slides.length + " 页, 主题: " + themeName + ")";
+      return "PPT 已生成: " + outPath + " (共 " + slides.length + " 页, 主题: " + themeName + ")";
     } catch (e: any) {
       return "创建 PPT 失败: " + e.message;
     }
@@ -348,7 +348,7 @@ export const fillTemplateTool: ToolDef = {
         }
       }
       zip.writeZip(outPath);
-      return `✅ 模板套用完成: ${outPath} (从 ${slideEntries.length} 页模板中填充了 ${Math.min(slideMap.length, slideEntries.length)} 页)`;
+      return `模板套用完成: ${outPath} (从 ${slideEntries.length} 页模板中填充了 ${Math.min(slideMap.length, slideEntries.length)} 页)`;
     } catch (e: any) {
       return "模板填充失败: " + e.message;
     }

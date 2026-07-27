@@ -18,7 +18,7 @@
   "keywords": ["待办", "任务", "优先级", "时间管理", "安排", "计划", "截止日期", "效率"],
   "modeCategory": "生活",
   "modeColor": "#ea580c",
-  "modeIcon": "✅",
+  "modeIcon": "ri-checkbox-circle-line",
   "welcomeMessage": "把今天要做的事、截止时间和空闲时间发给我，我会整理成一份能落地的安排。",
   "modeExamples": [
     "我今天要写报告、复习和做 PPT，帮我排一下优先级",

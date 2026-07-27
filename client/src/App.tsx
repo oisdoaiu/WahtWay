@@ -175,7 +175,9 @@ function dependencyStatusLabel(health?: SkillDependencyHealth): string {
 }
 
 const DEFAULT_MODE_COLOR = "#1a73e8";
-const DEFAULT_MODE_ICON = "🧠";
+const DEFAULT_MODE_ICON = "ri-brain-line";
+const TODO_DONE_MARK = "\u2705";
+const TODO_OPEN_MARK = "\u2B1C";
 
 const smartMode: SkillMeta = {
   id: "",
@@ -187,7 +189,7 @@ const smartMode: SkillMeta = {
   keywords: ["普通对话", "自动匹配"],
   modeCategory: "通用",
   modeColor: "#1a73e8",
-  modeIcon: "🤖",
+  modeIcon: "ri-robot-2-line",
   welcomeMessage: "我会先理解你的需求，再自动选择合适的 Skill。直接说你想做什么就行。",
   modeExamples: ["帮我整理今天的学习和作业安排", "解释这段代码为什么报错", "帮我规划一份课程答辩 PPT"],
 };
@@ -197,7 +199,23 @@ function getModeColor(skill?: Pick<SkillMeta, "modeColor"> | null): string {
 }
 
 function getModeIcon(skill?: Pick<SkillMeta, "modeIcon"> | null): string {
-  return skill?.modeIcon || DEFAULT_MODE_ICON;
+  const icon = skill?.modeIcon || DEFAULT_MODE_ICON;
+  const legacyMap: Record<string, string> = {
+    "\u{1F9E0}": "ri-brain-line",
+    "\u{1F916}": "ri-robot-2-line",
+    "\u{1F4C4}": "ri-file-text-line",
+    "\u{1F4DD}": "ri-edit-2-line",
+    "\u{1F4DA}": "ri-book-open-line",
+    "\u{1F4CA}": "ri-bar-chart-box-line",
+    "\u{1F4BB}": "ri-code-s-slash-line",
+    "\u2705": "ri-checkbox-circle-line",
+    "\u{1F319}": "ri-moon-line",
+  };
+  return legacyMap[icon] || (/^ri-[a-z0-9-]+$/.test(icon) ? icon : DEFAULT_MODE_ICON);
+}
+
+function Icon({ name, className = "", title }: { name: string; className?: string; title?: string }) {
+  return <i className={`${name} app-icon ${className}`.trim()} title={title} aria-hidden={title ? undefined : true} />;
 }
 
 function getModeCategory(skill: SkillMeta): string {
@@ -370,7 +388,7 @@ function ChatPanel({ conversationId, memoryMode, modeSkillId, onMemoryModeChange
 
     // 合并附件路径到消息
     const fullText = attachedFiles.length > 0
-      ? attachedFiles.map(f => `📎 ${f}`).join("\n") + (text ? "\n" + text : "")
+      ? attachedFiles.map(f => `[附件] ${f}`).join("\n") + (text ? "\n" + text : "")
       : text;
     appendMessage(conversationId, { id: userMessageId, role: "user", content: fullText });
     msgHistory.current.push(text);
@@ -463,8 +481,11 @@ function ChatPanel({ conversationId, memoryMode, modeSkillId, onMemoryModeChange
               addDebugEvent("tool_result", "完成");
               // 解析 todo-update 结果 → 可视化面板
               if (tn === "todo-update" && typeof res === "string") {
-                const items = res.split(/\r?\n/).filter(function(l) { return l.startsWith("✅") || l.startsWith("⬜"); }).map(function(l, i) {
-                  return { id: i, text: l.slice(2).trim(), done: l.startsWith("✅") };
+                const items = res.split(/\r?\n/).filter(function(l) {
+                  return l.startsWith(TODO_DONE_MARK) || l.startsWith(TODO_OPEN_MARK) || l.startsWith("[x]") || l.startsWith("[ ]");
+                }).map(function(l, i) {
+                  const legacy = l.startsWith(TODO_DONE_MARK) || l.startsWith(TODO_OPEN_MARK);
+                  return { id: i, text: l.slice(legacy ? 2 : 3).trim(), done: l.startsWith(TODO_DONE_MARK) || l.startsWith("[x]") };
                 });
                 if (items.length > 0) setTodoItems(conversationId, items);
               }
@@ -488,7 +509,7 @@ function ChatPanel({ conversationId, memoryMode, modeSkillId, onMemoryModeChange
             }
             else if (event.type === "delta") { lastEventRef.current = Date.now(); setThinkingStatus(""); appendToLast(conversationId, event.data); }
             else if (event.type === "stats") { lastEventRef.current = Date.now(); updateLastMessage(conversationId, msg => ({ ...msg, stats: event.data as any })); }
-            else if (event.type === "error") { lastEventRef.current = Date.now(); setThinkingStatus(""); toast(String(event.data), "error"); appendToLast(conversationId, `\n\n❌ ${event.data}`); addDebugEvent("error", event.data); }
+            else if (event.type === "error") { lastEventRef.current = Date.now(); setThinkingStatus(""); toast(String(event.data), "error"); appendToLast(conversationId, `\n\n错误：${event.data}`); addDebugEvent("error", event.data); }
             else if (event.type === "done") {
               lastEventRef.current = Date.now(); setThinkingStatus("");
               if ((event.data as any)?.stats) updateLastMessage(conversationId, msg => ({ ...msg, stats: (event.data as any).stats }));
@@ -513,7 +534,7 @@ function ChatPanel({ conversationId, memoryMode, modeSkillId, onMemoryModeChange
         const msg = err.message === "Failed to fetch" ? "网络连接失败，请检查网络后重试"
           : err.message || "未知错误";
         toast(msg, "error");
-        appendToLast(conversationId, `\n\n❌ ${msg}`);
+        appendToLast(conversationId, `\n\n错误：${msg}`);
       }
           } finally {
       abortRef.current = null;
@@ -568,7 +589,7 @@ function ChatPanel({ conversationId, memoryMode, modeSkillId, onMemoryModeChange
             });
           } else if (event.type === "error") {
             toast(String(event.data), "error");
-            appendToLast(conversationId, `\n\n❌ ${event.data}`);
+            appendToLast(conversationId, `\n\n错误：${event.data}`);
           } else if (event.type === "done") {
             setThinkingStatus("");
             if (event.data?.stats) updateLastMessage(conversationId, (message) => ({ ...message, stats: event.data.stats }));
@@ -730,14 +751,17 @@ function ChatPanel({ conversationId, memoryMode, modeSkillId, onMemoryModeChange
           <button className="ai-settings-btn" onClick={onOpenAiSettings}>AI 配置</button>
         </div>
         <span className="workspace-control">
-          <span className="workspace-badge" onClick={openFolderPicker} title="切换工作目录">{workspace ? `📂 ${workspace.split(/[\/]/).pop()}` : "📂 未设置工作区"}</span>
+          <span className="workspace-badge" onClick={openFolderPicker} title="切换工作目录">
+            <Icon name="ri-folder-3-line" />
+            {workspace ? workspace.split(/[\/]/).pop() : "未设置工作区"}
+          </span>
           {workspace && <button className="workspace-clear" onClick={clearWorkspace} title="清空工作区">×</button>}
         </span>
       </header>
       <main className="chat-area">
         {messages.length === 0 && (
           <div className="welcome mode-welcome" style={activeModeStyle}>
-            <div className="mode-welcome-icon">{getModeIcon(activeMode)}</div>
+            <Icon name={getModeIcon(activeMode)} className="mode-welcome-icon" />
             <h2>{activeMode.name}</h2>
             <p>{activeMode.welcomeMessage || activeMode.description}</p>
             {(activeMode.modeExamples || []).length > 0 && (
@@ -751,9 +775,9 @@ function ChatPanel({ conversationId, memoryMode, modeSkillId, onMemoryModeChange
         )}
         {messages.map((msg: any, idx: number) => (
           <div key={msg.id} className={`message ${msg.role}`}>
-            <div className="avatar">{msg.role === "user" ? "👤" : "🤖"}</div>
+            <div className="avatar"><Icon name={msg.role === "user" ? "ri-user-3-line" : "ri-robot-2-line"} /></div>
             <div className="bubble">
-              {msg.skillName && <div className="skill-tag">🧠 {msg.skillName}{msg.skillVersion ? ` · v${msg.skillVersion}` : ""}</div>}
+              {msg.skillName && <div className="skill-tag"><Icon name="ri-brain-line" /> {msg.skillName}{msg.skillVersion ? ` · v${msg.skillVersion}` : ""}</div>}
               {msg.role === "assistant" ? (
                 <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content}</ReactMarkdown>
               ) : <p>{msg.content}</p>}
@@ -772,7 +796,7 @@ function ChatPanel({ conversationId, memoryMode, modeSkillId, onMemoryModeChange
         ))}
         {streaming && messages[messages.length - 1]?.content === "" && (
           <div className="message assistant">
-            <div className="avatar">🤖</div>
+            <div className="avatar"><Icon name="ri-robot-2-line" /></div>
             <div className="bubble thinking">
               <div>{thinkingStatus || "正在思考…"}<span className="thinking-dots"><span>.</span><span>.</span><span>.</span></span></div>
               {toolCalls.length > 0 && (
@@ -780,7 +804,7 @@ function ChatPanel({ conversationId, memoryMode, modeSkillId, onMemoryModeChange
                   {toolCalls.map((t, i) => {
                     const elapsed = Date.now() - t.startTime;
                     const elapsedStr = elapsed > 1000 ? ` ${(elapsed / 1000).toFixed(1)}s` : "";
-                    return <span key={i} className="tool-call-badge">🔧 {toolLabel(t.name)}{elapsedStr}</span>;
+                    return <span key={i} className="tool-call-badge"><Icon name="ri-tools-line" /> {toolLabel(t.name)}{elapsedStr}</span>;
                   })}
                 </div>
               )}
@@ -789,10 +813,10 @@ function ChatPanel({ conversationId, memoryMode, modeSkillId, onMemoryModeChange
         )}
         {getTodoItems(conversationId).length > 0 && (
           <div className="todo-panel">
-            <div className="todo-header">📋 任务进度 ({getTodoItems(conversationId).filter(function(t) { return t.done; }).length}/{getTodoItems(conversationId).length})</div>
+            <div className="todo-header"><Icon name="ri-task-line" /> 任务进度 ({getTodoItems(conversationId).filter(function(t) { return t.done; }).length}/{getTodoItems(conversationId).length})</div>
             {getTodoItems(conversationId).map(function(t) { return (
               <div key={t.id} className={`todo-item ${t.done ? "done" : ""}`}>
-                <span className="todo-check">{t.done ? "✅" : "⬜"}</span>
+                <span className="todo-check"><Icon name={t.done ? "ri-checkbox-circle-fill" : "ri-checkbox-blank-circle-line"} /></span>
                 <span className="todo-text">{t.text}</span>
               </div>
             ); })}
@@ -804,10 +828,10 @@ function ChatPanel({ conversationId, memoryMode, modeSkillId, onMemoryModeChange
         onDragOver={e => { e.preventDefault(); setDragOver(true); }}
         onDragLeave={() => setDragOver(false)}
         onDrop={handleDrop}>
-        {dragOver && <div className="drop-hint">📂 松开以填入文件路径</div>}
+        {dragOver && <div className="drop-hint"><Icon name="ri-folder-upload-line" /> 松开以填入文件路径</div>}
         <div className="input-toolbar">
           <div className={`mode-selector ${activeModeUnavailable ? "has-warning" : ""}`} style={activeModeStyle} title={activeModeUnavailable ? activeModeIssue : undefined} onClick={() => { setShowSkillPicker(!showSkillPicker); loadSkills(); }}>
-            <span className="mode-dot">{getModeIcon(activeMode)}</span>
+            <Icon name={getModeIcon(activeMode)} className="mode-dot" />
             <span className="mode-badge">{activeMode.name}</span>
             <span className="mode-arrow">{showSkillPicker ? "▴" : "▾"}</span>
           </div>
@@ -840,7 +864,7 @@ function ChatPanel({ conversationId, memoryMode, modeSkillId, onMemoryModeChange
             <button className="file-add-btn" onClick={() => setShowFileMenu(!showFileMenu)} title="添加文件">＋</button>
             {showFileMenu && (
               <div className="file-add-menu">
-                <div className="file-add-menu-item" onClick={openFilePicker}>📂 从本地上传文件</div>
+                <div className="file-add-menu-item" onClick={openFilePicker}><Icon name="ri-folder-upload-line" /> 从本地上传文件</div>
               </div>
             )}
           </div>
@@ -854,7 +878,7 @@ function ChatPanel({ conversationId, memoryMode, modeSkillId, onMemoryModeChange
                 onChange={(e) => setSkillSearch(e.target.value)} autoFocus />
               <div className="skill-picker-list">
                 <div className={`skill-picker-item mode-item ${!skillId ? "active" : ""}`} style={{ "--mode-color": getModeColor(smartMode) } as { [key: string]: string }} onClick={() => selectMode("")}>
-                  <span className="mode-item-icon">{smartMode.modeIcon}</span>
+                  <Icon name={getModeIcon(smartMode)} className="mode-item-icon" />
                   <span className="mode-item-copy">
                     <strong>{smartMode.name}</strong>
                     <span className="skill-picker-desc">{smartMode.description}</span>
@@ -867,7 +891,7 @@ function ChatPanel({ conversationId, memoryMode, modeSkillId, onMemoryModeChange
                       <div key={s.id} className={`skill-picker-item mode-item ${skillId === s.id ? "active" : ""} ${s.dependencyHealth?.runnable === false ? "is-unavailable" : ""}`} style={{ "--mode-color": getModeColor(s) } as { [key: string]: string }}
                         aria-disabled={s.dependencyHealth?.runnable === false}
                         onClick={() => selectMode(s.id)}>
-                        <span className="mode-item-icon">{getModeIcon(s)}</span>
+                        <Icon name={getModeIcon(s)} className="mode-item-icon" />
                         <span className="mode-item-copy">
                           <strong>{s.name}</strong>
                           <span className="skill-picker-desc">{s.welcomeMessage || s.description}</span>
@@ -892,7 +916,7 @@ function ChatPanel({ conversationId, memoryMode, modeSkillId, onMemoryModeChange
           <div className="attached-files">
             {attachedFiles.map((f, i) => (
               <span key={i} className="file-chip">
-                📄 {f.split(/[\\/]/).pop()}
+                <Icon name="ri-file-text-line" /> {f.split(/[\\/]/).pop()}
                 <button className="file-chip-remove" onClick={() => setAttachedFiles(prev => prev.filter((_, j) => j !== i))}>×</button>
               </span>
             ))}
@@ -910,7 +934,7 @@ function ChatPanel({ conversationId, memoryMode, modeSkillId, onMemoryModeChange
             onKeyDown={handleKeyDown} placeholder="输入你的问题…（Enter 发送，Shift+Enter 换行）"
             rows={2} disabled={streaming} />
           <button onClick={sendMessage} disabled={streaming || activeModeUnavailable || (!input.trim() && attachedFiles.length === 0)}>发送</button>
-          {streaming && <button className="stop-btn" onClick={stopStreaming}>⏹</button>}
+          {streaming && <button className="stop-btn icon-button" onClick={stopStreaming} title="停止生成"><Icon name="ri-stop-circle-line" /></button>}
         </div>
       </footer>
 
@@ -943,11 +967,11 @@ function ChatPanel({ conversationId, memoryMode, modeSkillId, onMemoryModeChange
       {permDialog && (
         <div className="modal-overlay" onClick={() => setPermDialog(null)}>
           <div className="modal" style={{ maxWidth: 480 }} onClick={e => e.stopPropagation()}>
-            <div className="modal-header"><h2>🔐 确认操作</h2></div>
+            <div className="modal-header"><h2><Icon name="ri-shield-check-line" /> 确认操作</h2></div>
             <div className="modal-body">
               <p>{permDialog.kind === "mcp" || permDialog.mcpToken ? "即将调用 MCP 工具：" : permDialog.kind === "external" || permDialog.externalToken ? "即将调用写入型外部工具：" : permDialog.kind === "command" || permDialog.isCommand ? "即将执行命令：" : "即将操作路径："}</p>
               <p className="perm-path">{permDialog.isCommand && permDialog.command ? permDialog.command : (permDialog.path || "未知路径")}</p>
-              {permDialog.cwd && <p className="perm-cwd">📂 {permDialog.cwd}</p>}
+              {permDialog.cwd && <p className="perm-cwd"><Icon name="ri-folder-3-line" /> {permDialog.cwd}</p>}
               <p className="perm-reason">原因：{permDialog.reason}</p>
               <div className="modal-actions">
                 <button onClick={() => {
@@ -1085,7 +1109,7 @@ function SkillsPanel({ onCreateSkill, onEditSkill, onLearnFromHistory, onOpenMcp
       });
       const d = await r.json().catch(() => ({} as any));
       if (!r.ok) throw new Error(d.error || `HTTP ${r.status}`);
-      toast(`✅ 已导入: ${d.skill.name}`);
+      toast(`已导入: ${d.skill.name}`);
       setImportUrl("");
       setShowImportUrl(false);
       fetchSkills();
@@ -1176,8 +1200,8 @@ function SkillsPanel({ onCreateSkill, onEditSkill, onLearnFromHistory, onOpenMcp
       const r = await fetch("/api/skills/batch-import", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ repoUrl: scanResult.repo.url, skillIds: [...selectedSkillIds], skillPaths: pathMap, descriptions: descMap, welcomeMessages: welcomeMap }) });
       const d = await r.json().catch(() => ({} as any));
       if (!r.ok) throw new Error(d.error || `HTTP ${r.status}`);
-      if (d.installed?.length) toast(`✅ 已安装 ${d.installed.length} 个: ${d.installed.join(", ")}`);
-      if (d.errors?.length) toast(`⚠️ ${d.errors.join("; ")}`, "error");
+      if (d.installed?.length) toast(`已安装 ${d.installed.length} 个: ${d.installed.join(", ")}`);
+      if (d.errors?.length) toast(d.errors.join("; "), "error");
       setScanResult(null); setRepoUrl(""); fetchSkills(); fetchHub();
     } catch (err: any) { toast(`安装失败: ${err.message}`, "error"); }
     setBatchImporting(false);
@@ -1206,8 +1230,8 @@ function SkillsPanel({ onCreateSkill, onEditSkill, onLearnFromHistory, onOpenMcp
       });
       const d = await r.json().catch(() => ({} as any));
       if (!r.ok) throw new Error(d.error || `HTTP ${r.status}`);
-      toast(`✅ 已导入: ${d.skill.name}`);
-      if (d.warnings?.length) toast(`⚠️ ${d.warnings.join("; ")}`, "error");
+      toast(`已导入: ${d.skill.name}`);
+      if (d.warnings?.length) toast(d.warnings.join("; "), "error");
       fetchSkills();
     } catch (err: any) { toast(`导入失败: ${err.message}`, "error"); }
   };
@@ -1265,7 +1289,7 @@ function SkillsPanel({ onCreateSkill, onEditSkill, onLearnFromHistory, onOpenMcp
       const data = await res.json();
       if (!data.success) throw new Error(data.error || "下载失败");
       fetchSkills(); // 刷新本地列表
-      toast(`✅「${data.skill.name}」已安装！`);
+      toast(`「${data.skill.name}」已安装`);
     } catch (err: any) {
       toast(`下载失败: ${err.message}`, "error");
     } finally {
@@ -1327,7 +1351,7 @@ function SkillsPanel({ onCreateSkill, onEditSkill, onLearnFromHistory, onOpenMcp
         <>
           <header className="header">
             <button className="scan-back-btn" onClick={() => { setRepoView(false); setScanResult(null); }}>← 返回 Skill 库</button>
-            <h1>📦 浏览仓库</h1>
+            <h1><Icon name="ri-git-repository-line" /> 浏览仓库</h1>
           </header>
           <main className="repo-browser">
             <div className="repo-input-row">
@@ -1335,7 +1359,7 @@ function SkillsPanel({ onCreateSkill, onEditSkill, onLearnFromHistory, onOpenMcp
                 onChange={e => setRepoUrl(e.target.value)}
                 onKeyDown={e => { if (e.key === "Enter") doScanRepo(); }} />
               <button className="repo-scan-btn" disabled={scanning || !repoUrl.trim()} onClick={doScanRepo}>
-                {scanning ? "扫描中…" : "🔍 扫描"}
+                {scanning ? "扫描中…" : <><Icon name="ri-search-line" /> 扫描</>}
               </button>
             </div>
             {scanResult?.candidates && scanResult.candidates.length > 0 && (
@@ -1351,7 +1375,7 @@ function SkillsPanel({ onCreateSkill, onEditSkill, onLearnFromHistory, onOpenMcp
                     <div>
                       <strong>{c.name}</strong>
                       <code>{c.id}</code>
-                      <span className="hub-scan-format">{c.format === "markdown" ? "📝 .md" : "📄 .json"}</span>
+                      <span className="hub-scan-format"><Icon name={c.format === "markdown" ? "ri-markdown-line" : "ri-file-code-line"} /> {c.format === "markdown" ? ".md" : ".json"}</span>
                       {c.description && <p>{c.description}</p>}
                     </div>
                   </label>
@@ -1361,7 +1385,7 @@ function SkillsPanel({ onCreateSkill, onEditSkill, onLearnFromHistory, onOpenMcp
                     {batchImporting ? "安装中…" : `安装选中 (${selectedSkillIds.size})`}
                   </button>
                   <button className="repo-deep-btn" disabled={deepSummarizing} onClick={() => summarizeCandidates(scanResult, "deep")}>
-                    {deepSummarizing ? "深度思考中…" : "🧠 深度读取"}
+                    {deepSummarizing ? "深度思考中…" : <><Icon name="ri-brain-line" /> 深度读取</>}
                   </button>
                 </div>
               </div>
@@ -1369,7 +1393,7 @@ function SkillsPanel({ onCreateSkill, onEditSkill, onLearnFromHistory, onOpenMcp
             {/* 超大文件 */}
             {scanResult?.oversized && scanResult.oversized.length > 0 && (
               <div className="repo-oversized">
-                <div className="repo-oversized-header">⚠️ {scanResult.oversized.length} 个文件过大（&gt;100KB），可能是非 Skill 文档：</div>
+                <div className="repo-oversized-header"><Icon name="ri-error-warning-line" /> {scanResult.oversized.length} 个文件过大（&gt;100KB），可能是非 Skill 文档：</div>
                 {scanResult.oversized.map((f: any) => (
                   <div key={f.id} className="repo-result-item">
                     <div>
@@ -1389,7 +1413,7 @@ function SkillsPanel({ onCreateSkill, onEditSkill, onLearnFromHistory, onOpenMcp
             {scanResult?.rateLimited && (
               <div className="repo-error">
                 <p>{scanResult.message || "GitHub API 限流"}</p>
-                <button className="token-help-btn" onClick={() => setShowTokenHelp(true)}>🆓 免费获取 Token（教程）</button>
+                <button className="token-help-btn" onClick={() => setShowTokenHelp(true)}><Icon name="ri-key-2-line" /> 免费获取 Token（教程）</button>
               </div>
             )}
             {scanResult && !scanResult.candidates?.length && !scanResult.oversized?.length && !scanResult.rateLimited && (
@@ -1399,7 +1423,7 @@ function SkillsPanel({ onCreateSkill, onEditSkill, onLearnFromHistory, onOpenMcp
           {showTokenHelp && (
             <div className="modal-overlay" onClick={() => setShowTokenHelp(false)}>
               <div className="modal" style={{ maxWidth: 480 }} onClick={e => e.stopPropagation()}>
-                <div className="modal-header"><h2>🪙 添加 GitHub Token</h2></div>
+                <div className="modal-header"><h2><Icon name="ri-github-line" /> 添加 GitHub Token</h2></div>
                 <div className="modal-body" style={{ lineHeight: 1.8, fontSize: 14 }}>
                   <p>GitHub 匿名 API 每小时限 60 次，添加免费 Token 后提升至 <strong>5000 次/小时</strong>，完全免费。</p>
                   <ol style={{ margin: "12px 0", paddingLeft: 20 }}>
@@ -1425,12 +1449,12 @@ function SkillsPanel({ onCreateSkill, onEditSkill, onLearnFromHistory, onOpenMcp
       <header className="header">
         <h1>Skill 库</h1>
         <span className="subtitle">{tab === "local" ? `${skills.length} 个本地技能` : "在线 Skill Hub"}</span>
-        {tab === "local" && <div className="skill-header-actions"><button className="import-file-btn" onClick={doImportFile} title="从本地 .json 或 .md 文件导入 Skill">📂 从文件导入</button><button className="history-skill-btn" onClick={learnFromHistory} disabled={learning}>{learning ? "归纳中..." : "从历史习惯生成"}</button><button className="create-btn" onClick={onCreateSkill}>+ 创建 Skill</button></div>}
+        {tab === "local" && <div className="skill-header-actions"><button className="import-file-btn" onClick={doImportFile} title="从本地 .json 或 .md 文件导入 Skill"><Icon name="ri-folder-upload-line" /> 从文件导入</button><button className="history-skill-btn" onClick={learnFromHistory} disabled={learning}>{learning ? "归纳中..." : "从历史习惯生成"}</button><button className="create-btn" onClick={onCreateSkill}><Icon name="ri-add-line" /> 创建 Skill</button></div>}
       </header>
 
       <div className="skills-tabs">
-        <button className={`skills-tab ${tab === "local" ? "active" : ""}`} onClick={() => setTab("local")}>📁 本地</button>
-        <button className={`skills-tab ${tab === "hub" ? "active" : ""}`} onClick={() => setTab("hub")}>☁️ 在线 Hub</button>
+        <button className={`skills-tab ${tab === "local" ? "active" : ""}`} onClick={() => setTab("local")}><Icon name="ri-folder-line" /> 本地</button>
+        <button className={`skills-tab ${tab === "hub" ? "active" : ""}`} onClick={() => setTab("hub")}><Icon name="ri-cloud-line" /> 在线 Hub</button>
       </div>
 
       {tab === "local" && (
@@ -1439,7 +1463,7 @@ function SkillsPanel({ onCreateSkill, onEditSkill, onLearnFromHistory, onOpenMcp
           {!loading && skills.map(skill => (
             <div key={skill.id} className={`skill-card dependency-${skill.dependencyHealth?.status || "healthy"}`}>
               <div className="skill-card-header">
-                <h3>🧠 {skill.name}</h3>
+                <h3><Icon name={getModeIcon(skill)} /> {skill.name}</h3>
                 <code>{skill.id}</code>
                 <span className="skill-version-badge">v{skill.learning?.activeVersion || skill.version || 1}</span>
                 {(skill.requiredTools.length > 0 || (skill.mcpBindings?.length || 0) > 0 || (skill.dependencyHealth && skill.dependencyHealth.status !== "healthy")) && (
@@ -1447,7 +1471,7 @@ function SkillsPanel({ onCreateSkill, onEditSkill, onLearnFromHistory, onOpenMcp
                     {dependencyStatusLabel(skill.dependencyHealth)}
                   </span>
                 )}
-                <button className="skill-edit-btn" title="编辑 Skill" onClick={() => onEditSkill(skill)}>✏️</button>
+                <button className="skill-edit-btn icon-button" title="编辑 Skill" onClick={() => onEditSkill(skill)}><Icon name="ri-edit-line" /></button>
                 <button className="skill-delete-btn skill-delete-text" title="删除 Skill" onClick={(e) => { e.stopPropagation(); setDeleteConfirm(skill.id); }}>×</button>
               </div>
               <p className="skill-card-desc">{skill.description}</p>
@@ -1494,7 +1518,7 @@ function SkillsPanel({ onCreateSkill, onEditSkill, onLearnFromHistory, onOpenMcp
               </details>
             </div>
           ))}
-          {!loading && skills.length === 0 && <div className="welcome"><h2>📦</h2><p>还没有任何 Skill，点击右上角创建一个吧。</p></div>}
+          {!loading && skills.length === 0 && <div className="welcome"><Icon name="ri-inbox-2-line" className="welcome-icon" /><p>还没有任何 Skill，点击右上角创建一个吧。</p></div>}
         </main>
       )}
 
@@ -1519,12 +1543,12 @@ function SkillsPanel({ onCreateSkill, onEditSkill, onLearnFromHistory, onOpenMcp
                 <button className="hub-import-cancel" onClick={() => setShowImportUrl(false)}>取消</button>
               </div>
             ) : (
-              <button className="hub-import-toggle" onClick={() => setShowImportUrl(true)} title="从 GitHub / Gist 等 URL 导入 Skill">🔗 URL 导入</button>
+              <button className="hub-import-toggle" onClick={() => setShowImportUrl(true)} title="从 GitHub / Gist 等 URL 导入 Skill"><Icon name="ri-link" /> URL 导入</button>
             )}
-            <button className="hub-repo-scan-btn" onClick={() => { setRepoView(true); setShowImportUrl(false); }}>📦 扫描仓库</button>
+            <button className="hub-repo-scan-btn" onClick={() => { setRepoView(true); setShowImportUrl(false); }}><Icon name="ri-git-repository-line" /> 扫描仓库</button>
           </div>
 
-          {hubError && <div className="hub-error">⚠️ {hubError}<button onClick={() => fetchHub(hubSearch, hubSort)}>重试</button></div>}
+          {hubError && <div className="hub-error"><Icon name="ri-error-warning-line" /> {hubError}<button onClick={() => fetchHub(hubSearch, hubSort)}>重试</button></div>}
           {hubLoading && <div className="skills-loading">从 Hub 加载中...</div>}
 
           {/* 扫描结果 */}
@@ -1541,7 +1565,7 @@ function SkillsPanel({ onCreateSkill, onEditSkill, onLearnFromHistory, onOpenMcp
                   <div>
                     <strong>{c.name}</strong>
                     <code>{c.id}</code>
-                    <span className="hub-scan-format">{c.format === "markdown" ? "📝 .md" : "📄 .json"}</span>
+                    <span className="hub-scan-format"><Icon name={c.format === "markdown" ? "ri-markdown-line" : "ri-file-code-line"} /> {c.format === "markdown" ? ".md" : ".json"}</span>
                     {c.description && <p>{c.description}</p>}
                   </div>
                 </label>
@@ -1552,18 +1576,18 @@ function SkillsPanel({ onCreateSkill, onEditSkill, onLearnFromHistory, onOpenMcp
             </div>
           )}
           {scanResult && !scanResult.candidates?.length && (
-            <div className="hub-error">⚠️ {scanResult.message || "未发现 Skill"}</div>
+            <div className="hub-error"><Icon name="ri-error-warning-line" /> {scanResult.message || "未发现 Skill"}</div>
           )}
 
           {!hubLoading && !hubError && hubSkills.map(skill => (
             <div key={skill.skillId} className={`skill-card hub-card ${localIds.has(skill.skillId) ? "installed" : ""}`}>
               <div className="skill-card-header">
-                <h3>🧠 {skill.name}</h3>
+                <h3><Icon name="ri-brain-line" /> {skill.name}</h3>
                 <code>{skill.skillId}</code>
                 <span className="hub-meta">
                   {skill.authorName && <span className="hub-author">by {skill.authorName}</span>}
-                  <span className="hub-downloads">⬇ {skill.downloadCount || 0}</span>
-                  <span className="hub-rating">{skill.ratingCount ? `⭐ ${skill.ratingAverage} (${skill.ratingCount})` : "暂无评分"}</span>
+                  <span className="hub-downloads"><Icon name="ri-download-line" /> {skill.downloadCount || 0}</span>
+                  <span className="hub-rating">{skill.ratingCount ? <><Icon name="ri-star-fill" /> {skill.ratingAverage} ({skill.ratingCount})</> : "暂无评分"}</span>
                   <span className="hub-version">v{skill.version}</span>
                 </span>
               </div>
@@ -1571,22 +1595,22 @@ function SkillsPanel({ onCreateSkill, onEditSkill, onLearnFromHistory, onOpenMcp
               <div className="hub-review">
                 <span>{ratedSkills[skill.skillId] ? `已评分 ${ratedSkills[skill.skillId]} 星` : "匿名评分"}</span>
                 {[1, 2, 3, 4, 5].map(rating => (
-                  <button key={rating} className={`hub-star-btn ${ratedSkills[skill.skillId] >= rating ? "selected" : ""}`} title={`评分 ${rating} 星`} onClick={() => rateSkill(skill.skillId, rating)}>★</button>
+                  <button key={rating} className={`hub-star-btn ${ratedSkills[skill.skillId] >= rating ? "selected" : ""}`} title={`评分 ${rating} 星`} onClick={() => rateSkill(skill.skillId, rating)}><Icon name="ri-star-fill" /></button>
                 ))}
               </div>
               <div className="hub-card-actions">
                 {localIds.has(skill.skillId) ? (
-                  <span className="hub-installed-badge">✅ 已安装</span>
+                  <span className="hub-installed-badge"><Icon name="ri-checkbox-circle-line" /> 已安装</span>
                 ) : (
                   <button className="hub-download-btn" disabled={downloading.has(skill.skillId)}
                     onClick={() => downloadSkill(skill.skillId)}>
-                    {downloading.has(skill.skillId) ? "下载中…" : "⬇ 下载安装"}
+                    {downloading.has(skill.skillId) ? "下载中…" : <><Icon name="ri-download-cloud-line" /> 下载安装</>}
                   </button>
                 )}
               </div>
             </div>
           ))}
-          {!hubLoading && !hubError && hubSkills.length === 0 && <div className="welcome"><h2>🌐</h2><p>Hub 上暂时没有匹配的 Skill</p></div>}
+          {!hubLoading && !hubError && hubSkills.length === 0 && <div className="welcome"><Icon name="ri-global-line" className="welcome-icon" /><p>Hub 上暂时没有匹配的 Skill</p></div>}
         </main>
       )}
 
@@ -1750,6 +1774,9 @@ function CreateSkillModal({ show, onClose, onSaved, prefill, skillToEdit }: { sh
         if (typeof skill[key] === "string") skill[key] = skill[key].trim();
         if (!skill[key]) delete skill[key];
       }
+      if (typeof skill.modeIcon === "string") {
+        skill.modeIcon = getModeIcon({ modeIcon: skill.modeIcon });
+      }
       if (typeof skill.modeExamples === "string") {
         skill.modeExamples = skill.modeExamples.split("\n").map((item: string) => item.trim()).filter(Boolean).slice(0, 4);
       }
@@ -1781,13 +1808,13 @@ function CreateSkillModal({ show, onClose, onSaved, prefill, skillToEdit }: { sh
   return (
     <div className="modal-overlay" onClick={handleClose}>
       <div className="modal" onClick={e => e.stopPropagation()}>
-        <div className="modal-header"><h2>{skillToEdit ? "✏️ 编辑 Skill" : "✨ 创建自定义 Skill"}</h2><button className="modal-close" onClick={handleClose}>×</button></div>
+        <div className="modal-header"><h2><Icon name={skillToEdit ? "ri-edit-line" : "ri-sparkling-line"} /> {skillToEdit ? "编辑 Skill" : "创建自定义 Skill"}</h2><button className="modal-close" onClick={handleClose}>×</button></div>
         {step === "describe" ? (
           <div className="modal-body">
             {msg && <p className="modal-msg">{msg}</p>}
             <p className="modal-hint">用自然语言描述你想要的技能，AI 会自动生成完整的 Skill 定义。</p>
             <textarea className="modal-textarea" value={skillDesc} onChange={e => setSkillDesc(e.target.value)} placeholder="比如：我想要一个帮我写周报的助手..." rows={5} disabled={generating} />
-            <div className="modal-actions"><button onClick={handleClose}>取消</button><button className="primary" onClick={handleGenerate} disabled={generating || !skillDesc.trim()}>{generating ? "生成中…" : "✨ 生成"}</button></div>
+            <div className="modal-actions"><button onClick={handleClose}>取消</button><button className="primary" onClick={handleGenerate} disabled={generating || !skillDesc.trim()}>{generating ? "生成中…" : <><Icon name="ri-sparkling-line" /> 生成</>}</button></div>
           </div>
         ) : (
           <div className="modal-body">
@@ -1816,8 +1843,8 @@ function CreateSkillModal({ show, onClose, onSaved, prefill, skillToEdit }: { sh
                 <input value={editSkill.modeColor || ""} onChange={e => setEditSkill({ ...editSkill, modeColor: e.target.value })} placeholder="#1a73e8" />
 
                 <label>模式图标</label>
-                <p className="field-hint">用于模式切换按钮，建议填写一个简短符号或 emoji。</p>
-                <input value={editSkill.modeIcon || ""} onChange={e => setEditSkill({ ...editSkill, modeIcon: e.target.value })} placeholder="🧠" />
+                <p className="field-hint">用于模式切换按钮，填写 Remix Icon 类名，例如 <code>ri-brain-line</code>、<code>ri-code-s-slash-line</code>。</p>
+                <input value={editSkill.modeIcon || ""} onChange={e => setEditSkill({ ...editSkill, modeIcon: e.target.value })} placeholder="ri-brain-line" />
 
                 <label className="field-label"><span>欢迎语</span><span className={`field-count ${welcomeLength > 80 ? "over" : ""}`}>{welcomeLength}/80</span></label>
                 <p className="field-hint">用户切换到这个模式、且当前对话为空时展示。</p>
@@ -2286,11 +2313,11 @@ export default function App() {
       <nav className="sidebar">
         <div className="sidebar-brand"><h2>WahtWay</h2><span>何以委</span></div>
         <div className="sidebar-nav">
-          <button className={`nav-item ${view === "chat" ? "active" : ""}`} onClick={() => setView("chat")}><span className="nav-icon">💬</span><span>对话</span></button>
-          <button className={`nav-item ${view === "skills" ? "active" : ""}`} onClick={() => setView("skills")}><span className="nav-icon">🧠</span><span>Skill 库</span></button>
-          <button className={`nav-item ${view === "memory" ? "active" : ""}`} onClick={() => setView("memory")}><span className="nav-icon">◉</span><span>长期记忆</span></button>
-          <button className={`nav-item ${view === "external-tools" ? "active" : ""}`} onClick={() => setView("external-tools")}><span className="nav-icon">🔌</span><span>外部工具</span></button>
-          <button className={`nav-item ${view === "mcp" ? "active" : ""}`} onClick={() => { setMcpRepairSkillId(""); setView("mcp"); }}><span className="nav-icon">◫</span><span>MCP</span></button>
+          <button className={`nav-item ${view === "chat" ? "active" : ""}`} onClick={() => setView("chat")}><Icon name="ri-chat-3-line" className="nav-icon" /><span>对话</span></button>
+          <button className={`nav-item ${view === "skills" ? "active" : ""}`} onClick={() => setView("skills")}><Icon name="ri-brain-line" className="nav-icon" /><span>Skill 库</span></button>
+          <button className={`nav-item ${view === "memory" ? "active" : ""}`} onClick={() => setView("memory")}><Icon name="ri-database-2-line" className="nav-icon" /><span>长期记忆</span></button>
+          <button className={`nav-item ${view === "external-tools" ? "active" : ""}`} onClick={() => setView("external-tools")}><Icon name="ri-plug-line" className="nav-icon" /><span>外部工具</span></button>
+          <button className={`nav-item ${view === "mcp" ? "active" : ""}`} onClick={() => { setMcpRepairSkillId(""); setView("mcp"); }}><Icon name="ri-node-tree" className="nav-icon" /><span>MCP</span></button>
         </div>
         {view === "chat" && (
           <div className="conv-list">
@@ -2305,7 +2332,7 @@ export default function App() {
               ) : (
                 <span className="conv-title" onDoubleClick={() => { setEditingConvId(c.id); setEditTitle(c.title); }}>
                   <span className="conv-title-text">{c.title.length > 12 ? c.title.slice(0, 12) + "…" : c.title}</span>
-                  <button className="conv-edit-btn" onClick={e => { e.stopPropagation(); setEditingConvId(c.id); setEditTitle(c.title); }}>✎</button>
+                  <button className="conv-edit-btn icon-button" title="编辑标题" onClick={e => { e.stopPropagation(); setEditingConvId(c.id); setEditTitle(c.title); }}><Icon name="ri-edit-line" /></button>
                 </span>
               )}
                 <button className="conv-delete" onClick={e => { e.stopPropagation(); deleteConversation(c.id); }}>×</button>
@@ -2314,16 +2341,16 @@ export default function App() {
           </div>
         )}
         <div className="sidebar-footer">
-          <button id="sidebar-create-skill" className="nav-item" onClick={() => setShowModal(true)}><span className="nav-icon">✨</span><span>创建 Skill</span></button>
-          <div className="sidebar-reset" onClick={() => setShowResetConfirm(true)}>🔄 重置</div>
-          <div className="sidebar-item" onClick={() => { const t = theme === "light" ? "dark" : "light"; setTheme(t); localStorage.setItem("wahtway-theme", t); }}>{theme === "light" ? "🌙 深色模式" : "☀️ 浅色模式"}</div>
-        <div className="sidebar-reset" onClick={() => { DEBUG.on = !DEBUG.on; setConvVersion(v => v + 1); }}>{DEBUG.on ? "🟢 调试中" : "⚫ 调试关"}</div>
-        <div className="sidebar-reset" onClick={() => setShowCmdPalette(true)}>⌨ 命令面板 (Ctrl+K)</div>
+          <button id="sidebar-create-skill" className="nav-item" onClick={() => setShowModal(true)}><Icon name="ri-sparkling-line" className="nav-icon" /><span>创建 Skill</span></button>
+          <div className="sidebar-reset" onClick={() => setShowResetConfirm(true)}><Icon name="ri-restart-line" /> 重置</div>
+          <div className="sidebar-item" onClick={() => { const t = theme === "light" ? "dark" : "light"; setTheme(t); localStorage.setItem("wahtway-theme", t); }}><Icon name={theme === "light" ? "ri-moon-line" : "ri-sun-line"} /> {theme === "light" ? "深色模式" : "浅色模式"}</div>
+        <div className="sidebar-reset" onClick={() => { DEBUG.on = !DEBUG.on; setConvVersion(v => v + 1); }}><Icon name={DEBUG.on ? "ri-record-circle-line" : "ri-circle-line"} /> {DEBUG.on ? "调试中" : "调试关"}</div>
+        <div className="sidebar-reset" onClick={() => setShowCmdPalette(true)}><Icon name="ri-keyboard-line" /> 命令面板 (Ctrl+K)</div>
         </div>
       </nav>
       <div className="main-content">
         {view === "chat" ? (
-          conversationId ? <ChatPanel showModal={showModal} conversationId={conversationId} memoryMode={activeConversation?.memoryMode || "off"} modeSkillId={activeConversation?.modeSkillId || ""} onMemoryModeChange={handleMemoryModeChange} onModeChange={handleModeChange} onTitleChange={handleTitleChange} onCreateSkill={(prefill) => { setPrefillSkillDesc(prefill || ""); setShowModal(true); }} onOpenMcp={() => { setMcpRepairSkillId(""); setView("mcp"); }} aiSettings={aiSettings} onAiSettingsChange={(patch) => { void saveAiSettings(patch).catch((error: any) => toast(error.message || "保存 AI 配置失败", "error")); }} onOpenAiSettings={() => setShowAiSettings(true)} /> : <div className="welcome"><h2>🤔 Waht?</h2></div>
+          conversationId ? <ChatPanel showModal={showModal} conversationId={conversationId} memoryMode={activeConversation?.memoryMode || "off"} modeSkillId={activeConversation?.modeSkillId || ""} onMemoryModeChange={handleMemoryModeChange} onModeChange={handleModeChange} onTitleChange={handleTitleChange} onCreateSkill={(prefill) => { setPrefillSkillDesc(prefill || ""); setShowModal(true); }} onOpenMcp={() => { setMcpRepairSkillId(""); setView("mcp"); }} aiSettings={aiSettings} onAiSettingsChange={(patch) => { void saveAiSettings(patch).catch((error: any) => toast(error.message || "保存 AI 配置失败", "error")); }} onOpenAiSettings={() => setShowAiSettings(true)} /> : <div className="welcome"><Icon name="ri-question-line" className="welcome-icon" /><p>Waht?</p></div>
         ) : view === "skills" ? (
           <SkillsPanel onCreateSkill={() => setShowModal(true)} onEditSkill={openEditSkill} onOpenMcp={(skillId) => { setMcpRepairSkillId(skillId); setView("mcp"); }} skillsVersion={skillsVersion} />
         ) : view === "memory" ? (
@@ -2355,7 +2382,7 @@ export default function App() {
       {showResetConfirm && (
         <div className="modal-overlay" onClick={() => setShowResetConfirm(false)}>
           <div className="modal" style={{ maxWidth: 380 }} onClick={e => e.stopPropagation()}>
-            <div className="modal-header"><h2>🔄 重置确认</h2></div>
+            <div className="modal-header"><h2><Icon name="ri-restart-line" /> 重置确认</h2></div>
             <div className="modal-body">
               <p>重置将清空所有对话记录和自定义 Skill（内置 Skill 保留），确认？</p>
               <div className="modal-actions">
@@ -2425,7 +2452,7 @@ function BalanceWidget() {
   return (
     <div className="balance-widget">
       <button className="balance-button" onClick={queryBalance} disabled={loading} title="手动查询当前 API 余额">
-        <span>💰</span><span>{loading ? "查询中…" : "查询余额"}</span>
+        <Icon name="ri-wallet-3-line" /><span>{loading ? "查询中…" : "查询余额"}</span>
       </button>
       {balance && <div className="balance-value">{balance}</div>}
       {!balance && error && <div className="balance-error">查询失败</div>}
@@ -2530,7 +2557,7 @@ function AiSettingsModal({
     <div className="setup-overlay" onClick={() => { if (!required) onClose(); }}>
       <div className="setup-card ai-settings-card" onClick={e => e.stopPropagation()}>
         <div className="modal-header ai-settings-header">
-          <h1>⚙ AI 配置</h1>
+          <h1><Icon name="ri-settings-3-line" /> AI 配置</h1>
           {!required && <button className="modal-close" onClick={onClose}>×</button>}
         </div>
         <p>配置会保存到本机，不需要每次启动重新输入 key。</p>
@@ -2612,10 +2639,10 @@ function CommandPalette({ show, onClose, skills, onSelectSkill, onCreateSkill, o
   const [q, setQ] = useState("");
   if (!show) return null;
   const cmds: { id: string; label: string; icon: string; action: () => void }[] = [
-    { id: "chat", label: "💬 切换到对话", icon: "💬", action: () => { onSelectSkill(); onClose(); } },
-    { id: "create", label: "✨ 创建新 Skill", icon: "✨", action: () => { onCreateSkill(); onClose(); } },
-    { id: "hub", label: "🌐 Skill Hub", icon: "🌐", action: () => { onGoHub(); onClose(); } },
-    { id: "theme", label: theme === "light" ? "🌙 切换深色模式" : "☀️ 切换浅色模式", icon: theme === "light" ? "🌙" : "☀️", action: () => { onToggleTheme(); onClose(); } },
+    { id: "chat", label: "切换到对话", icon: "ri-chat-3-line", action: () => { onSelectSkill(); onClose(); } },
+    { id: "create", label: "创建新 Skill", icon: "ri-sparkling-line", action: () => { onCreateSkill(); onClose(); } },
+    { id: "hub", label: "Skill Hub", icon: "ri-global-line", action: () => { onGoHub(); onClose(); } },
+    { id: "theme", label: theme === "light" ? "切换深色模式" : "切换浅色模式", icon: theme === "light" ? "ri-moon-line" : "ri-sun-line", action: () => { onToggleTheme(); onClose(); } },
   ];
   const filtered = cmds.filter(c => !q || c.label.toLowerCase().includes(q.toLowerCase()));
   return (
@@ -2628,6 +2655,7 @@ function CommandPalette({ show, onClose, skills, onSelectSkill, onCreateSkill, o
         <div className="cmd-list">
           {filtered.map(c => (
             <div key={c.id} className="cmd-item" onClick={c.action}>
+              <Icon name={c.icon} />
               <span>{c.label}</span>
             </div>
           ))}
@@ -2645,7 +2673,7 @@ function DebugPanel() {
   return (
     <div className="debug-panel">
       <div className="debug-panel-header">
-        <span>📋 事件日志</span>
+        <span><Icon name="ri-list-check-2" /> 事件日志</span>
         <button onClick={clearDebugEvents}>清空</button>
       </div>
       {events.slice(0, 20).map((e, i) => (
