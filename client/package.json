@@ -20,6 +20,7 @@
     "appId": "com.wahtway.app",
     "productName": "WahtWay",
     "directories": {
+      "buildResources": "build",
       "output": "release"
     },
     "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
@@ -33,15 +34,18 @@
     ],
     "win": {
       "target": "portable",
+      "icon": "build/icon.ico",
       "sign": null,
-      "signAndEditExecutable": false
+      "signAndEditExecutable": true
     },
     "linux": {
       "target": "AppImage",
+      "icon": "build/icon.png",
       "category": "Utility"
     },
     "mac": {
       "target": "dmg",
+      "icon": "build/icon.png",
       "category": "public.app-category.productivity",
       "identity": null
     },

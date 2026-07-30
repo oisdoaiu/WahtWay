@@ -74,6 +74,10 @@ jobs:
         run: npm ci
         working-directory: client/be
 
+      - name: Verify packaging icon assets
+        run: node -e "const fs = require('fs'); for (const file of ['build/icon.png', 'build/icon.ico']) fs.accessSync(file)"
+        working-directory: client
+
       - name: Build client and embedded API
         run: npm run build
         working-directory: client
